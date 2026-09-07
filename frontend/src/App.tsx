@@ -14,6 +14,7 @@ import {
   BookOpenCheck,
   Building2,
   Check,
+  ChevronDown,
   ChevronRight,
   CircleAlert,
   ClipboardCheck,
@@ -375,6 +376,7 @@ export default function App() {
   const [selectedException, setSelectedException] = useState<string | null>(
       null,
     ),
+    [showDetailedResults, setShowDetailedResults] = useState(false),
     [page, setPage] = useState(0),
     [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState<string | null>(null),
@@ -1254,7 +1256,20 @@ export default function App() {
               tone="warn"
             />
           </div>
-          {resultTable}
+          <div style={{ display: "flex", justifyContent: "flex-end", margin: "12px 0" }}>
+            <button
+              type="button"
+              className="button-secondary button-sm"
+              onClick={() => setShowDetailedResults((v) => !v)}
+            >
+              {showDetailedResults ? "Collapse detailed record table" : "View detailed record table"}
+              <ChevronDown
+                size={14}
+                style={{ transform: showDetailedResults ? "rotate(180deg)" : "rotate(0deg)", marginLeft: "4px" }}
+              />
+            </button>
+          </div>
+          {showDetailedResults && resultTable}
           <div className="next-step">
             <div>
               <strong>Deterministic pass complete</strong>
