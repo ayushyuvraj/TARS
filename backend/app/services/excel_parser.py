@@ -24,17 +24,18 @@ class ParsedDataset:
 class ExcelParser:
     GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$")
 
-    GOV_MARKERS = {
-        "gstinofsupplier", "suppliergstin", "ctin", "tradelegalname", "legalname",
-        "gstr15filingdate", "gstr15filingperiod", "invoicetype", "placeofsupply",
-        "reversecharge", "integratedtax", "centraltax", "stateuttax", "taxablevalue",
-        "invoicevalue", "invoicenumber", "invoicedate", "itcavailability", "itc",
+    GOV_DISCRIMINATORS = {
+        "gstr15filingdate", "gstr1filingdate", "filingdate",
+        "gstr15filingperiod", "gstr1filingperiod", "filingperiod",
+        "itcavailability", "itceligibility", "itcavailable", "reasonforitcunavailability",
+        "supplierfilingstatus", "gstr3bfilingstatus", "cancellationdate", "gstr2b", "gstr2a"
     }
-    PR_MARKERS = {
-        "vendorcode", "vendorname", "partyname", "ponumber", "vouchernumber",
-        "voucherno", "postingdate", "billnumber", "billno", "purchaseaccount",
-        "businessunit", "costcenter", "ledgername", "internalref", "entrydate",
-        "documentno", "companycode", "purchaseorder",
+
+    PR_DISCRIMINATORS = {
+        "vendorcode", "vendorname", "partyname", "ponumber", "purchaseorder",
+        "vouchernumber", "voucherno", "vouchertype", "postingdate", "billnumber",
+        "billno", "purchaseaccount", "costcenter", "ledgername", "internalref",
+        "entrydate", "documentno", "companycode", "grnnumber", "materialcode", "itemcode"
     }
 
     def detect_header_row(self, path: Path, role: DatasetRole = DatasetRole.GOVERNMENT) -> tuple[str, int]:
@@ -59,74 +60,182 @@ class ExcelParser:
             workbook.close()
         raise ExcelParseError("Could not locate a tabular header in the first 30 rows")
 
-    def _header_scores(self, path: Path) -> tuple[int, int]:
+    def _header_scores(
+        self,
+        path: Path,
+        original_filename: str | None = None,
+        shared_headers: set[str] | None = None,
+    ) -> tuple[float, float, list[str], list[str]]:
+        gov_evidence: list[str] = []
+        pr_evidence: list[str] = []
+        gov_score = 0.0
+        pr_score = 0.0
+
         try:
             sheet_name, header_row = self.detect_header_row(path)
             frame = pd.read_excel(path, sheet_name=sheet_name, header=header_row - 1, nrows=5)
             headers = [re.sub(r"[^a-z0-9]", "", str(c).lower()) for c in frame.columns]
-            fname = path.name.lower()
-            gov_score = sum(1 for h in headers if any(m in h for m in self.GOV_MARKERS))
-            pr_score = sum(1 for h in headers if any(m in h for m in self.PR_MARKERS))
-            if any(k in fname for k in ("2b", "gstr", "govt", "government")):
-                gov_score += 3
-            if any(k in fname for k in ("pr", "purchase", "register", "books")):
-                pr_score += 3
-            return gov_score, pr_score
+
+            # Signal Priority A: Sheet Title (Weight: 5.0)
+            sheet_clean = re.sub(r"[^a-z0-9]", "", sheet_name.lower())
+            if any(s in sheet_clean for s in ("gstr2b", "gstr2", "govt", "government", "2b")):
+                gov_score += 5.0
+                gov_evidence.append("Sheet title indicates GSTR-2B")
+            elif any(p in sheet_name.lower() for p in ("purchase register", "purchase_register", "purchaseregister", "pr register", "pr_data", "pr data")):
+                pr_score += 5.0
+                pr_evidence.append("Sheet title indicates Purchase Register")
+
+            # Signal Priority B: Source-Specific Header Discriminators (Weight: 2.0 per unique discriminator)
+            # Shared headers present in BOTH workbooks are strictly NEUTRAL (0 weight)
+            unique_gov_matches = 0
+            unique_pr_matches = 0
+
+            for h in headers:
+                if shared_headers and h in shared_headers:
+                    continue  # Overlapping header in both workbooks -> Neutral
+                if any(m in h for m in self.GOV_DISCRIMINATORS):
+                    gov_score += 2.0
+                    unique_gov_matches += 1
+                if any(m in h for m in self.PR_DISCRIMINATORS):
+                    pr_score += 2.0
+                    unique_pr_matches += 1
+
+            if unique_gov_matches > 0:
+                gov_evidence.append("Government portal fields detected")
+            if unique_pr_matches > 0:
+                pr_evidence.append("ERP/vendor accounting fields detected")
+
+            # Signal Priority D: Safe Filename Hints (Weight: 2.0)
+            fname = (original_filename or path.name).lower()
+            if fname and not fname.startswith("temp1-") and not fname.startswith("temp2-") and not fname.startswith("val1-") and not fname.startswith("val2-"):
+                if any(k in fname for k in ("gstr2b", "gstr-2b", "gstr_2b", "government", "govt")):
+                    gov_score += 2.0
+                    gov_evidence.append("Filename supports Government source")
+                if any(p in fname for p in ("purchase_register", "purchase-register", "purchase register", "purchaseregister", "pr_register", "pr-register")):
+                    pr_score += 2.0
+                    pr_evidence.append("Filename supports Purchase Register source")
+
+            return gov_score, pr_score, gov_evidence, pr_evidence
+        except Exception as exc:
+            return 0.0, 0.0, [], [f"Parsing error: {exc}"]
+
+    def _get_normalized_headers(self, path: Path) -> set[str]:
+        try:
+            sheet_name, header_row = self.detect_header_row(path)
+            frame = pd.read_excel(path, sheet_name=sheet_name, header=header_row - 1, nrows=5)
+            return {re.sub(r"[^a-z0-9]", "", str(c).lower()) for c in frame.columns if c is not None and str(c).strip()}
         except Exception:
-            return 0, 0
+            return set()
 
-    def detect_roles(self, file1_path: Path, file2_path: Path) -> RoleDetectionResult:
-        g1, p1 = self._header_scores(file1_path)
-        g2, p2 = self._header_scores(file2_path)
-        score1 = g1 - p1
-        score2 = g2 - p2
+    def detect_roles(
+        self,
+        file1_path: Path,
+        file2_path: Path,
+        file1_name: str | None = None,
+        file2_name: str | None = None,
+    ) -> RoleDetectionResult:
+        # Pre-extract normalized headers to identify shared/overlapping columns between BOTH workbooks
+        h1 = self._get_normalized_headers(file1_path)
+        h2 = self._get_normalized_headers(file2_path)
+        shared_headers = h1.intersection(h2)
 
-        # Dual Government-like files
-        if (g1 > p1 and g2 > p2) or (g1 > 0 and g2 > 0 and p1 == 0 and p2 == 0):
+        g1, p1, gov_ev1, pr_ev1 = self._header_scores(file1_path, file1_name, shared_headers)
+        g2, p2, gov_ev2, pr_ev2 = self._header_scores(file2_path, file2_name, shared_headers)
+
+        diff1 = g1 - p1
+        diff2 = g2 - p2
+
+        # Conflict: Both workbooks strongly match Government
+        if g1 > p1 and g2 > p2 and g1 >= 3.0 and g2 >= 3.0:
             return RoleDetectionResult(
                 file_1_role=DatasetRole.GOVERNMENT,
                 file_2_role=DatasetRole.PURCHASE_REGISTER,
                 confidence=0.50,
+                confidence_level="Low",
                 is_confident=False,
-                reason="Both files appear to be Government GSTR-2B workbooks. Please confirm file role assignment.",
+                reason="Both workbooks contain Government GSTR-2B markers. Please confirm role assignments.",
+                file_1_evidence=gov_ev1 + pr_ev1,
+                file_2_evidence=gov_ev2 + pr_ev2,
             )
 
-        # Dual Purchase Register-like files
-        if (p1 > g1 and p2 > g2) or (p1 > 0 and p2 > 0 and g1 == 0 and g2 == 0):
+        # Conflict: Both workbooks strongly match Purchase Register
+        if p1 > g1 and p2 > g2 and p1 >= 3.0 and p2 >= 3.0:
             return RoleDetectionResult(
                 file_1_role=DatasetRole.GOVERNMENT,
                 file_2_role=DatasetRole.PURCHASE_REGISTER,
                 confidence=0.50,
+                confidence_level="Low",
                 is_confident=False,
-                reason="Both files appear to be Purchase Register workbooks. Please confirm file role assignment.",
+                reason="Both workbooks contain Purchase Register markers. Please confirm role assignments.",
+                file_1_evidence=gov_ev1 + pr_ev1,
+                file_2_evidence=gov_ev2 + pr_ev2,
             )
 
-        if score1 > score2 and (g1 > 0 or p2 > 0):
-            conf = min(0.98, round(0.70 + (g1 + p2) * 0.05, 2))
+        # Standard differential evaluation
+        if diff1 > diff2:
+            assigned_1 = DatasetRole.GOVERNMENT
+            assigned_2 = DatasetRole.PURCHASE_REGISTER
+            ev1 = gov_ev1 if g1 >= p1 else pr_ev1
+            ev2 = pr_ev2 if p2 >= g2 else gov_ev2
+            
+            has_absolute_evidence = (g1 >= 3.0 or p2 >= 3.0)
+            has_margin = (diff1 >= 2.0) and (g1 >= p1) and (p2 >= g2)
+            is_coherent = (g1 >= p1) and (p2 >= g2)
+
+            if has_absolute_evidence and has_margin and is_coherent:
+                conf = 0.95
+                clevel = "High"
+                is_conf = True
+                reason = "Smart identification confident (High confidence): File 1 is Government GSTR-2B, File 2 is Purchase Register."
+            else:
+                conf = 0.50
+                clevel = "Low"
+                is_conf = False
+                reason = "Header semantics are ambiguous. Please confirm file role assignment."
+
             return RoleDetectionResult(
-                file_1_role=DatasetRole.GOVERNMENT,
-                file_2_role=DatasetRole.PURCHASE_REGISTER,
+                file_1_role=assigned_1,
+                file_2_role=assigned_2,
                 confidence=conf,
-                is_confident=conf >= 0.80,
-                reason=f"File 1 identified as Government GSTR-2B (confidence {conf:.0%}).",
-            )
-        elif score2 > score1 and (g2 > 0 or p1 > 0):
-            conf = min(0.98, round(0.70 + (g2 + p1) * 0.05, 2))
-            return RoleDetectionResult(
-                file_1_role=DatasetRole.PURCHASE_REGISTER,
-                file_2_role=DatasetRole.GOVERNMENT,
-                confidence=conf,
-                is_confident=conf >= 0.80,
-                reason=f"File 2 identified as Government GSTR-2B (confidence {conf:.0%}).",
+                confidence_level=clevel,
+                is_confident=is_conf,
+                reason=reason,
+                file_1_evidence=ev1,
+                file_2_evidence=ev2,
             )
         else:
+            assigned_1 = DatasetRole.PURCHASE_REGISTER
+            assigned_2 = DatasetRole.GOVERNMENT
+            ev1 = pr_ev1 if p1 >= g1 else gov_ev1
+            ev2 = gov_ev2 if g2 >= p2 else pr_ev2
+
+            has_absolute_evidence = (p1 >= 3.0 or g2 >= 3.0)
+            has_margin = (diff2 >= 2.0) and (p1 >= g1) and (g2 >= p2)
+            is_coherent = (p1 >= g1) and (g2 >= p2)
+
+            if has_absolute_evidence and has_margin and is_coherent:
+                conf = 0.95
+                clevel = "High"
+                is_conf = True
+                reason = "Smart identification confident (High confidence): File 1 is Purchase Register, File 2 is Government GSTR-2B."
+            else:
+                conf = 0.50
+                clevel = "Low"
+                is_conf = False
+                reason = "Header semantics are ambiguous. Please confirm file role assignment."
+
             return RoleDetectionResult(
-                file_1_role=DatasetRole.GOVERNMENT,
-                file_2_role=DatasetRole.PURCHASE_REGISTER,
-                confidence=0.50,
-                is_confident=False,
-                reason="File header semantics are ambiguous. Please confirm file role assignment.",
+                file_1_role=assigned_1,
+                file_2_role=assigned_2,
+                confidence=conf,
+                confidence_level=clevel,
+                is_confident=is_conf,
+                reason=reason,
+                file_1_evidence=ev1,
+                file_2_evidence=ev2,
             )
+
+
 
 
 

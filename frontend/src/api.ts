@@ -687,8 +687,11 @@ export type RoleDetectionResult = {
   file_1_role: DatasetRole;
   file_2_role: DatasetRole;
   confidence: number;
+  confidence_level?: "High" | "Medium" | "Low";
   is_confident: boolean;
   reason: string;
+  file_1_evidence?: string[];
+  file_2_evidence?: string[];
 };
 
 export type QuickReconcileInterrupt = {
@@ -1064,6 +1067,13 @@ export const api = {
     request<ReconciliationResults>(
       `/api/reconciliations/${id}/results${status ? `?status=${status}` : ""}`,
     ),
+  progress: (id: string) =>
+    request<ReconciliationProgress>(`/api/reconciliations/${id}/progress`),
+  abort: (id: string, stage?: string) =>
+    request<ReconciliationProgress>(
+      stage ? `/api/reconciliations/${id}/stages/${stage}/abort` : `/api/reconciliations/${id}/abort`,
+      { method: "POST" },
+    ),
   auditEvents: (id?: string | null) =>
     request<AuditEvent[]>(
       id
@@ -1071,4 +1081,68 @@ export const api = {
         : "/api/reconciliations/audit-events?limit=200",
     ),
 };
+
+export type StageProgressItem = {
+  name: string;
+  status: "pending" | "running" | "completed" | "interrupted" | "failed";
+  started_at: string | null;
+  completed_at: string | null;
+  processed_records: number | null;
+  total_records: number | null;
+};
+
+export type AgentActivityEvent = {
+  event_id: string;
+  timestamp: string;
+  reconciliation_id: string;
+  graph_node: string;
+  actor_label: string;
+  event_type: "started" | "progress" | "decision" | "tool_call" | "completed" | "interrupted" | "failed";
+  status: string;
+  summary: string;
+  reasoning_summary?: string | null;
+  evidence_summary?: string | null;
+  tool_name?: string | null;
+  rule_id?: string | null;
+  policy_version?: number | null;
+  profile_version?: number | null;
+  processed_records?: number | null;
+  total_records?: number | null;
+  result_count?: number | null;
+  duration_ms?: number | null;
+  next_step?: string | null;
+};
+
+export type ReconciliationProgressCounters = {
+  government_records: number;
+  purchase_register_records: number;
+  exact_matches: number;
+  tolerance_matches: number;
+  near_match_proposals: number;
+  ambiguous: number;
+  material_mismatch: number;
+  gst_only: number;
+  pr_only: number;
+};
+
+export type ReconciliationProgress = {
+  reconciliation_id: string;
+  status: string;
+  started_at: string | null;
+  updated_at: string | null;
+  completed_at: string | null;
+  current_stage: string;
+  current_action?: string | null;
+  estimated_remaining_seconds?: number | null;
+  estimated_remaining_text?: string | null;
+  abort_requested?: boolean;
+  completed_stages_count?: number;
+  total_stages_count?: number;
+  stages: StageProgressItem[];
+  counters: ReconciliationProgressCounters;
+  activities: AgentActivityEvent[];
+  interrupt: QuickReconcileInterrupt | null;
+  error: string | null;
+};
+
 

@@ -27,6 +27,8 @@ class SessionStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    ABORTING = "aborting"
+    ABORTED = "aborted"
 
 
 class DatasetRole(StrEnum):
@@ -1194,8 +1196,11 @@ class RoleDetectionResult(BaseModel):
     file_1_role: DatasetRole
     file_2_role: DatasetRole
     confidence: float = Field(ge=0.0, le=1.0)
+    confidence_level: str = "High"
     is_confident: bool
     reason: str
+    file_1_evidence: list[str] = Field(default_factory=list)
+    file_2_evidence: list[str] = Field(default_factory=list)
 
 
 class QuickReconcileInterrupt(BaseModel):
@@ -1219,4 +1224,68 @@ class QuickReconcileResponse(BaseModel):
     profile_name: str | None = None
     interrupt: QuickReconcileInterrupt | None = None
     error: str | None = None
+
+
+class StageProgressItem(BaseModel):
+    name: str
+    status: Literal["pending", "running", "completed", "interrupted", "failed"]
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    processed_records: int | None = None
+    total_records: int | None = None
+
+
+class AgentActivityEvent(BaseModel):
+    event_id: UUID = Field(default_factory=uuid4)
+    timestamp: datetime = Field(default_factory=utc_now)
+    reconciliation_id: UUID
+    graph_node: str
+    actor_label: str
+    event_type: Literal["started", "progress", "decision", "tool_call", "completed", "interrupted", "failed"]
+    status: str
+    summary: str
+    reasoning_summary: str | None = None
+    evidence_summary: str | None = None
+    tool_name: str | None = None
+    rule_id: str | None = None
+    policy_version: int | None = None
+    profile_version: int | None = None
+    processed_records: int | None = None
+    total_records: int | None = None
+    result_count: int | None = None
+    duration_ms: int | None = None
+    next_step: str | None = None
+
+
+class ReconciliationProgressCounters(BaseModel):
+    government_records: int = 0
+    purchase_register_records: int = 0
+    exact_matches: int = 0
+    tolerance_matches: int = 0
+    near_match_proposals: int = 0
+    ambiguous: int = 0
+    material_mismatch: int = 0
+    gst_only: int = 0
+    pr_only: int = 0
+
+
+class ReconciliationProgress(BaseModel):
+    reconciliation_id: UUID
+    status: str
+    started_at: datetime | None = None
+    updated_at: datetime | None = None
+    completed_at: datetime | None = None
+    current_stage: str
+    current_action: str | None = None
+    estimated_remaining_seconds: int | None = None
+    estimated_remaining_text: str | None = None
+    abort_requested: bool = False
+    completed_stages_count: int = 0
+    total_stages_count: int = 8
+    stages: list[StageProgressItem] = Field(default_factory=list)
+    counters: ReconciliationProgressCounters = Field(default_factory=ReconciliationProgressCounters)
+    activities: list[AgentActivityEvent] = Field(default_factory=list)
+    interrupt: QuickReconcileInterrupt | None = None
+    error: str | None = None
+
 

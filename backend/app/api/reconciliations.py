@@ -4,7 +4,8 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+import threading
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from app.domain.models import (
     AgentEvent,
@@ -50,6 +51,7 @@ from app.domain.models import (
     AIInvestigationRecord,
     QuickReconcileInterrupt,
     QuickReconcileResponse,
+    ReconciliationProgress,
     RoleDetectionResult,
 )
 from app.services.excel_parser import ExcelParseError
@@ -156,7 +158,12 @@ async def detect_roles(
         with temp_2.open("wb") as t2:
             while chunk := await file_2.read(1024 * 1024):
                 t2.write(chunk)
-        return service.parser.detect_roles(temp_1, temp_2)
+        return service.parser.detect_roles(
+            temp_1,
+            temp_2,
+            file1_name=file_1.filename,
+            file2_name=file_2.filename,
+        )
     except Exception as exc:
         raise HTTPException(status_code=422, detail=f"Could not parse uploaded files for role detection: {exc}")
     finally:
@@ -164,6 +171,60 @@ async def detect_roles(
         temp_2.unlink(missing_ok=True)
         await file_1.close()
         await file_2.close()
+
+
+_active_quick_reconciliations: set[UUID] = set()
+_quick_lock = threading.Lock()
+
+
+def _run_quick_reconcile_background(
+    reconciliation_id: UUID,
+    service: ReconciliationService,
+    governance: GovernanceService,
+    mapping_wf: SchemaMappingWorkflow,
+    policy_wf: PolicyWorkflow,
+    near_wf: NearMatchWorkflow,
+    instruction: str | None = None,
+    profile_id: UUID | None = None,
+):
+    try:
+        service.run_quick_reconcile_pipeline(
+            reconciliation_id=reconciliation_id,
+            instruction=instruction,
+            profile_id=profile_id,
+            governance_service=governance,
+            mapping_workflow=mapping_wf,
+            policy_workflow=policy_wf,
+            near_workflow=near_wf,
+        )
+    finally:
+        with _quick_lock:
+            _active_quick_reconciliations.discard(reconciliation_id)
+
+
+@router.get("/{reconciliation_id}/progress", response_model=ReconciliationProgress)
+def get_progress(
+    reconciliation_id: UUID,
+    service: Annotated[ReconciliationService, Depends(get_service)],
+) -> ReconciliationProgress:
+    try:
+        return service.get_progress(reconciliation_id)
+    except ReconciliationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{reconciliation_id}/abort", response_model=ReconciliationProgress)
+@router.post("/{reconciliation_id}/stages/{stage}/abort", response_model=ReconciliationProgress)
+def abort_reconciliation(
+    reconciliation_id: UUID,
+    service: Annotated[ReconciliationService, Depends(get_service)],
+    stage: str | None = None,
+) -> ReconciliationProgress:
+    try:
+        service.abort_reconciliation(reconciliation_id)
+        return service.get_progress(reconciliation_id)
+    except ReconciliationNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.post("/quick-reconcile", response_model=QuickReconcileResponse)
@@ -175,6 +236,7 @@ async def quick_reconcile(
     mapping_wf: Annotated[SchemaMappingWorkflow, Depends(get_mapping_workflow)],
     policy_wf: Annotated[PolicyWorkflow, Depends(get_policy_workflow)],
     near_wf: Annotated[NearMatchWorkflow, Depends(get_near_workflow)],
+    background_tasks: BackgroundTasks,
     instruction: Annotated[str | None, Form()] = None,
     profile_id: Annotated[UUID | None, Form()] = None,
     file_1_role: Annotated[DatasetRole | None, Form()] = None,
@@ -201,7 +263,12 @@ async def quick_reconcile(
         role1 = file_1_role
         role2 = file_2_role
         if not role1 or not role2:
-            detected = service.parser.detect_roles(t1, t2)
+            detected = service.parser.detect_roles(
+                t1,
+                t2,
+                file1_name=file_1.filename,
+                file2_name=file_2.filename,
+            )
             role1 = detected.file_1_role
             role2 = detected.file_2_role
     except ExcelParseError as exc:
@@ -219,14 +286,40 @@ async def quick_reconcile(
     await _save_and_register(reconciliation_id, role1, file_1, service)
     await _save_and_register(reconciliation_id, role2, file_2, service)
 
-    return service.quick_reconcile(
+    # Dispatch matching execution in background task if auto-advance can proceed
+    with _quick_lock:
+        already_running = reconciliation_id in _active_quick_reconciliations
+        if not already_running:
+            _active_quick_reconciliations.add(reconciliation_id)
+            background_tasks.add_task(
+                _run_quick_reconcile_background,
+                reconciliation_id,
+                service,
+                governance,
+                mapping_wf,
+                policy_wf,
+                near_wf,
+                instruction,
+                profile_id,
+            )
+
+    gov_count = session.government_file.profile.row_count if session.government_file and session.government_file.profile else 0
+    pr_count = session.purchase_register_file.profile.row_count if session.purchase_register_file and session.purchase_register_file.profile else 0
+
+    return QuickReconcileResponse(
         reconciliation_id=reconciliation_id,
-        instruction=instruction,
-        profile_id=profile_id,
-        governance_service=governance,
-        mapping_workflow=mapping_wf,
-        policy_workflow=policy_wf,
-        near_workflow=near_wf,
+        status="running",
+        current_stage="matching",
+        stage_statuses={
+            "setup": "completed",
+            "mapping": "in_progress",
+            "policy": "pending",
+            "matching": "in_progress",
+            "near": "pending",
+            "final-review": "pending",
+        },
+        government_records=gov_count,
+        purchase_register_records=pr_count,
     )
 
 
@@ -238,21 +331,48 @@ def quick_resume(
     mapping_wf: Annotated[SchemaMappingWorkflow, Depends(get_mapping_workflow)],
     policy_wf: Annotated[PolicyWorkflow, Depends(get_policy_workflow)],
     near_wf: Annotated[NearMatchWorkflow, Depends(get_near_workflow)],
+    background_tasks: BackgroundTasks,
     instruction: Annotated[str | None, Query()] = None,
     profile_id: Annotated[UUID | None, Query()] = None,
 ) -> QuickReconcileResponse:
     try:
-        return service.quick_reconcile(
+        session = service.get(reconciliation_id)
+        with _quick_lock:
+            already_running = reconciliation_id in _active_quick_reconciliations
+            if not already_running:
+                _active_quick_reconciliations.add(reconciliation_id)
+                background_tasks.add_task(
+                    _run_quick_reconcile_background,
+                    reconciliation_id,
+                    service,
+                    governance,
+                    mapping_wf,
+                    policy_wf,
+                    near_wf,
+                    instruction,
+                    profile_id,
+                )
+
+        gov_count = session.government_file.profile.row_count if session.government_file and session.government_file.profile else 0
+        pr_count = session.purchase_register_file.profile.row_count if session.purchase_register_file and session.purchase_register_file.profile else 0
+
+        return QuickReconcileResponse(
             reconciliation_id=reconciliation_id,
-            instruction=instruction,
-            profile_id=profile_id,
-            governance_service=governance,
-            mapping_workflow=mapping_wf,
-            policy_workflow=policy_wf,
-            near_workflow=near_wf,
+            status="running",
+            current_stage="matching",
+            stage_statuses={
+                "setup": "completed",
+                "mapping": "completed",
+                "policy": "completed",
+                "matching": "in_progress",
+                "near": "pending",
+                "final-review": "pending",
+            },
+            government_records=gov_count,
+            purchase_register_records=pr_count,
         )
     except ReconciliationNotFoundError as exc:
-        raise _not_found(exc) from exc
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 
