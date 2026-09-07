@@ -22,13 +22,27 @@ class OpenAIProvider(LLMProvider):
         return "openai"
 
     def invoke(self, messages: list[dict[str, str]], **kwargs: Any) -> str:
+        text, _ = self.invoke_with_result(messages, **kwargs)
+        return text
+
+    def invoke_with_result(
+        self, messages: list[dict[str, str]], **kwargs: Any
+    ) -> tuple[str, dict[str, int] | None]:
         try:
             response = self._client.responses.create(
                 model=self._model, input=messages, store=False, **kwargs
             )
-            return response.output_text or ""
+            usage = None
+            if getattr(response, "usage", None) is not None:
+                raw = response.usage.model_dump()
+                usage = {
+                    key: int(value) for key, value in raw.items()
+                    if isinstance(value, int) and ("token" in key or key.endswith("tokens"))
+                }
+            return response.output_text or "", usage
         except Exception as exc:  # vendor exceptions remain behind this adapter
             raise ProviderError("OpenAI invocation failed") from exc
+
 
     def invoke_structured(
         self,

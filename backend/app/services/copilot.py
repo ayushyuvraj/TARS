@@ -45,15 +45,44 @@ class CopilotService:
             ),
         )
 
-    @staticmethod
-    def _record_id(message: str, selected: str | None) -> str | None:
+    def _resolve_record_id(self, reconciliation_id: UUID, conversation_id: UUID | None, message: str, selected: str | None) -> str | None:
         match = re.search(r"\b(?:GST|PR)-\d{5}\b", message, re.IGNORECASE)
-        return match.group(0).upper() if match else selected
+        if match:
+            return match.group(0).upper()
+        row_match = re.search(r"\b(?:row\s*)?(\d{1,5})\b", message, re.IGNORECASE)
+        if row_match and "row" in message.lower():
+            return f"row {row_match.group(1)}"
+        if selected:
+            return selected
+        if conversation_id:
+            recent = self.reconciliation.repository.list_copilot_messages(reconciliation_id, conversation_id, limit=5)
+            for msg in reversed(recent):
+                if msg.selected_record_id:
+                    return msg.selected_record_id
+                m = re.search(r"\b(?:GST|PR)-\d{5}\b", msg.content, re.IGNORECASE)
+                if m:
+                    return m.group(0).upper()
+        return None
 
     @staticmethod
     def _currency(message: str) -> float | None:
         explicit = re.findall(r"(?:₹|INR\s*)([\d,]+(?:\.\d+)?)", message, re.IGNORECASE)
         return float(explicit[-1].replace(",", "")) if explicit else None
+
+    @staticmethod
+    def _is_out_of_domain(message: str) -> bool:
+        msg = message.lower().strip()
+        unrelated_patterns = [
+            r"\bpizza\b", r"\brecipe\b", r"\bcook(?:ing)?\b", r"\bingredients\b",
+            r"\bmovie\b", r"\bweather\b", r"\bsports?\b", r"\bfootball\b", r"\bcricket\b",
+            r"\bjoke\b", r"\bpoem\b", r"\bsong\b", r"\bstory\b",
+        ]
+        if any(re.search(pat, msg) for pat in unrelated_patterns):
+            if not any(k in msg for k in ["tars", "gst", "reconciliation", "invoice", "register"]):
+                return True
+        if re.search(r"\bwrite\b.*\bcode\b.*\bgame\b", msg) or re.search(r"\bpython\b.*\bgame\b", msg):
+            return True
+        return False
 
     def ask(self, reconciliation_id: UUID, request: CopilotRequest) -> CopilotResponse:
         conversation_id = request.conversation_id or uuid4()
@@ -67,11 +96,45 @@ class CopilotService:
             metadata={"conversation_id": str(conversation_id),
                       "selected_record_id": request.selected_record_id},
         ))
+
+        # Domain Boundary Check
+        if self._is_out_of_domain(request.message):
+            answer = ("I am TARS Copilot, a specialized assistant for TARS GST reconciliation, data analysis, rules, and workflow guidance. "
+                      "I am limited to TARS, GST reconciliation, loaded reconciliation data, rules, workflow, and product assistance.")
+            response = CopilotResponse(
+                conversation_id=conversation_id, answer=answer, evidence=[],
+                tool_calls=[], suggested_actions=[], requires_human_action=False,
+                provider="domain_blocked", model=None,
+            )
+            self.reconciliation.repository.save_copilot_message(CopilotMessage(
+                conversation_id=conversation_id, reconciliation_id=reconciliation_id,
+                role="assistant", content=response.answer,
+                selected_record_id=request.selected_record_id, response=response,
+            ))
+            return response
+
+        # AI Availability Check - Universal Copilot requires ready LLM provider
+        if self.provider is None:
+            answer = ("AI Copilot is currently unavailable because the configured LLM provider is not ready. "
+                      "Deterministic reconciliation results remain unaffected.")
+            response = CopilotResponse(
+                conversation_id=conversation_id, answer=answer, evidence=[],
+                tool_calls=[], suggested_actions=[], requires_human_action=False,
+                provider="unavailable", model=None,
+            )
+            self.reconciliation.repository.save_copilot_message(CopilotMessage(
+                conversation_id=conversation_id, reconciliation_id=reconciliation_id,
+                role="assistant", content=response.answer,
+                selected_record_id=request.selected_record_id, response=response,
+            ))
+            return response
+
         calls, evidence, actions = [], [], []
         message = request.message.lower()
-        record_id = self._record_id(request.message, request.selected_record_id)
+        record_id = self._resolve_record_id(reconciliation_id, conversation_id, request.message, request.selected_record_id)
+        
         try:
-            ai_intent = record_id and (
+            ai_intent = record_id and not record_id.startswith("row ") and (
                 "investigate" in message or
                 ("why" in message and "ambiguous" in message)
             )
@@ -152,7 +215,48 @@ class CopilotService:
                     }))
                     answer = (f"This session uses {profile.profile_name} v{profile.version}, with a saved mapping, "
                               f"policy revision {profile.saved_policy.revision}, and {len(profile.active_rule_ids)} active rules.")
-            elif ("candidate" in message or "ambiguous" in message) and record_id:
+            elif ("pattern" in message or "signature" in message or "trend" in message) and not record_id:
+                started = perf_counter()
+                patterns = self.tools.get_pattern_summary(reconciliation_id)
+                calls.append(self.tools.traced("get_pattern_summary", "Analyze exception population patterns", started, len(patterns)))
+                evidence.append(self.tools.evidence("pattern_summary", str(reconciliation_id), patterns))
+                answer = (f"Factual pattern summary across unresolved exceptions: "
+                          f"{patterns['status_counts']['material_mismatch']} material mismatches, {patterns['status_counts']['ambiguous']} ambiguous, {patterns['status_counts']['gst_only']} GST-only. "
+                          f"Taxable value variance breakdown: {patterns['taxable_variance_bands']['under_100']} under ₹100, "
+                          f"{patterns['taxable_variance_bands']['100_to_1000']} between ₹100–₹1,000, and {patterns['taxable_variance_bands']['over_1000']} over ₹1,000. "
+                          f"{patterns['document_format_signature_mismatches']} candidates show invoice formatting differences.")
+            elif ("largest" in message or "biggest" in message or "top" in message) and ("mismatch" in message or "variance" in message or "exception" in message):
+                started = perf_counter()
+                top_items = self.tools.get_top_mismatches(reconciliation_id, limit=5)
+                calls.append(self.tools.traced("get_top_mismatches", "Fetch top material mismatches by variance", started, len(top_items)))
+                evidence.append(self.tools.evidence("top_mismatches", str(reconciliation_id), {"top_mismatches": top_items}))
+                if not top_items:
+                    answer = "No material mismatches with candidate variance were found in the current reconciliation."
+                else:
+                    items_str = "; ".join(f"{item['record_id']} vs {item['candidate_id']} (variance: ₹{item['taxable_variance']:,.2f})" for item in top_items)
+                    answer = f"The largest material mismatches by taxable value variance are: {items_str}."
+            elif ("what is" in message or "how to" in message or "how does" in message or "how do i" in message) and any(term in message for term in ["near match", "tolerance", "gst only", "pr only", "exceptions", "export"]):
+                started = perf_counter()
+                help_data = self.tools.get_product_help(message, reconciliation_id)
+                calls.append(self.tools.traced("get_product_help", "Retrieve official TARS documentation context", started, 1))
+                evidence.append(self.tools.evidence("product_documentation", help_data["topic"], help_data))
+                answer = f"{help_data['topic']}: {help_data['summary']} {help_data['details']}"
+            elif record_id and (record_id.startswith("row ") or "row" in message):
+                started = perf_counter()
+                lookup_res = self.tools.lookup_record(reconciliation_id, record_id)
+                calls.append(self.tools.traced("lookup_record", f"Lookup record for {record_id}", started, 1))
+                evidence.append(self.tools.evidence("record_lookup", record_id, lookup_res))
+                if "error" in lookup_res:
+                    answer = lookup_res["error"]
+                else:
+                    st = lookup_res["status"]
+                    rec = lookup_res["record_id"]
+                    vals = lookup_res.get("values", {})
+                    sem = lookup_res.get("row_semantics", "")
+                    answer = (f"Record {rec} ({lookup_res['dataset']}) identified for '{record_id}' ({sem}) has status: {st}. "
+                              f"Document: {vals.get('document_number', 'N/A')}, Taxable Value: ₹{vals.get('taxable_value', 0):,.2f}. "
+                              f"{'It was matched as an ' + st if 'MATCHED' in st else 'It remains an unresolved exception: ' + st}.")
+            elif ("candidate" in message or "ambiguous" in message) and record_id and not record_id.startswith("row "):
                 started = perf_counter()
                 candidates = self.tools.get_ranked_candidates(reconciliation_id, record_id)
                 calls.append(self.tools.traced("get_ranked_candidates", "Retrieve actual ranked candidates", started, len(candidates)))
@@ -172,7 +276,7 @@ class CopilotService:
                 else:
                     answer = (f"The strongest candidate for {record_id} is {candidates[0].purchase_register_record_id} "
                               f"with a deterministic candidate score of {candidates[0].match_score * 100:.1f}%.")
-            elif ("would" in message or "increas" in message or "simulate" in message) and record_id:
+            elif ("would" in message or "increas" in message or "simulate" in message) and record_id and not record_id.startswith("row "):
                 amount = self._currency(request.message)
                 if amount is None:
                     answer = "I need a hypothetical taxable-value tolerance to run that simulation."
@@ -188,7 +292,7 @@ class CopilotService:
                               f"{'would satisfy the tested checks' if result.would_satisfy else 'would not resolve every blocker'}. "
                               + ("Remaining blockers: " + "; ".join(result.blockers) + ". " if result.blockers else "")
                               + "The confirmed policy was not changed.")
-            elif record_id and ("why" in message or "differ" in message or "variance" in message or "unresolved" in message):
+            elif record_id and not record_id.startswith("row ") and ("why" in message or "differ" in message or "variance" in message or "unresolved" in message):
                 started = perf_counter()
                 variance = self.tools.get_variance_analysis(reconciliation_id, record_id)
                 calls.append(self.tools.traced("get_variance_analysis", "Calculate deterministic exception evidence", started, 1))
@@ -220,15 +324,28 @@ class CopilotService:
                                                     {"total": results.total, "record_ids": [item.record_id for item in results.records]}))
                 answer = (f"{results.total} unresolved transactions currently carry the persisted prior-period adjustment classification."
                           if results.total else "No unresolved transactions have a persisted prior-period adjustment classification yet. Run semantic analysis first.")
+            elif ("exact" in message or "reconciled" in message or "unresolved" in message or "summary" in message or "percentage" in message or "how many" in message) and not record_id:
+                started = perf_counter()
+                summary = self.tools.get_reconciliation_summary(reconciliation_id)
+                breakdown = self.tools.get_exception_breakdown(reconciliation_id)
+                calls.append(self.tools.traced("get_reconciliation_summary", "Retrieve actual reconciliation totals", started, 10))
+                facts = summary.model_dump(mode="json")
+                facts["breakdown"] = breakdown.model_dump(mode="json")
+                evidence.append(self.tools.evidence("reconciliation_summary", str(reconciliation_id), facts))
+                reco_pct = (summary.resolved_records / summary.government_records * 100) if summary.government_records > 0 else 0
+                answer = (f"Reconciliation session status: {summary.status.value}. "
+                          f"Government population (Total: {summary.government_records}): {summary.resolved_records} resolved ({reco_pct:.1f}% reconciled) including {summary.exact_matches} exact matches and {summary.tolerance_matches} tolerance matches. "
+                          f"Remaining Government unresolved records: {summary.remaining_government_records} ({breakdown.ambiguous} ambiguous, {breakdown.material_mismatch} material mismatch, {breakdown.gst_only} GST-only). "
+                          f"Purchase Register population (Total: {summary.purchase_register_records}): {summary.resolved_records} consumed/resolved, {summary.remaining_purchase_register_records} remaining PR-only records.")
             else:
                 started = perf_counter()
                 breakdown = self.tools.get_exception_breakdown(reconciliation_id)
                 calls.append(self.tools.traced("get_exception_breakdown", "Retrieve actual unresolved counts", started, 4))
                 facts = breakdown.model_dump(mode="json")
                 evidence.append(self.tools.evidence("exception_breakdown", str(reconciliation_id), facts))
-                answer = (f"{breakdown.remaining_government} Government records remain unresolved: "
-                          f"{breakdown.ambiguous} ambiguous, {breakdown.material_mismatch} material mismatches, "
-                          f"and {breakdown.gst_only} GST-only. {breakdown.remaining_purchase_register} Purchase Register records remain, including {breakdown.pr_only} PR-only records.")
+                answer = (f"Government population unresolved: {breakdown.remaining_government} records ({breakdown.ambiguous} ambiguous, {breakdown.material_mismatch} material mismatches, {breakdown.gst_only} GST-only). "
+                          f"Purchase Register population unresolved: {breakdown.remaining_purchase_register} remaining PR-only records.")
+
             for call in calls:
                 self.reconciliation.repository.add_event(AgentEvent(
                     event_type="copilot.tool_called", reconciliation_id=reconciliation_id,
@@ -237,22 +354,26 @@ class CopilotService:
                                                              "purpose": call.purpose,
                                                              "duration_ms": call.duration_ms},
                 ))
+
             provider_name = "deterministic"
             if self.provider is not None and evidence:
                 try:
-                    grounded = self.provider.invoke([
-                        {"role": "system", "content": "Rewrite the draft clearly using only the supplied facts. Do not add numbers, IDs, conclusions, or actions."},
+                    grounded, usage = self.provider.invoke_with_result([
+                        {"role": "system", "content": "You are TARS Copilot. Rewrite the draft clearly using only the supplied facts. Explicitly separate Government population totals/unresolved from Purchase Register totals/unresolved. Do not invent numbers, IDs, conclusions, or actions."},
                         {"role": "user", "content": json.dumps({"draft": answer, "facts": [item.model_dump(mode="json") for item in evidence]}, default=str)},
                     ])
                     if grounded.strip():
                         answer, provider_name = grounded.strip(), self.provider.provider_name
                 except ProviderError:
-                    pass
+                    answer = ("AI Copilot is currently unavailable because the configured LLM provider failed to respond. "
+                              "Deterministic reconciliation results remain unaffected.")
+                    provider_name = "unavailable"
+
             response = CopilotResponse(
-                conversation_id=conversation_id, answer=answer, evidence=evidence,
-                tool_calls=calls, suggested_actions=actions,
-                requires_human_action=bool(actions), provider=provider_name,
-                model=self.model_name if provider_name != "deterministic" else None,
+                conversation_id=conversation_id, answer=answer, evidence=evidence if provider_name != "unavailable" else [],
+                tool_calls=calls if provider_name != "unavailable" else [], suggested_actions=actions if provider_name != "unavailable" else [],
+                requires_human_action=bool(actions) if provider_name != "unavailable" else False, provider=provider_name,
+                model=self.model_name if provider_name not in ("deterministic", "unavailable") else None,
             )
             self.reconciliation.repository.save_copilot_message(CopilotMessage(
                 conversation_id=conversation_id, reconciliation_id=reconciliation_id,
@@ -261,7 +382,7 @@ class CopilotService:
             ))
             self.reconciliation.repository.add_event(AgentEvent(
                 event_type="copilot.response_completed", reconciliation_id=reconciliation_id,
-                actor_type=ActorType.AGENT, component="copilot_orchestrator", result="grounded",
+                actor_type=ActorType.AGENT, component="copilot_orchestrator", result="grounded" if provider_name != "unavailable" else "unavailable",
                 output_count=len(evidence), model_provider=provider_name, model_name=response.model,
                 metadata={"conversation_id": str(conversation_id), "tool_count": len(calls)},
             ))
@@ -273,3 +394,6 @@ class CopilotService:
                 metadata={"conversation_id": str(conversation_id)},
             ))
             raise
+
+
+

@@ -31,3 +31,9 @@ class LLMProvider(ABC):
     @abstractmethod
     def healthcheck(self) -> bool: ...
 
+    def invoke_with_result(
+        self, messages: list[dict[str, str]], **kwargs: Any
+    ) -> tuple[str, dict[str, int] | None]:
+        return self.invoke(messages, **kwargs), None
+
+

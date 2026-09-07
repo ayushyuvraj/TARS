@@ -461,3 +461,209 @@ class ExceptionToolService:
     @staticmethod
     def evidence(reference_type: str, reference_id: str, facts: dict) -> CopilotEvidence:
         return CopilotEvidence(reference_type=reference_type, reference_id=reference_id, facts=facts)
+
+    def lookup_record(self, reconciliation_id: UUID, identifier: str) -> dict:
+        """Find record by row index, record_id, document number, or GSTIN with explicit row semantics."""
+        session = self._session(reconciliation_id)
+        clean_id = identifier.strip().upper()
+
+        # Try direct record_id lookup first (e.g. GST-00761, PR-00042)
+        try:
+            rec = self.get_record(reconciliation_id, clean_id, include_source_values=True)
+            return {
+                "record_id": rec.record_id,
+                "dataset": rec.source_dataset.value if hasattr(rec.source_dataset, "value") else str(rec.source_dataset),
+                "status": rec.status,
+                "values": rec.values,
+                "candidate_count": rec.candidate_count,
+                "row_semantics": f"Evaluated explicit record ID identifier '{rec.record_id}'.",
+                "best_candidate": rec.best_candidate.model_dump(mode="json") if rec.best_candidate else None,
+            }
+        except ExceptionToolError:
+            pass
+
+        # Try row index extraction e.g. "row 776" or "776"
+        import re
+        row_match = re.search(r"\b(?:row\s*)?(\d{1,5})\b", identifier, re.IGNORECASE)
+        target_row = int(row_match.group(1)) if row_match else None
+
+        mappings, government, purchase = self._data(session)
+        for role, df in [(DatasetRole.GOVERNMENT, government), (DatasetRole.PURCHASE_REGISTER, purchase)]:
+            mapping = mappings[role]
+            rec_col = mapping.get("record_id")
+            doc_col = mapping.get("document_number")
+            gstin_col = mapping.get("supplier_gstin")
+            
+            matched_row = None
+            row_semantics_desc = ""
+            if target_row is not None:
+                # 1-based index (header is row 1, data starts at 2)
+                for candidate_idx in (target_row - 2, target_row - 1, target_row):
+                    if 0 <= candidate_idx < len(df):
+                        matched_row = df.iloc[candidate_idx]
+                        rec_id_val = str(matched_row.get(rec_col, "")).strip()
+                        row_semantics_desc = f"Mapped physical row {target_row} to data row index {candidate_idx + 1} (Record ID: {rec_id_val})."
+                        break
+
+            if matched_row is None:
+                for idx, row in df.iterrows():
+                    r_id = str(row.get(rec_col, "")).strip().upper()
+                    d_num = str(row.get(doc_col, "")).strip().upper()
+                    g_id = str(row.get(gstin_col, "")).strip().upper()
+                    if clean_id in (r_id, d_num, g_id):
+                        matched_row = row
+                        rec_id_val = str(matched_row.get(rec_col, "")).strip()
+                        row_semantics_desc = f"Matched document/GSTIN query '{identifier}' to Record ID {rec_id_val} at data row index {idx + 1}."
+                        break
+
+            if matched_row is not None:
+                rec_id = str(matched_row.get(rec_col, "")).strip()
+                row_vals = self._row_values(matched_row, mapping)
+                
+                status = "RESOLVED"
+                match_info = None
+                exact = next((m for m in session.exact_match_results if m.government_record_id == rec_id or m.purchase_register_record_id == rec_id), None)
+                if exact:
+                    status = "EXACT_MATCHED"
+                    match_info = exact.model_dump(mode="json")
+                else:
+                    tol = next((m for m in session.tolerance_results if m.government_record_id == rec_id or m.purchase_register_record_id == rec_id), None)
+                    if tol:
+                        status = "TOLERANCE_MATCHED"
+                        match_info = tol.model_dump(mode="json")
+                    else:
+                        near = next((m for m in session.near_match_results if m.government_record_id == rec_id or m.purchase_register_record_id == rec_id), None)
+                        if near:
+                            status = "NEAR_MATCHED"
+                            match_info = near.model_dump(mode="json")
+                        else:
+                            try:
+                                exc_rec = self.get_record(reconciliation_id, rec_id, include_source_values=False)
+                                status = exc_rec.status
+                                match_info = {"best_candidate": exc_rec.best_candidate.model_dump(mode="json") if exc_rec.best_candidate else None}
+                            except ExceptionToolError:
+                                status = "UNRESOLVED"
+
+                return {
+                    "record_id": rec_id,
+                    "dataset": role.value,
+                    "status": status,
+                    "values": row_vals,
+                    "row_semantics": row_semantics_desc,
+                    "match_info": match_info,
+                }
+
+        return {"error": f"Record or row matching '{identifier}' was not found in active reconciliation data."}
+
+    def get_pattern_summary(self, reconciliation_id: UUID) -> dict:
+        """Calculate factual deterministic pattern summary across unresolved population."""
+        from collections import Counter
+        session = self._session(reconciliation_id)
+        analysis = session.near_match_analysis
+        
+        status_counts = {
+            "ambiguous": len(analysis.ambiguities),
+            "material_mismatch": len(analysis.material_mismatch_government_ids),
+            "gst_only": len(analysis.gst_only_government_ids),
+            "pr_only": len(analysis.pr_only_purchase_register_ids),
+        }
+        
+        variance_bands = {"under_100": 0, "100_to_1000": 0, "over_1000": 0}
+        doc_format_differences = 0
+        supplier_counts = Counter()
+        
+        for candidate in analysis.candidates:
+            var = abs(float(candidate.features.taxable_value_difference))
+            if var < 100:
+                variance_bands["under_100"] += 1
+            elif var <= 1000:
+                variance_bands["100_to_1000"] += 1
+            else:
+                variance_bands["over_1000"] += 1
+                
+            if 0.5 < float(candidate.features.document_number_similarity) < 1.0:
+                doc_format_differences += 1
+                
+            gstin = candidate.government_values.get("supplier_gstin") or candidate.purchase_register_values.get("supplier_gstin")
+            if gstin:
+                supplier_counts[str(gstin)] += 1
+
+        semantic_items = self.reconciliation.repository.list_semantic_classifications(reconciliation_id)
+        semantic_counts = Counter((item.final_category or item.proposed_category).value for item in semantic_items if item.review_status != "unclassified")
+        
+        return {
+            "status_counts": status_counts,
+            "top_exception_suppliers": dict(supplier_counts.most_common(5)),
+            "taxable_variance_bands": variance_bands,
+            "document_format_signature_mismatches": doc_format_differences,
+            "semantic_classifications": dict(semantic_counts),
+        }
+
+    def get_top_mismatches(self, reconciliation_id: UUID, limit: int = 10) -> list[dict]:
+        records = self.search_records(reconciliation_id, ExceptionSearchRequest(statuses=["MATERIAL_MISMATCH"], limit=limit * 2))
+        results = []
+        for rec in records.records:
+            if rec.best_candidate:
+                var = rec.best_candidate.features.taxable_value_difference
+                results.append({
+                    "record_id": rec.record_id,
+                    "candidate_id": rec.best_candidate.purchase_register_record_id,
+                    "match_score": float(rec.best_candidate.match_score),
+                    "taxable_variance": float(var),
+                    "document_number_govt": str(rec.values.get("document_number")),
+                    "document_number_pr": str(rec.best_candidate.purchase_register_values.get("document_number")),
+                })
+        results.sort(key=lambda x: -abs(x["taxable_variance"]))
+        return results[:limit]
+
+    def get_product_help(self, topic: str, reconciliation_id: UUID | None = None) -> dict:
+        topic_lower = topic.lower()
+        
+        # Read active policy context if session is provided
+        policy_info = ""
+        if reconciliation_id is not None:
+            try:
+                session = self.reconciliation.get(reconciliation_id)
+                if session.near_match_analysis:
+                    thresholds = session.near_match_analysis.thresholds
+                    policy_info = f" Active session configuration uses high-confidence threshold {thresholds.high_confidence_min_score * 100:.0f}% and ambiguity margin {thresholds.ambiguity_max_score_gap * 100:.0f}%."
+            except Exception:
+                pass
+
+        if "near" in topic_lower:
+            return {
+                "topic": "Near Match Engine",
+                "summary": "Near Match uses candidate generation with invoice number normalization, RapidFuzz similarity, and deterministic feature scoring.",
+                "details": f"High-confidence candidates matching active policy thresholds can be bulk approved; ambiguous candidates within ambiguity margin are isolated for human review.{policy_info}"
+            }
+        if "tolerance" in topic_lower:
+            return {
+                "topic": "Tolerance Match Engine",
+                "summary": "Tolerance Match applies user-configured policy thresholds to unmatched records.",
+                "details": f"Applies active policy rules (e.g. taxable value and document date tolerances). Includes reciprocal-uniqueness conflict handling to prevent double-matching.{policy_info}"
+            }
+        if "gst" in topic_lower and "pr" in topic_lower:
+            return {
+                "topic": "GST Only vs PR Only",
+                "summary": "GST Only records exist in GSTR-2B but missing in PR. PR Only records exist in PR but missing in GSTR-2B.",
+                "details": "GST Only usually indicates unrecorded vendor invoices. PR Only usually indicates vendor non-filing or wrong GSTIN."
+            }
+        if "exception" in topic_lower:
+            return {
+                "topic": "Exceptions Page",
+                "summary": "The Exceptions page isolates material mismatches, ambiguous candidates, GST-Only, and PR-Only records.",
+                "details": "Allows searching, candidate comparison, policy simulation, AI exception investigation, and semantic classification."
+            }
+        if "export" in topic_lower:
+            return {
+                "topic": "Exporting Results",
+                "summary": "Generates a 5-sheet versioned Excel workbook with formula-injection neutralization and SHA-256 checksum.",
+                "details": "Sheets: KIGS_Reconciliation, Summary, Unresolved_Exceptions, Configuration, Audit_Summary."
+            }
+        return {
+            "topic": "TARS GST Reconciliation Workbench",
+            "summary": "TARS is a human-in-the-loop GST reconciliation workbench pairing GSTR-2B data with client Purchase Registers.",
+            "details": "Workflow: Upload & Setup -> Mapping -> Policy -> Results -> Near Match -> Exceptions -> Audit -> Final Review & Export."
+        }
+
+
