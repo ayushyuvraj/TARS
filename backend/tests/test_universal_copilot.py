@@ -245,5 +245,75 @@ def test_dynamic_pr_numbers_in_product_help(copilot_service, frozen_reconciliati
     assert "candidates attached to open exception cases" not in help_data["details"]
 
 
+def test_global_copilot_product_question(copilot_service):
+    """Verify global copilot handles product questions without an active session."""
+    req = CopilotRequest(message="How do I begin?")
+    res = copilot_service.ask(None, req)
+    if res.provider != "unavailable":
+        assert any(k in res.answer for k in ["Quick Reconcile", "New Reconciliation", "reconciliation", "TARS"])
+        assert len(res.evidence) > 0
+        assert res.evidence[0].reference_type == "product_documentation"
+
+
+def test_global_copilot_concept_question(copilot_service):
+    """Verify global copilot answers concept questions without an active session."""
+    req = CopilotRequest(message="What is Near Match?")
+    res = copilot_service.ask(None, req)
+    if res.provider != "unavailable":
+        assert "Near Match" in res.answer
+        assert len(res.evidence) > 0
+        assert res.evidence[0].reference_type == "product_documentation"
+
+
+def test_global_copilot_data_question_requires_reconciliation(copilot_service):
+    """Verify global copilot asks user to select a session when asked data queries without a session."""
+    req = CopilotRequest(message="How many unresolved records are there?")
+    res = copilot_service.ask(None, req)
+    if res.provider != "unavailable":
+        assert "reconciliation" in res.answer.lower()
+        assert any(k in res.answer for k in ["select", "open", "start", "choose"])
+
+
+def test_global_copilot_transition_lifecycle(copilot_service, frozen_reconciliation_id):
+    """Verify context transition: Global Mode -> Session Mode -> Global Mode clears financial context."""
+    cid = uuid4()
+
+    # 1. Global Mode (No Session)
+    req1 = CopilotRequest(message="How many exact matches do I have?", conversation_id=cid)
+    res1 = copilot_service.ask(None, req1)
+    if res1.provider != "unavailable":
+        assert any(k in res1.answer for k in ["select", "open", "start", "choose", "reconciliation"])
+
+    # 2. Session Mode (Active Session)
+    req2 = CopilotRequest(message="How many exact matches do I have?", conversation_id=cid)
+    res2 = copilot_service.ask(frozen_reconciliation_id, req2)
+    if res2.provider != "unavailable":
+        assert any(e.reference_type == "reconciliation_summary" for e in res2.evidence)
+
+    # 3. Return to Global Mode (No Session)
+    req3 = CopilotRequest(message="How many exact matches now?", conversation_id=cid)
+    res3 = copilot_service.ask(None, req3)
+    if res3.provider != "unavailable":
+        assert any(k in res3.answer for k in ["select", "open", "start", "choose", "reconciliation"])
+        assert "5,200" not in res3.answer
+
+
+def test_global_copilot_page_aware_assistance(copilot_service):
+    """Verify page-aware guidance on /quick-reconcile."""
+    req = CopilotRequest(message="What files should I upload?", current_page="/quick-reconcile")
+    res = copilot_service.ask(None, req)
+    if res.provider != "unavailable":
+        assert any(k in res.answer.lower() for k in ["government", "gstr-2b", "purchase", "register", "excel", "file"])
+
+
+def test_global_copilot_domain_guard(copilot_service):
+    """Verify domain guard blocks non-TARS queries in global mode."""
+    req = CopilotRequest(message="Give me a pizza recipe.")
+    res = copilot_service.ask(None, req)
+    assert res.provider == "domain_blocked"
+    assert "TARS Copilot" in res.answer
+
+
+
 
 

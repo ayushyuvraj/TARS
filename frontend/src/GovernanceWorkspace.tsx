@@ -14,7 +14,7 @@ export function GovernanceWorkspace({
   onAuditChanged,
   initialView = "profiles",
 }: {
-  reconciliationId: string;
+  reconciliationId?: string | null;
   onAuditChanged: () => void;
   initialView?: View;
 }) {
@@ -35,19 +35,21 @@ export function GovernanceWorkspace({
   const load = async () => {
     const [savedProfiles, savedPatterns, savedRules] = await Promise.all([
       api.profiles(),
-      api.patterns(reconciliationId),
+      reconciliationId ? api.patterns(reconciliationId) : Promise.resolve([]),
       api.rules(),
     ]);
     setProfiles(savedProfiles);
     setPatterns(savedPatterns);
     setRules(savedRules);
-    const attached =
-      savedProfiles.find(
-        (item) => item.created_from_reconciliation_id === reconciliationId,
-      ) ??
-      savedProfiles[0] ??
-      null;
+    const attached = reconciliationId
+      ? (savedProfiles.find(
+          (item) => item.created_from_reconciliation_id === reconciliationId,
+        ) ?? savedProfiles[0] ?? null)
+      : (savedProfiles[0] ?? null);
     setProfile(attached);
+    if (savedRules.length && !selectedRule) {
+      setSelectedRule(savedRules[0]);
+    }
   };
   useEffect(() => {
     void load();

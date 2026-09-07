@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -105,8 +106,7 @@ class SQLiteReconciliationRepository:
                     reconciliation_id TEXT NOT NULL,
                     conversation_id TEXT NOT NULL,
                     created_at TEXT NOT NULL,
-                    payload_json TEXT NOT NULL,
-                    FOREIGN KEY (reconciliation_id) REFERENCES reconciliations(id)
+                    payload_json TEXT NOT NULL
                 );
                 CREATE INDEX IF NOT EXISTS idx_copilot_conversation
                     ON copilot_messages(reconciliation_id, conversation_id, created_at);
@@ -815,13 +815,19 @@ class SQLiteReconciliationRepository:
             ).fetchone()
         return [MatchConflict.model_validate(item) for item in json.loads(row["conflicts_json"] or "[]")] if row else []
 
-    def list_events(self, reconciliation_id: UUID, limit: int = 50) -> list[AgentEvent]:
+    def list_events(self, reconciliation_id: UUID | None = None, limit: int = 50) -> list[AgentEvent]:
         with closing(self._connect()) as connection:
-            rows = connection.execute(
-                """SELECT payload_json FROM audit_events
-                WHERE reconciliation_id = ? ORDER BY timestamp DESC LIMIT ?""",
-                (str(reconciliation_id), limit),
-            ).fetchall()
+            if reconciliation_id is None:
+                rows = connection.execute(
+                    "SELECT payload_json FROM audit_events ORDER BY timestamp DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = connection.execute(
+                    """SELECT payload_json FROM audit_events
+                    WHERE reconciliation_id = ? ORDER BY timestamp DESC LIMIT ?""",
+                    (str(reconciliation_id), limit),
+                ).fetchall()
         return [AgentEvent.model_validate_json(row["payload_json"]) for row in rows]
 
     def save_semantic_classification(self, classification: SemanticClassification) -> None:
@@ -844,6 +850,8 @@ class SQLiteReconciliationRepository:
         return [SemanticClassification.model_validate_json(row["payload_json"]) for row in rows]
 
     def save_copilot_message(self, message: CopilotMessage) -> None:
+        if message.reconciliation_id is None:
+            return
         with closing(self._connect()) as connection:
             connection.execute(
                 """INSERT INTO copilot_messages(id, reconciliation_id, conversation_id, created_at, payload_json)
@@ -854,8 +862,10 @@ class SQLiteReconciliationRepository:
             connection.commit()
 
     def list_copilot_messages(
-        self, reconciliation_id: UUID, conversation_id: UUID, limit: int = 40,
+        self, reconciliation_id: UUID | None, conversation_id: UUID, limit: int = 40,
     ) -> list[CopilotMessage]:
+        if reconciliation_id is None:
+            return []
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 """SELECT payload_json FROM copilot_messages WHERE reconciliation_id = ?

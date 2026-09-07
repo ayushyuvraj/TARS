@@ -33,6 +33,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   X,
+  Zap,
 } from "lucide-react";
 import {
   api,
@@ -62,6 +63,7 @@ import { CopilotPanel } from "./CopilotPanel";
 import { GovernanceWorkspace } from "./GovernanceWorkspace";
 import { AuditTimeline } from "./AuditTimeline";
 import { FinalReviewWorkspace } from "./FinalReviewWorkspace";
+import { QuickReconcile } from "./QuickReconcile";
 
 type BusyState =
   | "idle"
@@ -342,7 +344,7 @@ export default function App() {
     loc.pathname.match(/^\/reconciliations\/([^/]+)/)?.[1] ?? null;
   const [governmentFile, setGovernmentFile] = useState<File | null>(null),
     [purchaseFile, setPurchaseFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState<BusyState>("restoring"),
+  const [busy, setBusy] = useState<BusyState>("idle"),
     [sessionId, setSessionId] = useState<string | null>(
       routeId === "new" ? null : routeId,
     );
@@ -476,16 +478,17 @@ export default function App() {
           api.canonicalFields(),
           loadReconciliations(),
         ]);
+        if (!active) return;
         setCanonicalFields(fields);
-        const q = new URLSearchParams(loc.search).get("reconciliation"),
-          id = routeId === "new"
-            ? null
-            : routeId ?? q ?? localStorage.getItem(SESSION_KEY);
-        if (!id) return;
-        await hydrate(id, loc.pathname.endsWith("/exceptions"));
-        remember(id);
-        if (q && loc.pathname === "/")
-          nav(`/reconciliations/${id}/final-review`, { replace: true });
+        const q = new URLSearchParams(loc.search).get("reconciliation");
+        const targetId = routeId && routeId !== "new" ? routeId : q;
+        if (targetId) {
+          setBusy("restoring");
+          await hydrate(targetId, loc.pathname.endsWith("/exceptions"));
+          remember(targetId);
+          if (q && loc.pathname === "/")
+            nav(`/reconciliations/${targetId}/final-review`, { replace: true });
+        }
       } catch (r) {
         if (active)
           setError(
@@ -494,7 +497,7 @@ export default function App() {
               : "Saved session could not be restored.",
           );
       } finally {
-        if (active) setBusy("idle");
+        setBusy("idle");
       }
     })();
     return () => {
@@ -505,8 +508,7 @@ export default function App() {
     if (routeId === "new") {
       resetWorkspace();
       setBusy("idle");
-    }
-    if (routeId && routeId !== "new" && routeId !== sessionId) {
+    } else if (routeId && routeId !== sessionId) {
       setBusy("restoring");
       hydrate(routeId, loc.pathname.endsWith("/exceptions"))
         .then(() => remember(routeId))
@@ -516,11 +518,18 @@ export default function App() {
           ),
         )
         .finally(() => setBusy("idle"));
+    } else if (!routeId) {
+      setBusy("idle");
     }
     if (loc.pathname === "/reconciliations") {
       void loadReconciliations().catch((r) =>
         setError(r instanceof Error ? r.message : "Could not load reconciliations."),
       );
+    }
+    if (loc.pathname === "/audit") {
+      void api.auditEvents(sessionId ?? undefined)
+        .then(setEvents)
+        .catch(() => setEvents([]));
     }
     setNavOpen(false);
   }, [routeId, loc.pathname]);
@@ -1432,6 +1441,10 @@ export default function App() {
             <LayoutDashboard />
             <span>Overview</span>
           </NavLink>
+          <NavLink to="/quick-reconcile" data-tooltip="Quick Reconcile" title={sidebarCollapsed ? "Quick Reconcile" : undefined}>
+            <Zap />
+            <span>Quick Reconcile</span>
+          </NavLink>
           <NavLink to="/reconciliations" data-tooltip="Reconciliations" title={sidebarCollapsed ? "Reconciliations" : undefined}>
             <Scale />
             <span>Reconciliations</span>
@@ -1488,8 +1501,7 @@ export default function App() {
               onClick={() => setCopilotOpen(true)}
               aria-haspopup="dialog"
               aria-expanded={copilotOpen}
-              disabled={!sessionId || routeId === "new"}
-              title={!sessionId || routeId === "new" ? "Open a reconciliation to use Copilot" : undefined}
+              title="Open TARS Copilot"
             >
               <MessageSquareText size={17} />
               Copilot
@@ -1521,10 +1533,16 @@ export default function App() {
                     title="GST reconciliation, under control"
                     description="A clear view of current work and the governed configuration behind it."
                     actions={
-                      <button onClick={startNew}>
-                        <Plus size={17} />
-                        New reconciliation
-                      </button>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <button className="button-secondary" onClick={() => nav("/quick-reconcile")}>
+                          <Zap size={16} />
+                          Quick reconcile
+                        </button>
+                        <button onClick={startNew}>
+                          <Plus size={17} />
+                          New reconciliation
+                        </button>
+                      </div>
                     }
                   />
                   <div className="overview-grid">
@@ -1642,14 +1660,39 @@ export default function App() {
                     title="Reconciliations"
                     description="Resume active work or begin a new governed reconciliation."
                     actions={
-                      <button onClick={startNew}>
-                        <Plus size={17} />
-                        New reconciliation
-                      </button>
+                      <div style={{ display: "flex", gap: "0.5rem" }}>
+                        <button className="button-secondary" onClick={() => nav("/quick-reconcile")}>
+                          <Zap size={16} />
+                          Quick reconcile
+                        </button>
+                        <button onClick={startNew}>
+                          <Plus size={17} />
+                          New reconciliation
+                        </button>
+                      </div>
                     }
                   />
                   <section className="surface list-surface">
-                    {reconciliations.length ? (
+                    {error ? (
+                      <div className="inline-alert" role="alert" style={{ margin: "1.5rem" }}>
+                        <CircleAlert size={17} />
+                        <div style={{ flex: 1 }}>
+                          <strong>Could not load reconciliations</strong>
+                          <p style={{ margin: 0, fontSize: "0.85rem", opacity: 0.9 }}>{error}</p>
+                        </div>
+                        <button
+                          className="button-secondary"
+                          onClick={() => {
+                            setError(null);
+                            void loadReconciliations().catch((r) =>
+                              setError(r instanceof Error ? r.message : "Could not load reconciliations."),
+                            );
+                          }}
+                        >
+                          Retry
+                        </button>
+                      </div>
+                    ) : reconciliations.length ? (
                       <>
                         <div className="recon-list-header" aria-hidden="true">
                           <span>Client / reconciliation</span>
@@ -1703,6 +1746,25 @@ export default function App() {
             />
             <Route path="/reconciliations/new/setup" element={setup} />
             <Route
+              path="/quick-reconcile"
+              element={
+                <QuickReconcile
+                  onSessionCreated={(id, targetStage) => {
+                    setSessionId(id);
+                    void loadSession(id);
+                    void loadEvents(id);
+                    if (targetStage && targetStage !== "final-review") {
+                      nav(`/reconciliations/${id}/${targetStage}`);
+                    }
+                  }}
+                  onOpenCopilot={(id) => {
+                    setSessionId(id);
+                    setCopilotOpen(true);
+                  }}
+                />
+              }
+            />
+            <Route
               path="/reconciliations/:id/:stage"
               element={
                 <div className="reconciliation-layout">
@@ -1741,53 +1803,34 @@ export default function App() {
             <Route
               path="/client-profiles"
               element={
-                sessionId ? (
-                  <>
-                    <PageHeader
-                      eyebrow="Reusable configuration"
-                      title="Client Profiles"
-                      description="Reuse approved mappings and policies only after schema compatibility checks."
-                    />
-                    <GovernanceWorkspace
-                      reconciliationId={sessionId}
-                      onAuditChanged={() => void loadEvents(sessionId)}
-                    />
-                  </>
-                ) : (
-                  <EmptyState
-                    icon={<Building2 />}
-                    title="No profile context yet"
-                    body="Complete a reconciliation before saving reusable client configuration."
-                    action={
-                      <button onClick={startNew}>Start reconciliation</button>
-                    }
+                <>
+                  <PageHeader
+                    eyebrow="Reusable configuration"
+                    title="Client Profiles"
+                    description="Reuse approved mappings and policies only after schema compatibility checks."
                   />
-                )
+                  <GovernanceWorkspace
+                    reconciliationId={sessionId ?? undefined}
+                    onAuditChanged={() => void api.auditEvents(sessionId ?? undefined).then(setEvents)}
+                  />
+                </>
               }
             />
             <Route
               path="/rules"
               element={
-                sessionId ? (
-                  <>
-                    <PageHeader
-                      eyebrow="Governed automation"
-                      title="Rules"
-                      description="Turn repeated human decisions into versioned, simulated, explicitly activated rules."
-                    />
-                    <GovernanceWorkspace
-                      initialView="rules"
-                      reconciliationId={sessionId}
-                      onAuditChanged={() => void loadEvents(sessionId)}
-                    />
-                  </>
-                ) : (
-                  <EmptyState
-                    icon={<BookOpenCheck />}
-                    title="No rule evidence yet"
-                    body="Rules originate from repeated decisions in completed reconciliations."
+                <>
+                  <PageHeader
+                    eyebrow="Governed automation"
+                    title="Rules"
+                    description="Turn repeated human decisions into versioned, simulated, explicitly activated rules."
                   />
-                )
+                  <GovernanceWorkspace
+                    initialView="rules"
+                    reconciliationId={sessionId ?? undefined}
+                    onAuditChanged={() => void api.auditEvents(sessionId ?? undefined).then(setEvents)}
+                  />
+                </>
               }
             />
             <Route
@@ -1829,7 +1872,7 @@ export default function App() {
           </Routes>
         </main>
       </div>
-      {copilotOpen && sessionId && (
+      {copilotOpen && (
         <div className="copilot-drawer">
           <button
             className="drawer-backdrop"
@@ -1854,6 +1897,7 @@ export default function App() {
             <CopilotPanel
               reconciliationId={sessionId}
               selectedRecordId={selectedException}
+              currentPage={loc.pathname}
             />
           </div>
         </div>

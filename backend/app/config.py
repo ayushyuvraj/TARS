@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from functools import lru_cache
 from pathlib import Path
 
@@ -43,6 +44,16 @@ class Settings(BaseSettings):
     @property
     def effective_openai_model(self) -> str:
         return self.openai_model if self.openai_api_key else self.llm_model
+
+    def model_post_init(self, __context: Any) -> None:
+        if not self.database_path.is_absolute():
+            self.database_path = (PROJECT_ROOT / self.database_path).resolve()
+        if not self.upload_dir.is_absolute():
+            self.upload_dir = (PROJECT_ROOT / self.upload_dir).resolve()
+        if not self.export_dir.is_absolute():
+            self.export_dir = (PROJECT_ROOT / self.export_dir).resolve()
+        if not self.kigs_template_path.is_absolute():
+            self.kigs_template_path = (PROJECT_ROOT / self.kigs_template_path).resolve()
 
 
 @lru_cache

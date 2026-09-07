@@ -40,6 +40,10 @@ from app.domain.models import (
     NearMatchBulkSkipReason,
     NearMatchDecisionAction,
     NearMatchReconciliationSummary,
+    CompatibilityStatus,
+    QuickReconcileInterrupt,
+    QuickReconcileResponse,
+    RoleDetectionResult,
     utc_now,
 )
 from app.repositories.base import ReconciliationRepository
@@ -1167,3 +1171,168 @@ class ReconciliationService:
             records.extend(unresolved_records)
         return ReconciliationResults(summary=session.near_match_summary or session.tolerance_summary, records=records,
                                      conflicts=self.repository.list_conflicts(reconciliation_id))
+
+    def quick_reconcile(
+        self,
+        reconciliation_id: UUID,
+        instruction: str | None = None,
+        profile_id: UUID | None = None,
+        governance_service=None,
+        mapping_workflow=None,
+        policy_workflow=None,
+        near_workflow=None,
+    ) -> QuickReconcileResponse:
+        session = self.get(reconciliation_id)
+        if not session.government_file or not session.purchase_register_file:
+            return QuickReconcileResponse(
+                reconciliation_id=reconciliation_id,
+                status=SessionStatus.FILES_PENDING,
+                current_stage="setup",
+                error="Both Government GSTR-2B and Purchase Register files must be uploaded.",
+            )
+
+        gov_count = session.government_file.profile.row_count
+        pr_count = session.purchase_register_file.profile.row_count
+        profile_reused = False
+        profile_name = None
+
+        # 1. Profile / Mapping Reuse phase
+        if not session.confirmed_mapping:
+            matched_profile = None
+            if profile_id and governance_service:
+                try:
+                    comp = governance_service.compatibility(profile_id, reconciliation_id, apply_if_compatible=True)
+                    if comp.status == CompatibilityStatus.COMPATIBLE:
+                        matched_profile = governance_service.get_profile(profile_id)
+                except Exception:
+                    pass
+            elif governance_service:
+                try:
+                    profiles = governance_service.list_profiles()
+                    for p in profiles:
+                        comp = governance_service.compatibility(p.id, reconciliation_id, apply_if_compatible=True)
+                        if comp.status == CompatibilityStatus.COMPATIBLE:
+                            matched_profile = p
+                            break
+                except Exception:
+                    pass
+
+            if matched_profile:
+                profile_reused = True
+                profile_name = matched_profile.profile_name
+                session = self.get(reconciliation_id)
+            else:
+                # Propose mapping (deterministic + AI)
+                if mapping_workflow:
+                    try:
+                        mapping_workflow.start(reconciliation_id)
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        self.propose_schema_mapping(reconciliation_id)
+                    except Exception:
+                        pass
+
+                # PER USER MANDATORY CLARIFICATION:
+                # "A NEWLY inferred mapping, newly interpreted policy, or materially changed schema/policy
+                # must NOT become approved solely because confidence is high."
+                # Pause with Review Mapping interrupt!
+                return QuickReconcileResponse(
+                    reconciliation_id=reconciliation_id,
+                    status=SessionStatus.AWAITING_MAPPING_APPROVAL,
+                    current_stage="mapping",
+                    stage_statuses={
+                        "setup": "completed",
+                        "mapping": "in_progress",
+                        "policy": "pending",
+                        "matching": "pending",
+                        "near": "pending",
+                        "final-review": "pending",
+                    },
+                    government_records=gov_count,
+                    purchase_register_records=pr_count,
+                    interrupt=QuickReconcileInterrupt(
+                        interrupt_type="mapping",
+                        message="Schema mapping confirmation required for newly inferred workbook structure.",
+                        action_label="Review Mapping",
+                        action_stage="mapping",
+                    ),
+                )
+
+        # 2. Policy phase
+        if not session.confirmed_policy:
+            if policy_workflow:
+                try:
+                    policy_workflow.start(reconciliation_id, instruction)
+                except Exception:
+                    pass
+            else:
+                try:
+                    self.propose_policy(reconciliation_id, instruction)
+                except Exception:
+                    pass
+
+            # Pause with Review Policy interrupt for newly inferred/interpreted policy!
+            return QuickReconcileResponse(
+                reconciliation_id=reconciliation_id,
+                status=SessionStatus.AWAITING_POLICY_APPROVAL,
+                current_stage="policy",
+                stage_statuses={
+                    "setup": "completed",
+                    "mapping": "completed",
+                    "policy": "in_progress",
+                    "matching": "pending",
+                    "near": "pending",
+                    "final-review": "pending",
+                },
+                government_records=gov_count,
+                purchase_register_records=pr_count,
+                profile_reused=profile_reused,
+                profile_name=profile_name,
+                interrupt=QuickReconcileInterrupt(
+                    interrupt_type="policy",
+                    message="No approved policy is available for this client. Please review policy rules.",
+                    action_label="Review Policy",
+                    action_stage="policy",
+                ),
+            )
+
+        # 3. Deterministic Matching Pipeline
+        if session.summary is None:
+            self.run_exact_match(reconciliation_id)
+        if session.tolerance_summary is None:
+            self.run_tolerance_match(reconciliation_id)
+
+        if session.near_match_analysis is None:
+            if near_workflow:
+                near_workflow.start(reconciliation_id)
+            else:
+                self.analyze_near_matches(reconciliation_id)
+            if governance_service:
+                try:
+                    governance_service.execute_available_rules(reconciliation_id)
+                except Exception:
+                    pass
+
+        session = self.get(reconciliation_id)
+        return QuickReconcileResponse(
+            reconciliation_id=reconciliation_id,
+            status="completed",
+            current_stage="final-review",
+            stage_statuses={
+                "setup": "completed",
+                "mapping": "completed",
+                "policy": "completed",
+                "matching": "completed",
+                "near": "completed",
+                "final-review": "completed",
+            },
+            government_records=gov_count,
+            purchase_register_records=pr_count,
+            summary=session.summary,
+            near_summary=session.near_match_summary,
+            profile_reused=profile_reused,
+            profile_name=profile_name,
+        )
+

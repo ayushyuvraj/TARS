@@ -683,6 +683,37 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export type RoleDetectionResult = {
+  file_1_role: DatasetRole;
+  file_2_role: DatasetRole;
+  confidence: number;
+  is_confident: boolean;
+  reason: string;
+};
+
+export type QuickReconcileInterrupt = {
+  interrupt_type: "mapping" | "policy" | "role_confirmation";
+  message: string;
+  action_label: string;
+  action_stage: string;
+};
+
+export type QuickReconcileResponse = {
+  reconciliation_id: string;
+  status: string;
+  current_stage: string;
+  stage_statuses: Record<string, string>;
+  government_records: number;
+  purchase_register_records: number;
+  summary: ReconciliationSummary | null;
+  near_summary: NearMatchSummary | null;
+  exception_breakdown: any | null;
+  profile_reused: boolean;
+  profile_name: string | null;
+  interrupt: QuickReconcileInterrupt | null;
+  error: string | null;
+};
+
 export const api = {
   listReconciliations: () =>
     request<ReconciliationListItem[]>("/api/reconciliations"),
@@ -875,25 +906,33 @@ export const api = {
       },
     ),
   askCopilot: (
-    id: string,
+    id: string | null,
     message: string,
     conversationId?: string,
     selectedRecordId?: string,
     currentPage?: string,
+    conversationHistory?: Array<{ role: "user" | "assistant"; content: string }>,
   ) =>
-    request<CopilotResponse>(`/api/reconciliations/${id}/copilot/messages`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        message,
-        conversation_id: conversationId,
-        selected_record_id: selectedRecordId,
-        current_page: currentPage,
-      }),
-    }),
-  copilotConversation: (id: string, conversationId: string) =>
+    request<CopilotResponse>(
+      id ? `/api/reconciliations/${id}/copilot/messages` : "/api/reconciliations/copilot/messages",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          conversation_id: conversationId,
+          reconciliation_id: id ?? undefined,
+          selected_record_id: selectedRecordId,
+          current_page: currentPage,
+          conversation_history: conversationHistory ?? [],
+        }),
+      },
+    ),
+  copilotConversation: (id: string | null, conversationId: string) =>
     request<CopilotConversation>(
-      `/api/reconciliations/${id}/copilot/conversation?conversation_id=${conversationId}`,
+      id
+        ? `/api/reconciliations/${id}/copilot/conversation?conversation_id=${conversationId}`
+        : `/api/reconciliations/copilot/conversation?conversation_id=${conversationId}`,
     ),
   profiles: () => request<ClientProfile[]>("/api/client-profiles"),
   createProfile: (
@@ -976,10 +1015,60 @@ export const api = {
       `/api/reconciliations/${reconciliationId}/patterns/${patternId}/create-rule?profile_id=${profileId}`,
       { method: "POST" },
     ),
+
+  detectRoles: (file1: File, file2: File) => {
+    const formData = new FormData();
+    formData.append("file_1", file1);
+    formData.append("file_2", file2);
+    return request<RoleDetectionResult>("/api/reconciliations/detect-roles", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  quickReconcile: (
+    file1: File,
+    file2: File,
+    options?: {
+      instruction?: string;
+      profile_id?: string;
+      file_1_role?: DatasetRole;
+      file_2_role?: DatasetRole;
+    },
+  ) => {
+    const formData = new FormData();
+    formData.append("file_1", file1);
+    formData.append("file_2", file2);
+    if (options?.instruction) formData.append("instruction", options.instruction);
+    if (options?.profile_id) formData.append("profile_id", options.profile_id);
+    if (options?.file_1_role) formData.append("file_1_role", options.file_1_role);
+    if (options?.file_2_role) formData.append("file_2_role", options.file_2_role);
+    return request<QuickReconcileResponse>("/api/reconciliations/quick-reconcile", {
+      method: "POST",
+      body: formData,
+    });
+  },
+  quickResume: (
+    reconciliationId: string,
+    options?: { instruction?: string; profile_id?: string },
+  ) => {
+    const params = new URLSearchParams();
+    if (options?.instruction) params.append("instruction", options.instruction);
+    if (options?.profile_id) params.append("profile_id", options.profile_id);
+    const qs = params.toString();
+    return request<QuickReconcileResponse>(
+      `/api/reconciliations/${reconciliationId}/quick-resume${qs ? `?${qs}` : ""}`,
+      { method: "POST" },
+    );
+  },
   results: (id: string, status?: ResultStatus) =>
     request<ReconciliationResults>(
       `/api/reconciliations/${id}/results${status ? `?status=${status}` : ""}`,
     ),
-  auditEvents: (id: string) =>
-    request<AuditEvent[]>(`/api/reconciliations/${id}/audit-events?limit=200`),
+  auditEvents: (id?: string | null) =>
+    request<AuditEvent[]>(
+      id
+        ? `/api/reconciliations/${id}/audit-events?limit=200`
+        : "/api/reconciliations/audit-events?limit=200",
+    ),
 };
+

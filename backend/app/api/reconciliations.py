@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
 from app.domain.models import (
     AgentEvent,
@@ -48,6 +48,9 @@ from app.domain.models import (
     VarianceAnalysis,
     AIInvestigationAvailability,
     AIInvestigationRecord,
+    QuickReconcileInterrupt,
+    QuickReconcileResponse,
+    RoleDetectionResult,
 )
 from app.services.excel_parser import ExcelParseError
 from app.services.reconciliation import (
@@ -132,6 +135,125 @@ def list_reconciliations(
     service: Annotated[ReconciliationService, Depends(get_service)],
 ) -> list[ReconciliationListItem]:
     return service.list_sessions()
+
+
+@router.post("/detect-roles", response_model=RoleDetectionResult)
+async def detect_roles(
+    file_1: Annotated[UploadFile, File(...)],
+    file_2: Annotated[UploadFile, File(...)],
+    service: Annotated[ReconciliationService, Depends(get_service)],
+) -> RoleDetectionResult:
+    if not file_1.filename or not file_2.filename:
+        raise HTTPException(status_code=400, detail="Both files must have valid filenames")
+    temp_dir = service.settings.upload_dir / "temp-role-detection"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    temp_1 = temp_dir / f"temp1-{uuid4().hex}.xlsx"
+    temp_2 = temp_dir / f"temp2-{uuid4().hex}.xlsx"
+    try:
+        with temp_1.open("wb") as t1:
+            while chunk := await file_1.read(1024 * 1024):
+                t1.write(chunk)
+        with temp_2.open("wb") as t2:
+            while chunk := await file_2.read(1024 * 1024):
+                t2.write(chunk)
+        return service.parser.detect_roles(temp_1, temp_2)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not parse uploaded files for role detection: {exc}")
+    finally:
+        temp_1.unlink(missing_ok=True)
+        temp_2.unlink(missing_ok=True)
+        await file_1.close()
+        await file_2.close()
+
+
+@router.post("/quick-reconcile", response_model=QuickReconcileResponse)
+async def quick_reconcile(
+    file_1: Annotated[UploadFile, File(...)],
+    file_2: Annotated[UploadFile, File(...)],
+    service: Annotated[ReconciliationService, Depends(get_service)],
+    governance: Annotated[GovernanceService, Depends(get_governance_service)],
+    mapping_wf: Annotated[SchemaMappingWorkflow, Depends(get_mapping_workflow)],
+    policy_wf: Annotated[PolicyWorkflow, Depends(get_policy_workflow)],
+    near_wf: Annotated[NearMatchWorkflow, Depends(get_near_workflow)],
+    instruction: Annotated[str | None, Form()] = None,
+    profile_id: Annotated[UUID | None, Form()] = None,
+    file_1_role: Annotated[DatasetRole | None, Form()] = None,
+    file_2_role: Annotated[DatasetRole | None, Form()] = None,
+) -> QuickReconcileResponse:
+    if not file_1.filename or Path(file_1.filename).suffix.lower() != ".xlsx":
+        raise HTTPException(status_code=415, detail="Only .xlsx workbooks are supported (File 1 invalid)")
+    if not file_2.filename or Path(file_2.filename).suffix.lower() != ".xlsx":
+        raise HTTPException(status_code=415, detail="Only .xlsx workbooks are supported (File 2 invalid)")
+
+    # Pre-validate readability & determine roles BEFORE persisting session to prevent orphan sessions
+    temp_dir = service.settings.upload_dir / "pre-validation"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    t1 = temp_dir / f"val1-{uuid4().hex}.xlsx"
+    t2 = temp_dir / f"val2-{uuid4().hex}.xlsx"
+    try:
+        content1 = await file_1.read()
+        content2 = await file_2.read()
+        t1.write_bytes(content1)
+        t2.write_bytes(content2)
+        await file_1.seek(0)
+        await file_2.seek(0)
+
+        role1 = file_1_role
+        role2 = file_2_role
+        if not role1 or not role2:
+            detected = service.parser.detect_roles(t1, t2)
+            role1 = detected.file_1_role
+            role2 = detected.file_2_role
+    except ExcelParseError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Workbook validation failed: {exc}") from exc
+    finally:
+        t1.unlink(missing_ok=True)
+        t2.unlink(missing_ok=True)
+
+    # Session is created ONLY after workbooks pass pre-validation
+    session = service.create()
+    reconciliation_id = session.id
+
+    await _save_and_register(reconciliation_id, role1, file_1, service)
+    await _save_and_register(reconciliation_id, role2, file_2, service)
+
+    return service.quick_reconcile(
+        reconciliation_id=reconciliation_id,
+        instruction=instruction,
+        profile_id=profile_id,
+        governance_service=governance,
+        mapping_workflow=mapping_wf,
+        policy_workflow=policy_wf,
+        near_workflow=near_wf,
+    )
+
+
+@router.post("/{reconciliation_id}/quick-resume", response_model=QuickReconcileResponse)
+def quick_resume(
+    reconciliation_id: UUID,
+    service: Annotated[ReconciliationService, Depends(get_service)],
+    governance: Annotated[GovernanceService, Depends(get_governance_service)],
+    mapping_wf: Annotated[SchemaMappingWorkflow, Depends(get_mapping_workflow)],
+    policy_wf: Annotated[PolicyWorkflow, Depends(get_policy_workflow)],
+    near_wf: Annotated[NearMatchWorkflow, Depends(get_near_workflow)],
+    instruction: Annotated[str | None, Query()] = None,
+    profile_id: Annotated[UUID | None, Query()] = None,
+) -> QuickReconcileResponse:
+    try:
+        return service.quick_reconcile(
+            reconciliation_id=reconciliation_id,
+            instruction=instruction,
+            profile_id=profile_id,
+            governance_service=governance,
+            mapping_workflow=mapping_wf,
+            policy_workflow=policy_wf,
+            near_workflow=near_wf,
+        )
+    except ReconciliationNotFoundError as exc:
+        raise _not_found(exc) from exc
+
 
 
 async def _save_and_register(
@@ -304,6 +426,14 @@ def get_summary(
     if session.summary is None:
         raise HTTPException(status_code=409, detail="Exact reconciliation has not completed")
     return session.summary
+
+
+@router.get("/audit-events", response_model=list[AgentEvent])
+def get_global_audit_events(
+    service: Annotated[ReconciliationService, Depends(get_service)],
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> list[AgentEvent]:
+    return service.repository.list_events(None, limit)
 
 
 @router.get("/{reconciliation_id}/audit-events", response_model=list[AgentEvent])
@@ -663,6 +793,30 @@ def select_ambiguous_candidate(
         return tools.select_ambiguous_candidate(reconciliation_id, record_id, decision)
     except (ExceptionToolError, ReconciliationNotReadyError) as exc:
         raise HTTPException(status_code=409, detail={"code": "ambiguous_selection_invalid", "message": str(exc)}) from exc
+
+
+@router.post("/copilot/messages", response_model=CopilotResponse)
+def global_copilot_message(
+    request: CopilotRequest,
+    service: Annotated[CopilotService, Depends(get_copilot_service)],
+) -> CopilotResponse:
+    try:
+        return service.ask(request.reconciliation_id, request)
+    except (ExceptionToolError, ReconciliationNotReadyError) as exc:
+        raise HTTPException(status_code=409, detail={"code": "copilot_tool_error", "message": str(exc)}) from exc
+    except AIInvestigationUnavailable as exc:
+        raise HTTPException(status_code=503, detail={"code": "ai_investigation_unavailable", "message": str(exc)}) from exc
+    except ProviderError as exc:
+        raise HTTPException(status_code=502, detail={"code": "ai_provider_failure", "message": str(exc)}) from exc
+
+
+@router.get("/copilot/conversation", response_model=CopilotConversation)
+def global_copilot_conversation(
+    conversation_id: UUID,
+    service: Annotated[CopilotService, Depends(get_copilot_service)],
+    reconciliation_id: UUID | None = None,
+) -> CopilotConversation:
+    return service.conversation(reconciliation_id, conversation_id)
 
 
 @router.post("/{reconciliation_id}/copilot/messages", response_model=CopilotResponse)

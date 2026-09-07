@@ -775,11 +775,18 @@ class CopilotEvidence(BaseModel):
     facts: dict[str, Any]
 
 
+class CopilotTurn(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(max_length=4000)
+
+
 class CopilotRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     conversation_id: UUID | None = None
+    reconciliation_id: UUID | None = None
     selected_record_id: str | None = None
     current_page: str | None = None
+    conversation_history: list[CopilotTurn] = Field(default_factory=list)
 
 
 class CopilotResponse(BaseModel):
@@ -798,7 +805,7 @@ class CopilotResponse(BaseModel):
 class CopilotMessage(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     conversation_id: UUID
-    reconciliation_id: UUID
+    reconciliation_id: UUID | None = None
     role: Literal["user", "assistant"]
     content: str
     selected_record_id: str | None = None
@@ -808,7 +815,7 @@ class CopilotMessage(BaseModel):
 
 class CopilotConversation(BaseModel):
     conversation_id: UUID
-    reconciliation_id: UUID
+    reconciliation_id: UUID | None = None
     messages: list[CopilotMessage]
 
 
@@ -1181,3 +1188,35 @@ class HealthResponse(BaseModel):
     database: Literal["ok"] = "ok"
     provider: dict[str, Any] = Field(default_factory=dict)
     current_date: date = Field(default_factory=date.today)
+
+
+class RoleDetectionResult(BaseModel):
+    file_1_role: DatasetRole
+    file_2_role: DatasetRole
+    confidence: float = Field(ge=0.0, le=1.0)
+    is_confident: bool
+    reason: str
+
+
+class QuickReconcileInterrupt(BaseModel):
+    interrupt_type: Literal["mapping", "policy", "role_confirmation"]
+    message: str
+    action_label: str
+    action_stage: str
+
+
+class QuickReconcileResponse(BaseModel):
+    reconciliation_id: UUID
+    status: str
+    current_stage: str
+    stage_statuses: dict[str, str] = Field(default_factory=dict)
+    government_records: int = 0
+    purchase_register_records: int = 0
+    summary: ReconciliationSummary | None = None
+    near_summary: NearMatchReconciliationSummary | None = None
+    exception_breakdown: ExceptionBreakdown | None = None
+    profile_reused: bool = False
+    profile_name: str | None = None
+    interrupt: QuickReconcileInterrupt | None = None
+    error: str | None = None
+

@@ -8,7 +8,7 @@ import re
 import pandas as pd
 from openpyxl import load_workbook
 
-from app.domain.models import CanonicalDataType, ColumnProfile, DatasetProfile, DatasetRole
+from app.domain.models import CanonicalDataType, ColumnProfile, DatasetProfile, DatasetRole, RoleDetectionResult
 
 
 class ExcelParseError(ValueError):
@@ -24,7 +24,20 @@ class ParsedDataset:
 class ExcelParser:
     GSTIN_PATTERN = re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][0-9A-Z]Z[0-9A-Z]$")
 
-    def detect_header_row(self, path: Path, role: DatasetRole) -> tuple[str, int]:
+    GOV_MARKERS = {
+        "gstinofsupplier", "suppliergstin", "ctin", "tradelegalname", "legalname",
+        "gstr15filingdate", "gstr15filingperiod", "invoicetype", "placeofsupply",
+        "reversecharge", "integratedtax", "centraltax", "stateuttax", "taxablevalue",
+        "invoicevalue", "invoicenumber", "invoicedate", "itcavailability", "itc",
+    }
+    PR_MARKERS = {
+        "vendorcode", "vendorname", "partyname", "ponumber", "vouchernumber",
+        "voucherno", "postingdate", "billnumber", "billno", "purchaseaccount",
+        "businessunit", "costcenter", "ledgername", "internalref", "entrydate",
+        "documentno", "companycode", "purchaseorder",
+    }
+
+    def detect_header_row(self, path: Path, role: DatasetRole = DatasetRole.GOVERNMENT) -> tuple[str, int]:
         try:
             workbook = load_workbook(path, read_only=True, data_only=True)
         except Exception as exc:
@@ -45,6 +58,77 @@ class ExcelParser:
         finally:
             workbook.close()
         raise ExcelParseError("Could not locate a tabular header in the first 30 rows")
+
+    def _header_scores(self, path: Path) -> tuple[int, int]:
+        try:
+            sheet_name, header_row = self.detect_header_row(path)
+            frame = pd.read_excel(path, sheet_name=sheet_name, header=header_row - 1, nrows=5)
+            headers = [re.sub(r"[^a-z0-9]", "", str(c).lower()) for c in frame.columns]
+            fname = path.name.lower()
+            gov_score = sum(1 for h in headers if any(m in h for m in self.GOV_MARKERS))
+            pr_score = sum(1 for h in headers if any(m in h for m in self.PR_MARKERS))
+            if any(k in fname for k in ("2b", "gstr", "govt", "government")):
+                gov_score += 3
+            if any(k in fname for k in ("pr", "purchase", "register", "books")):
+                pr_score += 3
+            return gov_score, pr_score
+        except Exception:
+            return 0, 0
+
+    def detect_roles(self, file1_path: Path, file2_path: Path) -> RoleDetectionResult:
+        g1, p1 = self._header_scores(file1_path)
+        g2, p2 = self._header_scores(file2_path)
+        score1 = g1 - p1
+        score2 = g2 - p2
+
+        # Dual Government-like files
+        if (g1 > p1 and g2 > p2) or (g1 > 0 and g2 > 0 and p1 == 0 and p2 == 0):
+            return RoleDetectionResult(
+                file_1_role=DatasetRole.GOVERNMENT,
+                file_2_role=DatasetRole.PURCHASE_REGISTER,
+                confidence=0.50,
+                is_confident=False,
+                reason="Both files appear to be Government GSTR-2B workbooks. Please confirm file role assignment.",
+            )
+
+        # Dual Purchase Register-like files
+        if (p1 > g1 and p2 > g2) or (p1 > 0 and p2 > 0 and g1 == 0 and g2 == 0):
+            return RoleDetectionResult(
+                file_1_role=DatasetRole.GOVERNMENT,
+                file_2_role=DatasetRole.PURCHASE_REGISTER,
+                confidence=0.50,
+                is_confident=False,
+                reason="Both files appear to be Purchase Register workbooks. Please confirm file role assignment.",
+            )
+
+        if score1 > score2 and (g1 > 0 or p2 > 0):
+            conf = min(0.98, round(0.70 + (g1 + p2) * 0.05, 2))
+            return RoleDetectionResult(
+                file_1_role=DatasetRole.GOVERNMENT,
+                file_2_role=DatasetRole.PURCHASE_REGISTER,
+                confidence=conf,
+                is_confident=conf >= 0.80,
+                reason=f"File 1 identified as Government GSTR-2B (confidence {conf:.0%}).",
+            )
+        elif score2 > score1 and (g2 > 0 or p1 > 0):
+            conf = min(0.98, round(0.70 + (g2 + p1) * 0.05, 2))
+            return RoleDetectionResult(
+                file_1_role=DatasetRole.PURCHASE_REGISTER,
+                file_2_role=DatasetRole.GOVERNMENT,
+                confidence=conf,
+                is_confident=conf >= 0.80,
+                reason=f"File 2 identified as Government GSTR-2B (confidence {conf:.0%}).",
+            )
+        else:
+            return RoleDetectionResult(
+                file_1_role=DatasetRole.GOVERNMENT,
+                file_2_role=DatasetRole.PURCHASE_REGISTER,
+                confidence=0.50,
+                is_confident=False,
+                reason="File header semantics are ambiguous. Please confirm file role assignment.",
+            )
+
+
 
     @staticmethod
     def _stringify(value: object) -> str:

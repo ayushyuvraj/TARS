@@ -3,23 +3,36 @@
 ## Dynamic Session State
 
 - **Current Branch**: `antigravity-work`
-- **Current HEAD**: `antigravity-work` active HEAD (following intent routing fix commit)
+- **Current HEAD**: `antigravity-work` active HEAD (following runtime fixes & Global Copilot checkpoint)
 - **Last Known-Good Commit**: `5edd2247c93c88241a42a5d5c53620c1b163e776` (Baseline)
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Universal TARS Copilot Part 1 freeze & conversational intent routing fix.
-- **Completed Work**: 
-  - Universal Real TARS Copilot Part 1 implementation (`backend/app/services/copilot.py`, `backend/app/services/exception_tools.py`, `backend/app/providers/openai.py`).
-  - Grounded tools: `lookup_record`, `get_top_mismatches`, `get_pattern_summary`, `get_product_help`.
-  - Token usage extraction (`input_tokens`, `output_tokens`, `total_tokens`) in `OpenAIProvider`.
-  - Conversational intent routing regression = FIXED (`_is_independent_intent`, `_is_referential_followup`, clean intent context switching).
-  - 4 new regression tests (A, B, C, D) added in `backend/tests/test_universal_copilot.py`.
-  - Live 4-turn sequence verified against active 10k session `ac6257c5-7d4d-441a-9557-a162ba875636` (5,200 exact matches returned in Turn C).
-  - Universal Copilot Part 1 = COMPLETE / ACCEPTED / FROZEN.
-- **Tests**: 102 backend tests passed cleanly (`102 passed, 0 failed`).
-- **Provider & Model**: Real OpenAI Provider using `gpt-5.4-mini` (live API call verified with usage extraction).
-- **Authoritative Runtime DB Path**: `D:\Apps\My Experiments\10. TARS\data\gst_reconciliation.db` (53.8 MB; contains active 10k live session `ac6257c5-7d4d-441a-9557-a162ba875636`). Note: Relative path `Path("data/gst_reconciliation.db")` in `Settings` resolves to root `data/` when CWD is workspace root `D:\Apps\My Experiments\10. TARS`.
-- **Known Limitations**: `run_command` standard handle redirection is restricted by local Windows ACL on `NUL` device.
-- **Exact Next Action**: Task 2 — Quick Reconcile / zero-touch front door. Do NOT begin Task 2 until explicitly instructed.
+- **New Checkpoint Tag**: `tars-runtime-stable-before-quickreconcile-validation`
+- **Current Objective**: Checkpoint runtime stable state before Task 2 Quick Reconcile live end-to-end testing.
+- **Completed Work**:
+  - **Universal Copilot Part 1**: COMPLETE / ACCEPTED / FROZEN.
+  - **Global Copilot**:
+    - Operates globally across top-level pages (`/overview`, `/quick-reconcile`, `/reconciliations`, `/client-profiles`, `/rules`, `/audit`) without requiring an active reconciliation.
+    - Session-specific financial tools remain available ONLY when a reconciliation session is selected.
+    - Global conversation dialogue is managed on the frontend (`localStorage` + bounded `conversation_history` payload) and is NOT written into the reconciliation-scoped `copilot_messages` SQLite table.
+    - Strict Global -> Session -> Global financial context isolation preserved (Global mode never leaks historical session totals such as 5,200).
+  - **Client Profiles / Rules / Audit Restoration**:
+    - Unconditional rendering of `<GovernanceWorkspace>` on `/client-profiles` and `/rules` routes.
+    - Global audit events endpoint `GET /api/reconciliations/audit-events` added and wired to `/audit`.
+    - Preserved `R-001` with `PROPOSE_ONLY` authority and intact audit lineage.
+  - **Runtime & Startup Fixes**:
+    - Deterministic `PROJECT_ROOT` DB/path resolution in `backend/app/config.py`.
+    - Vite API proxy target set to `http://127.0.0.1:8000`.
+    - FastAPI parameter default ordering fixed in `backend/app/api/reconciliations.py`.
+    - Top-level `import logging` added in `sqlite.py`; automatic background table copying removed from startup.
+  - **Live 10k Session Intact**:
+    - Authoritative DB `D:\Apps\My Experiments\10. TARS\data\gst_reconciliation.db` (53.8 MB).
+    - Session `ac6257c5-7d4d-441a-9557-a162ba875636` intact (Govt = 10,000, PR = 10,500, Exact = 5,200).
+  - **Quick Reconcile Status**:
+    - Backend workflows and frontend UI implemented.
+    - Task 2 is NOT YET fully acceptance-frozen because the complete end-to-end upload/run flow still needs final live testing with synthetic 10k/10.5k files.
+- **Manual Startup Status**: `START_TARS.bat` confirmed to launch successfully and run without backend errors.
+- **Automated Validation Limitation**: Antigravity `run_command` tool is restricted by local Windows ACL on the `NUL` device.
+- **Exact Next Action**: Continue Task 2 live Quick Reconcile testing using the 10k/10.5k synthetic files.
 
 ---
 

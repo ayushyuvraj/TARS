@@ -35,9 +35,10 @@ class CopilotService:
         self.investigation = investigation
 
     def conversation(
-        self, reconciliation_id: UUID, conversation_id: UUID, limit: int = 40,
+        self, reconciliation_id: UUID | None, conversation_id: UUID, limit: int = 40,
     ) -> CopilotConversation:
-        self.reconciliation.get(reconciliation_id)
+        if reconciliation_id is not None:
+            self.reconciliation.get(reconciliation_id)
         return CopilotConversation(
             conversation_id=conversation_id, reconciliation_id=reconciliation_id,
             messages=self.reconciliation.repository.list_copilot_messages(
@@ -97,7 +98,7 @@ class CopilotService:
             return True
         return False
 
-    def _resolve_record_id(self, reconciliation_id: UUID, conversation_id: UUID | None, message: str, selected: str | None) -> str | None:
+    def _resolve_record_id(self, reconciliation_id: UUID | None, conversation_id: UUID | None, message: str, selected: str | None) -> str | None:
         match = re.search(r"\b(?:GST|PR)-\d{5}\b", message, re.IGNORECASE)
         if match:
             return match.group(0).upper()
@@ -144,29 +145,35 @@ class CopilotService:
             return True
         return False
 
-    def _get_dialogue_history(self, reconciliation_id: UUID, conversation_id: UUID, limit: int = 8) -> list[dict[str, Any]]:
-        recent = self.reconciliation.repository.list_copilot_messages(reconciliation_id, conversation_id, limit=limit)
-        history = []
-        for msg in recent:
-            item = {"role": msg.role, "content": msg.content}
-            if msg.role == "assistant" and msg.response and msg.response.evidence:
-                item["evidence_summary"] = [f"{e.reference_type}:{e.reference_id}" for e in msg.response.evidence[:3]]
-            history.append(item)
-        return history
+    def _get_dialogue_history(self, reconciliation_id: UUID | None, conversation_id: UUID, request: CopilotRequest | None = None, limit: int = 8) -> list[dict[str, Any]]:
+        if reconciliation_id is not None:
+            recent = self.reconciliation.repository.list_copilot_messages(reconciliation_id, conversation_id, limit=limit)
+            history = []
+            for msg in recent:
+                item = {"role": msg.role, "content": msg.content}
+                if msg.role == "assistant" and msg.response and msg.response.evidence:
+                    item["evidence_summary"] = [f"{e.reference_type}:{e.reference_id}" for e in msg.response.evidence[:3]]
+                history.append(item)
+            return history
 
-    def ask(self, reconciliation_id: UUID, request: CopilotRequest) -> CopilotResponse:
+        if request and request.conversation_history:
+            return [{"role": turn.role, "content": turn.content} for turn in request.conversation_history[-limit:]]
+        return []
+
+    def ask(self, reconciliation_id: UUID | None, request: CopilotRequest) -> CopilotResponse:
         conversation_id = request.conversation_id or uuid4()
         self.reconciliation.repository.save_copilot_message(CopilotMessage(
             conversation_id=conversation_id, reconciliation_id=reconciliation_id,
             role="user", content=request.message, selected_record_id=request.selected_record_id,
         ))
-        self.reconciliation.repository.add_event(AgentEvent(
-            event_type="copilot.request_received", reconciliation_id=reconciliation_id,
-            actor_type=ActorType.USER, component="copilot_orchestrator", result="received",
-            metadata={"conversation_id": str(conversation_id),
-                      "selected_record_id": request.selected_record_id,
-                      "current_page": request.current_page},
-        ))
+        if reconciliation_id is not None:
+            self.reconciliation.repository.add_event(AgentEvent(
+                event_type="copilot.request_received", reconciliation_id=reconciliation_id,
+                actor_type=ActorType.USER, component="copilot_orchestrator", result="received",
+                metadata={"conversation_id": str(conversation_id),
+                          "selected_record_id": request.selected_record_id,
+                          "current_page": request.current_page},
+            ))
 
         # Domain Boundary Check
         if self._is_out_of_domain(request.message):
@@ -201,7 +208,7 @@ class CopilotService:
             return response
 
         message_lower = request.message.lower().strip()
-        history = self._get_dialogue_history(reconciliation_id, conversation_id, limit=8)
+        history = self._get_dialogue_history(reconciliation_id, conversation_id, request, limit=8)
         calls, evidence, actions = [], [], []
 
         # Tool Decision Prompting & Intent Resolution
@@ -215,23 +222,23 @@ Current Context:
 - User Question: "{request.message}"
 - Selected Record ID: {request.selected_record_id or 'None'}
 - Current Page: {request.current_page or 'None'}
+- Active Reconciliation ID: {reconciliation_id or 'None (No reconciliation selected)'}
 
 Available Read-Only Tools:
-1. "get_product_help": Use for product questions, UI navigation ("where can I see audit", "how to start new reconciliation", "where are these records"), workflow questions ("how to use this app"), or explaining specific concepts like "PR Only", "2452 records", "Near Match", "Tolerance Match". Parameter: {{"topic": "<specific_topic>"}}
-2. "get_reconciliation_summary": Use ONLY when user explicitly asks for overall reconciliation totals, population breakdown, or exact match counts. Parameter: {{}}
-3. "get_exception_breakdown": Use ONLY when user explicitly asks for exception queue breakdown (Ambiguous, Material Mismatch, GST Only, PR Only counts). Parameter: {{}}
-4. "get_record": Use when user asks about a specific record ID (e.g. GST-00761). Parameter: {{"record_id": "<record_id>"}}
-5. "lookup_record": Use when user asks about a row index (e.g. row 776). Parameter: {{"record_id": "row 776"}}
-6. "get_variance_analysis": Use when user asks why a specific record is a mismatch or has variance. Parameter: {{"record_id": "<record_id>"}}
-7. "get_ranked_candidates": Use when user asks about candidate matches for a record or "what about its candidate?". Parameter: {{"record_id": "<record_id>"}}
-8. "search_records": Use when user asks to search or list records of a status (e.g. GST_ONLY, PR_ONLY). Parameter: {{"status": "<status>", "limit": 10}}
-9. "get_pattern_summary": Use when user asks for exception population patterns/trends. Parameter: {{}}
-10. "get_top_mismatches": Use when user asks for top/largest material mismatches. Parameter: {{"limit": 5}}
+1. "get_product_help": Use for product questions, UI navigation ("where can I see audit", "how to start new reconciliation", "where are these records"), workflow questions ("how to use this app"), or explaining specific concepts like "PR Only", "Near Match", "Tolerance Match". Parameter: {{"topic": "<specific_topic>"}}
+2. "get_reconciliation_summary": Use ONLY when a reconciliation is active AND user asks for overall reconciliation totals or exact match counts. Parameter: {{}}
+3. "get_exception_breakdown": Use ONLY when a reconciliation is active AND user asks for exception queue breakdown. Parameter: {{}}
+4. "get_record": Use ONLY when a reconciliation is active AND user asks about a specific record ID (e.g. GST-00761). Parameter: {{"record_id": "<record_id>"}}
+5. "lookup_record": Use ONLY when a reconciliation is active AND user asks about a row index. Parameter: {{"record_id": "row 776"}}
+6. "get_variance_analysis": Use ONLY when a reconciliation is active AND user asks why a specific record is a mismatch. Parameter: {{"record_id": "<record_id>"}}
+7. "get_ranked_candidates": Use ONLY when a reconciliation is active AND user asks about candidate matches. Parameter: {{"record_id": "<record_id>"}}
+8. "search_records": Use ONLY when a reconciliation is active AND user asks to search or list records. Parameter: {{"status": "<status>", "limit": 10}}
+9. "get_pattern_summary": Use ONLY when a reconciliation is active AND user asks for exception population patterns. Parameter: {{}}
+10. "get_top_mismatches": Use ONLY when a reconciliation is active AND user asks for top material mismatches. Parameter: {{"limit": 5}}
 
 Conversational Reference Resolution Rules:
-- If user mentions a number or phrase from prior turns (e.g. "these 2452 records", "those records"), resolve it to the concept discussed (e.g. PR Only records).
-- If user asks "what about its candidate?" or "why is it mismatched?", resolve the record ID from dialogue history or selected_record_id.
-- If user asks "why?" after a count query (e.g. "How many exact matches?"), set needs_clarification=True.
+- If Active Reconciliation ID is None, session data tools MUST NOT be called. Use "get_product_help".
+- If user mentions a number or phrase from prior turns (e.g. "these 2452 records"), resolve it to the concept discussed.
 
 Return ONLY a valid JSON object matching:
 {{
@@ -287,6 +294,13 @@ Return ONLY a valid JSON object matching:
                         help_data = self.tools.get_product_help(topic, reconciliation_id)
                         calls.append(self.tools.traced("get_product_help", purpose, started, 1))
                         evidence.append(self.tools.evidence("product_documentation", help_data["topic"], help_data))
+                    elif reconciliation_id is None:
+                        calls.append(self.tools.traced(name or "session_required", "Reconciliation selection required for session data tools", started, 0))
+                        evidence.append(self.tools.evidence("session_required", "none", {
+                            "message": "A reconciliation session must be selected to view data, records, or exception metrics.",
+                            "current_page": request.current_page or "/overview"
+                        }))
+                        actions = [SuggestedAction.NAVIGATE_TO_RECONCILIATIONS]
                     elif name == "get_reconciliation_summary":
                         summary = self.tools.get_reconciliation_summary(reconciliation_id)
                         breakdown = self.tools.get_exception_breakdown(reconciliation_id)
@@ -370,6 +384,10 @@ Return ONLY a valid JSON object matching:
 
 User's Question: "{request.message}"
 
+Current Application Context:
+- Active Reconciliation ID: {reconciliation_id or 'None (No reconciliation selected)'}
+- Current Page: {request.current_page or 'Overview'}
+
 Resolved Intent & Context:
 {json.dumps(decision_json.get('resolved_intent', request.message))}
 
@@ -378,10 +396,12 @@ Verified Tool Evidence / Facts (CURRENT_TURN_EVIDENCE):
 
 CRITICAL RESPONSE QUALITY & GROUNDING INVARIANTS:
 1. The FIRST sentence of your answer MUST DIRECTLY answer the user's current question.
-2. STRICT GROUNDING: Any factual statement (amounts, variances, scores, GSTINs, document numbers, dates, status, counts) MUST be derived strictly from the CURRENT_TURN_EVIDENCE above.
-3. Dialogue history may ONLY be used to resolve references (e.g. what 'it' or 'its candidate' refers to). Conversation text MUST NOT authorize financial evidence.
-4. Do NOT dump an entire reconciliation summary or exception breakdown unless specifically requested.
-5. Clean plain text or standard Markdown formatting only. NEVER output escaped syntax (no \\*\\*, no \\-, no &#x20;)."""
+2. NO-SESSION INVARIANT: If no reconciliation is selected (Active Reconciliation ID is None) and the user is asking about specific reconciliation counts, exact matches, records, or exceptions:
+   - Do NOT fabricate or hallucinate numbers or data.
+   - Do NOT assume a historical reconciliation is active.
+   - Clearly state: "I can answer that once a reconciliation is selected. Open an existing reconciliation or start a new one."
+3. STRICT GROUNDING: Any factual statement (amounts, variances, scores, GSTINs, document numbers, dates, status, counts) MUST be derived strictly from the CURRENT_TURN_EVIDENCE above.
+4. Clean plain text or standard Markdown formatting only. NEVER output escaped syntax (no \\*\\*, no \\-, no &#x20;)."""
 
             raw_answer, usage = self.provider.invoke_with_result([
                 {"role": "system", "content": "You are TARS Copilot. Write a direct, clear, grounded response matching the specified invariants strictly."},
@@ -392,14 +412,15 @@ CRITICAL RESPONSE QUALITY & GROUNDING INVARIANTS:
             if not answer:
                 answer = "I have processed your request using TARS verified data tools."
 
-            for call in calls:
-                self.reconciliation.repository.add_event(AgentEvent(
-                    event_type="copilot.tool_called", reconciliation_id=reconciliation_id,
-                    actor_type=ActorType.AGENT, component="copilot_orchestrator", result=call.status,
-                    output_count=call.result_count, metadata={"tool_name": call.tool_name,
-                                                             "purpose": call.purpose,
-                                                             "duration_ms": call.duration_ms},
-                ))
+            if reconciliation_id is not None:
+                for call in calls:
+                    self.reconciliation.repository.add_event(AgentEvent(
+                        event_type="copilot.tool_called", reconciliation_id=reconciliation_id,
+                        actor_type=ActorType.AGENT, component="copilot_orchestrator", result=call.status,
+                        output_count=call.result_count, metadata={"tool_name": call.tool_name,
+                                                                 "purpose": call.purpose,
+                                                                 "duration_ms": call.duration_ms},
+                    ))
 
             response = CopilotResponse(
                 conversation_id=conversation_id, answer=answer, evidence=evidence,
@@ -412,20 +433,22 @@ CRITICAL RESPONSE QUALITY & GROUNDING INVARIANTS:
                 role="assistant", content=response.answer,
                 selected_record_id=request.selected_record_id, response=response,
             ))
-            self.reconciliation.repository.add_event(AgentEvent(
-                event_type="copilot.response_completed", reconciliation_id=reconciliation_id,
-                actor_type=ActorType.AGENT, component="copilot_orchestrator", result="grounded",
-                output_count=len(evidence), model_provider=response.provider, model_name=response.model,
-                metadata={"conversation_id": str(conversation_id), "tool_count": len(calls)},
-            ))
+            if reconciliation_id is not None:
+                self.reconciliation.repository.add_event(AgentEvent(
+                    event_type="copilot.response_completed", reconciliation_id=reconciliation_id,
+                    actor_type=ActorType.AGENT, component="copilot_orchestrator", result="grounded",
+                    output_count=len(evidence), model_provider=response.provider, model_name=response.model,
+                    metadata={"conversation_id": str(conversation_id), "tool_count": len(calls)},
+                ))
             return response
 
         except Exception:
-            self.reconciliation.repository.add_event(AgentEvent(
-                event_type="copilot.failed", reconciliation_id=reconciliation_id,
-                actor_type=ActorType.AGENT, component="copilot_orchestrator", result="failed",
-                metadata={"conversation_id": str(conversation_id)},
-            ))
+            if reconciliation_id is not None:
+                self.reconciliation.repository.add_event(AgentEvent(
+                    event_type="copilot.failed", reconciliation_id=reconciliation_id,
+                    actor_type=ActorType.AGENT, component="copilot_orchestrator", result="failed",
+                    metadata={"conversation_id": str(conversation_id)},
+                ))
             raise
 
 
