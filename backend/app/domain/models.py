@@ -779,6 +779,7 @@ class CopilotRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     conversation_id: UUID | None = None
     selected_record_id: str | None = None
+    current_page: str | None = None
 
 
 class CopilotResponse(BaseModel):

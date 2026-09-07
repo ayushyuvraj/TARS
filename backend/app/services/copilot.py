@@ -117,9 +117,17 @@ class CopilotService:
         return None
 
     @staticmethod
-    def _currency(message: str) -> float | None:
-        explicit = re.findall(r"(?:₹|INR\s*)([\d,]+(?:\.\d+)?)", message, re.IGNORECASE)
-        return float(explicit[-1].replace(",", "")) if explicit else None
+    def _clean_formatting(text: str) -> str:
+        if not text:
+            return text
+        return (
+            text.replace(r"\*\*", "**")
+            .replace(r"\-", "-")
+            .replace("&#x20;", " ")
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+        )
 
     @staticmethod
     def _is_out_of_domain(message: str) -> bool:
@@ -136,6 +144,16 @@ class CopilotService:
             return True
         return False
 
+    def _get_dialogue_history(self, reconciliation_id: UUID, conversation_id: UUID, limit: int = 8) -> list[dict[str, Any]]:
+        recent = self.reconciliation.repository.list_copilot_messages(reconciliation_id, conversation_id, limit=limit)
+        history = []
+        for msg in recent:
+            item = {"role": msg.role, "content": msg.content}
+            if msg.role == "assistant" and msg.response and msg.response.evidence:
+                item["evidence_summary"] = [f"{e.reference_type}:{e.reference_id}" for e in msg.response.evidence[:3]]
+            history.append(item)
+        return history
+
     def ask(self, reconciliation_id: UUID, request: CopilotRequest) -> CopilotResponse:
         conversation_id = request.conversation_id or uuid4()
         self.reconciliation.repository.save_copilot_message(CopilotMessage(
@@ -146,7 +164,8 @@ class CopilotService:
             event_type="copilot.request_received", reconciliation_id=reconciliation_id,
             actor_type=ActorType.USER, component="copilot_orchestrator", result="received",
             metadata={"conversation_id": str(conversation_id),
-                      "selected_record_id": request.selected_record_id},
+                      "selected_record_id": request.selected_record_id,
+                      "current_page": request.current_page},
         ))
 
         # Domain Boundary Check
@@ -165,7 +184,7 @@ class CopilotService:
             ))
             return response
 
-        # AI Availability Check - Universal Copilot requires ready LLM provider
+        # AI Availability Check
         if self.provider is None:
             answer = ("AI Copilot is currently unavailable because the configured LLM provider is not ready. "
                       "Deterministic reconciliation results remain unaffected.")
@@ -181,257 +200,197 @@ class CopilotService:
             ))
             return response
 
+        message_lower = request.message.lower().strip()
+        history = self._get_dialogue_history(reconciliation_id, conversation_id, limit=8)
         calls, evidence, actions = [], [], []
-        message = request.message.lower()
-        record_id = self._resolve_record_id(reconciliation_id, conversation_id, request.message, request.selected_record_id)
-        
+
+        # Tool Decision Prompting & Intent Resolution
+        tool_decision_prompt = f"""You are the Tool Orchestrator for TARS Copilot.
+Your job is to inspect the user's message and recent dialogue history, resolve any conversational references, and decide which read-only TARS tools (up to 4) to run.
+
+Recent Dialogue History:
+{json.dumps(history[:-1], default=str)}
+
+Current Context:
+- User Question: "{request.message}"
+- Selected Record ID: {request.selected_record_id or 'None'}
+- Current Page: {request.current_page or 'None'}
+
+Available Read-Only Tools:
+1. "get_product_help": Use for product questions, UI navigation ("where can I see audit", "how to start new reconciliation", "where are these records"), workflow questions ("how to use this app"), or explaining specific concepts like "PR Only", "2452 records", "Near Match", "Tolerance Match". Parameter: {{"topic": "<specific_topic>"}}
+2. "get_reconciliation_summary": Use ONLY when user explicitly asks for overall reconciliation totals, population breakdown, or exact match counts. Parameter: {{}}
+3. "get_exception_breakdown": Use ONLY when user explicitly asks for exception queue breakdown (Ambiguous, Material Mismatch, GST Only, PR Only counts). Parameter: {{}}
+4. "get_record": Use when user asks about a specific record ID (e.g. GST-00761). Parameter: {{"record_id": "<record_id>"}}
+5. "lookup_record": Use when user asks about a row index (e.g. row 776). Parameter: {{"record_id": "row 776"}}
+6. "get_variance_analysis": Use when user asks why a specific record is a mismatch or has variance. Parameter: {{"record_id": "<record_id>"}}
+7. "get_ranked_candidates": Use when user asks about candidate matches for a record or "what about its candidate?". Parameter: {{"record_id": "<record_id>"}}
+8. "search_records": Use when user asks to search or list records of a status (e.g. GST_ONLY, PR_ONLY). Parameter: {{"status": "<status>", "limit": 10}}
+9. "get_pattern_summary": Use when user asks for exception population patterns/trends. Parameter: {{}}
+10. "get_top_mismatches": Use when user asks for top/largest material mismatches. Parameter: {{"limit": 5}}
+
+Conversational Reference Resolution Rules:
+- If user mentions a number or phrase from prior turns (e.g. "these 2452 records", "those records"), resolve it to the concept discussed (e.g. PR Only records).
+- If user asks "what about its candidate?" or "why is it mismatched?", resolve the record ID from dialogue history or selected_record_id.
+- If user asks "why?" after a count query (e.g. "How many exact matches?"), set needs_clarification=True.
+
+Return ONLY a valid JSON object matching:
+{{
+  "resolved_intent": "<brief summary of question and resolved references>",
+  "needs_clarification": false,
+  "clarification_prompt": null,
+  "tools": [
+    {{"tool_name": "<name>", "arguments": {{...}}, "purpose": "<brief purpose>"}}
+  ]
+}}"""
+
         try:
-            ai_intent = record_id and not record_id.startswith("row ") and (
-                "investigate" in message or
-                ("why" in message and "ambiguous" in message)
-            )
-            rule_match = re.search(r"\bR-\d{3}\b", request.message, re.IGNORECASE)
-            provenance_rule = None
-            if ai_intent and self.investigation:
-                investigation = self.investigation.investigate(reconciliation_id, record_id)
-                conclusion = investigation.conclusion
-                if conclusion is None:
-                    raise RuntimeError("AI investigation did not return a validated conclusion")
-                answer = conclusion.conclusion_summary + " " + " ".join(conclusion.reasoning_summary)
-                evidence = [self.tools.evidence(
-                    "ai_investigation_evidence", item.reference_id,
-                    {"tool_name": item.tool_name, "fact_paths": item.fact_paths},
-                ) for item in conclusion.evidence]
-                calls = [self.tools.traced(step.name, "AI investigation evidence tool", perf_counter(), 1)
-                         for step in investigation.execution_trace if step.stage == "tool"]
-                actions = [SuggestedAction.REVIEW]
-            elif self.governance and "rule" in message and ("why" in message or "exist" in message):
-                if rule_match:
-                    provenance_rule = self.governance.get_rule(rule_match.group(0).upper())
-                else:
-                    profile_id = self.reconciliation.get(reconciliation_id).client_profile_id
-                    provenance_rule = next(
-                        (item for item in self.governance.list_rules(profile_id)
-                         if item.name.lower() in message or len({
-                             word for word in re.findall(r"[a-z0-9]+", item.name.lower())
-                             if len(word) > 3 and word in message
-                         }) >= 2), None,
-                    )
-            if self.governance and "rule" in message and ("active" in message or "never triggered" in message or "human decision" in message):
-                started = perf_counter()
-                profile_id = self.reconciliation.get(reconciliation_id).client_profile_id
-                rules = self.governance.list_rules(profile_id)
-                if "active" in message:
-                    rules = [item for item in rules if item.status.value == "ACTIVE"]
-                if "never triggered" in message:
-                    rules = [item for item in rules if item.effectiveness.times_triggered == 0]
-                if "human decision" in message:
-                    rules = [item for item in rules if item.provenance.type.value == "HUMAN_DECISION_PATTERN"]
-                calls.append(self.tools.traced("list_rules", "Retrieve governed profile rules", started, len(rules)))
-                evidence.append(self.tools.evidence("rule_library", str(profile_id or reconciliation_id),
-                                {"rules": [{"rule_id": r.rule_id, "version": r.version, "name": r.name,
-                                            "status": r.status.value, "action_authority": r.action_authority,
-                                            "times_triggered": r.effectiveness.times_triggered}
-                                           for r in rules]}))
-                answer = ("No governed rules match that request." if not rules else
-                          "Governed rules: " + "; ".join(
-                              f"{r.rule_id} v{r.version} — {r.name} ({r.status.value}, {r.action_authority})"
-                              for r in rules
-                          ) + ". PROPOSE_ONLY rules cannot reconcile transactions automatically.")
-            elif provenance_rule is not None:
-                started = perf_counter(); rule = provenance_rule
-                calls.append(self.tools.traced("get_rule_provenance", "Retrieve persisted rule provenance", started, 1))
-                facts = rule.provenance.model_dump(mode="json")
-                facts["action_authority"] = rule.action_authority
-                evidence.append(self.tools.evidence("rule_provenance", rule.rule_id, facts))
-                answer = (f"{rule.rule_id} v{rule.version} exists because {rule.provenance.summary} "
-                          f"It is currently {rule.status.value} with {rule.action_authority} authority, "
-                          "so it cannot reconcile transactions automatically.")
-            elif self.governance and rule_match and ("simulate" in message or "disabl" in message or "affect" in message):
-                started = perf_counter(); simulation = self.governance.simulate(rule_match.group(0).upper(), reconciliation_id)
-                calls.append(self.tools.traced("simulate_rule", "Run read-only governed rule simulation", started, 1))
-                evidence.append(self.tools.evidence("rule_simulation", simulation.rule_id, simulation.model_dump(mode="json")))
-                answer = (f"A read-only simulation of {simulation.rule_id} v{simulation.rule_version} would propose "
-                          f"{simulation.would_propose} records, with {simulation.conflicts} known conflicts. No rule state was changed.")
-            elif self.governance and "profile" in message:
-                started = perf_counter(); profile_id = self.reconciliation.get(reconciliation_id).client_profile_id
-                if not profile_id:
-                    answer = "This reconciliation is not attached to a client profile."
-                else:
-                    profile = self.governance.get_profile(profile_id)
-                    calls.append(self.tools.traced("get_client_profile", "Retrieve saved profile assets", started, 1))
-                    evidence.append(self.tools.evidence("client_profile", str(profile.id), {
-                        "profile_name": profile.profile_name, "version": profile.version,
-                        "mapping_datasets": len(profile.saved_mapping.datasets),
-                        "policy_revision": profile.saved_policy.revision, "active_rule_ids": profile.active_rule_ids,
-                    }))
-                    answer = (f"This session uses {profile.profile_name} v{profile.version}, with a saved mapping, "
-                              f"policy revision {profile.saved_policy.revision}, and {len(profile.active_rule_ids)} active rules.")
-            elif ("pattern" in message or "signature" in message or "trend" in message) and not record_id:
-                started = perf_counter()
-                patterns = self.tools.get_pattern_summary(reconciliation_id)
-                calls.append(self.tools.traced("get_pattern_summary", "Analyze exception population patterns", started, len(patterns)))
-                evidence.append(self.tools.evidence("pattern_summary", str(reconciliation_id), patterns))
-                answer = (f"Factual pattern summary across unresolved exceptions: "
-                          f"{patterns['status_counts']['material_mismatch']} material mismatches, {patterns['status_counts']['ambiguous']} ambiguous, {patterns['status_counts']['gst_only']} GST-only. "
-                          f"Taxable value variance breakdown: {patterns['taxable_variance_bands']['under_100']} under ₹100, "
-                          f"{patterns['taxable_variance_bands']['100_to_1000']} between ₹100–₹1,000, and {patterns['taxable_variance_bands']['over_1000']} over ₹1,000. "
-                          f"{patterns['document_format_signature_mismatches']} candidates show invoice formatting differences.")
-            elif ("largest" in message or "biggest" in message or "top" in message) and ("mismatch" in message or "variance" in message or "exception" in message):
-                started = perf_counter()
-                top_items = self.tools.get_top_mismatches(reconciliation_id, limit=5)
-                calls.append(self.tools.traced("get_top_mismatches", "Fetch top material mismatches by variance", started, len(top_items)))
-                evidence.append(self.tools.evidence("top_mismatches", str(reconciliation_id), {"top_mismatches": top_items}))
-                if not top_items:
-                    answer = "No material mismatches with candidate variance were found in the current reconciliation."
-                else:
-                    items_str = "; ".join(f"{item['record_id']} vs {item['candidate_id']} (variance: ₹{item['taxable_variance']:,.2f})" for item in top_items)
-                    answer = f"The largest material mismatches by taxable value variance are: {items_str}."
-            elif (
-                any(phrase in message for phrase in [
-                    "what can", "what does", "how to", "how do i", "how does", "what is",
-                    "tell me about", "app capabilities", "tars capabilities", "overview of tars",
-                    "help with", "can this app", "can tars"
-                ]) and any(term in message for term in [
-                    "app", "tars", "workbench", "system", "capability", "capabilities", "do", "near match",
-                    "tolerance", "gst only", "pr only", "exceptions", "export", "workflow", "feature", "help"
-                ])
-            ) or message.strip() in ["help", "what can this app do?", "what can this app do", "what is tars", "what is tars?"]:
-                started = perf_counter()
-                help_data = self.tools.get_product_help(message, reconciliation_id)
-                calls.append(self.tools.traced("get_product_help", "Retrieve official TARS documentation context", started, 1))
-                evidence.append(self.tools.evidence("product_documentation", help_data["topic"], help_data))
-                answer = f"{help_data['topic']}: {help_data['summary']} {help_data['details']}"
-            elif (
-                any(phrase in message for phrase in [
-                    "population breakdown", "population summary", "reconciliation summary",
-                    "reconciliation breakdown", "reconciliation status", "exact matches",
-                    "tolerance matches", "near matches", "unresolved records", "total records",
-                    "how many exact", "how many unresolved", "how many records", "how many items",
-                    "how many matched", "reconciliation overview", "reconciliation population"
-                ]) or ("how many" in message and ("reconcil" in message or "match" in message or "unresolved" in message or "record" in message or "item" in message))
-            ) and not record_id:
-                started = perf_counter()
-                summary = self.tools.get_reconciliation_summary(reconciliation_id)
-                breakdown = self.tools.get_exception_breakdown(reconciliation_id)
-                calls.append(self.tools.traced("get_reconciliation_summary", "Retrieve actual reconciliation totals", started, 10))
-                facts = summary.model_dump(mode="json")
-                facts["breakdown"] = breakdown.model_dump(mode="json")
-                evidence.append(self.tools.evidence("reconciliation_summary", str(reconciliation_id), facts))
-                reco_pct = (summary.resolved_records / summary.government_records * 100) if summary.government_records > 0 else 0
-                answer = (f"Reconciliation session status: {summary.status.value}. "
-                          f"Government population (Total: {summary.government_records}): {summary.resolved_records} resolved ({reco_pct:.1f}% reconciled) including {summary.exact_matches} exact matches and {summary.tolerance_matches} tolerance matches. "
-                          f"Remaining Government unresolved records: {summary.remaining_government_records} ({breakdown.ambiguous} ambiguous, {breakdown.material_mismatch} material mismatch, {breakdown.gst_only} GST-only). "
-                          f"Purchase Register population (Total: {summary.purchase_register_records}): {summary.resolved_records} consumed/resolved, {summary.remaining_purchase_register_records} remaining PR-only records.")
-            elif record_id and (record_id.startswith("row ") or "row" in message):
-                started = perf_counter()
-                lookup_res = self.tools.lookup_record(reconciliation_id, record_id)
-                calls.append(self.tools.traced("lookup_record", f"Lookup record for {record_id}", started, 1))
-                evidence.append(self.tools.evidence("record_lookup", record_id, lookup_res))
-                if "error" in lookup_res:
-                    answer = lookup_res["error"]
-                else:
-                    st = lookup_res["status"]
-                    rec = lookup_res["record_id"]
-                    vals = lookup_res.get("values", {})
-                    sem = lookup_res.get("row_semantics", "")
-                    answer = (f"Record {rec} ({lookup_res['dataset']}) identified for '{record_id}' ({sem}) has status: {st}. "
-                              f"Document: {vals.get('document_number', 'N/A')}, Taxable Value: ₹{vals.get('taxable_value', 0):,.2f}. "
-                              f"{'It was matched as an ' + st if 'MATCHED' in st else 'It remains an unresolved exception: ' + st}.")
-            elif ("candidate" in message or "ambiguous" in message) and record_id and not record_id.startswith("row "):
-                started = perf_counter()
-                candidates = self.tools.get_ranked_candidates(reconciliation_id, record_id)
-                calls.append(self.tools.traced("get_ranked_candidates", "Retrieve actual ranked candidates", started, len(candidates)))
-                facts = [{"purchase_register_record_id": item.purchase_register_record_id,
-                          "match_score": item.match_score, "rank": item.rank,
-                          "score_gap": item.score_gap} for item in candidates[:2]]
-                evidence.append(self.tools.evidence("ranked_candidates", record_id, {"candidates": facts}))
-                if not candidates:
-                    answer = f"I don't have enough evidence to identify a candidate for {record_id}."
-                elif len(candidates) > 1:
-                    gap = candidates[0].match_score - candidates[1].match_score
-                    answer = (f"{record_id} is ambiguous because {len(candidates)} candidates passed blocking. "
-                              f"The top candidates are {candidates[0].purchase_register_record_id} at {candidates[0].match_score * 100:.1f}% "
-                              f"and {candidates[1].purchase_register_record_id} at {candidates[1].match_score * 100:.1f}%. "
-                              f"Their {gap * 100:.1f}-point gap is within the configured ambiguity margin, so automatic selection was blocked.")
-                    actions = [SuggestedAction.SELECT_CANDIDATE, SuggestedAction.LEAVE_UNRESOLVED]
-                else:
-                    answer = (f"The strongest candidate for {record_id} is {candidates[0].purchase_register_record_id} "
-                              f"with a deterministic candidate score of {candidates[0].match_score * 100:.1f}%.")
-            elif ("would" in message or "increas" in message or "simulate" in message) and record_id and not record_id.startswith("row "):
-                amount = self._currency(request.message)
-                if amount is None:
-                    answer = "I need a hypothetical taxable-value tolerance to run that simulation."
-                else:
-                    started = perf_counter()
-                    result = self.tools.simulate_policy_change(
-                        reconciliation_id, record_id,
-                        PolicySimulationRequest(taxable_value_tolerance=amount),
-                    )
-                    calls.append(self.tools.traced("simulate_policy_change", "Run a read-only policy what-if", started, 1))
-                    evidence.append(self.tools.evidence("policy_simulation", record_id, result.model_dump(mode="json")))
-                    answer = (f"A read-only simulation with taxable-value tolerance ₹{amount:,.2f} "
-                              f"{'would satisfy the tested checks' if result.would_satisfy else 'would not resolve every blocker'}. "
-                              + ("Remaining blockers: " + "; ".join(result.blockers) + ". " if result.blockers else "")
-                              + "The confirmed policy was not changed.")
-            elif record_id and not record_id.startswith("row ") and ("why" in message or "differ" in message or "variance" in message or "unresolved" in message):
-                started = perf_counter()
-                variance = self.tools.get_variance_analysis(reconciliation_id, record_id)
-                calls.append(self.tools.traced("get_variance_analysis", "Calculate deterministic exception evidence", started, 1))
-                evidence.append(self.tools.evidence("variance_analysis", record_id, variance.model_dump(mode="json")))
-                if not variance.variances:
-                    answer = f"{record_id} remains {variance.status}. {variance.blockers[0] if variance.blockers else 'I do not have enough evidence to determine a counterpart.'}"
-                else:
-                    answer = (f"{record_id} remains {variance.status.replace('_', ' ').lower()}. "
-                              f"Its best candidate is {variance.candidate_record_id}. "
-                              f"Taxable-value variance is ₹{variance.variances['taxable_value']:,.2f} against the configured ₹{variance.allowed_tolerances['taxable_value']:,.2f} tolerance. "
-                              + ("Blockers: " + "; ".join(variance.blockers) + "." if variance.blockers else "No material variance blocker was found."))
-                    actions = [SuggestedAction.INVESTIGATE_VALUE_VARIANCE]
-            elif "gst-only" in message or "gst only" in message:
-                started = perf_counter()
-                results = self.tools.search_records(
-                    reconciliation_id, ExceptionSearchRequest(statuses=["GST_ONLY"], limit=50)
+            decision_raw, _ = self.provider.invoke_with_result([
+                {"role": "system", "content": "You are a precise JSON tool decision orchestrator for TARS Copilot. Output ONLY valid JSON."},
+                {"role": "user", "content": tool_decision_prompt},
+            ])
+
+            # Parse LLM Tool Decision safely
+            decision_json = {}
+            try:
+                json_match = re.search(r"\{.*\}", decision_raw, re.DOTALL)
+                if json_match:
+                    decision_json = json.loads(json_match.group(0))
+            except Exception:
+                decision_json = {}
+
+            if decision_json.get("needs_clarification") and decision_json.get("clarification_prompt"):
+                answer = decision_json["clarification_prompt"]
+                response = CopilotResponse(
+                    conversation_id=conversation_id, answer=answer, evidence=[], tool_calls=[],
+                    suggested_actions=[], requires_human_action=False, provider=self.provider.provider_name,
+                    model=self.model_name,
                 )
-                calls.append(self.tools.traced("search_records", "Filter actual GST-only exceptions", started, len(results.records)))
-                ids = [item.record_id for item in results.records]
-                evidence.append(self.tools.evidence("exception_search", "GST_ONLY", {"total": results.total, "record_ids": ids}))
-                answer = f"There are {results.total} GST-only Government transactions. The first {len(ids)} are: {', '.join(ids[:10])}."
-            elif "prior" in message and "adjust" in message:
-                started = perf_counter()
-                results = self.tools.search_records(reconciliation_id, ExceptionSearchRequest(
-                    semantic_category=SemanticCategory.PRIOR_PERIOD_ADJUSTMENT, limit=50,
+                self.reconciliation.repository.save_copilot_message(CopilotMessage(
+                    conversation_id=conversation_id, reconciliation_id=reconciliation_id,
+                    role="assistant", content=response.answer, selected_record_id=request.selected_record_id,
+                    response=response,
                 ))
-                calls.append(self.tools.traced("search_records", "Filter persisted semantic classifications", started, len(results.records)))
-                evidence.append(self.tools.evidence("semantic_search", "PRIOR_PERIOD_ADJUSTMENT",
-                                                    {"total": results.total, "record_ids": [item.record_id for item in results.records]}))
-                answer = (f"{results.total} unresolved transactions currently carry the persisted prior-period adjustment classification."
-                          if results.total else "No unresolved transactions have a persisted prior-period adjustment classification yet. Run semantic analysis first.")
-            elif self._is_referential_followup(request.message) and conversation_id:
-                recent_msgs = self.reconciliation.repository.list_copilot_messages(reconciliation_id, conversation_id, limit=5)
-                prev_ev = []
-                for msg in reversed(recent_msgs[:-1]):
-                    if msg.response and msg.response.evidence:
-                        prev_ev = msg.response.evidence
-                        break
-                if prev_ev:
-                    evidence = prev_ev
-                    answer = f"Simplifying previous response facts for referential query '{request.message}'."
-                else:
-                    started = perf_counter()
-                    breakdown = self.tools.get_exception_breakdown(reconciliation_id)
-                    calls.append(self.tools.traced("get_exception_breakdown", "Retrieve actual unresolved counts", started, 4))
-                    facts = breakdown.model_dump(mode="json")
-                    evidence.append(self.tools.evidence("exception_breakdown", str(reconciliation_id), facts))
-                    answer = (f"Government population unresolved: {breakdown.remaining_government} records ({breakdown.ambiguous} ambiguous, {breakdown.material_mismatch} material mismatches, {breakdown.gst_only} GST-only). "
-                              f"Purchase Register population unresolved: {breakdown.remaining_purchase_register} remaining PR-only records.")
-            else:
+                return response
+
+            tool_list = decision_json.get("tools", [])
+            
+            # Execute selected tools deterministically
+            for tool_spec in tool_list[:4]:
+                name = tool_spec.get("tool_name")
+                args = tool_spec.get("arguments", {})
+                purpose = tool_spec.get("purpose", f"Execute {name}")
                 started = perf_counter()
-                breakdown = self.tools.get_exception_breakdown(reconciliation_id)
-                calls.append(self.tools.traced("get_exception_breakdown", "Retrieve actual unresolved counts", started, 4))
-                facts = breakdown.model_dump(mode="json")
-                evidence.append(self.tools.evidence("exception_breakdown", str(reconciliation_id), facts))
-                answer = (f"Government population unresolved: {breakdown.remaining_government} records ({breakdown.ambiguous} ambiguous, {breakdown.material_mismatch} material mismatches, {breakdown.gst_only} GST-only). "
-                          f"Purchase Register population unresolved: {breakdown.remaining_purchase_register} remaining PR-only records.")
+
+                try:
+                    if name == "get_product_help":
+                        topic = args.get("topic", request.message)
+                        help_data = self.tools.get_product_help(topic, reconciliation_id)
+                        calls.append(self.tools.traced("get_product_help", purpose, started, 1))
+                        evidence.append(self.tools.evidence("product_documentation", help_data["topic"], help_data))
+                    elif name == "get_reconciliation_summary":
+                        summary = self.tools.get_reconciliation_summary(reconciliation_id)
+                        breakdown = self.tools.get_exception_breakdown(reconciliation_id)
+                        calls.append(self.tools.traced("get_reconciliation_summary", purpose, started, 10))
+                        facts = summary.model_dump(mode="json")
+                        facts["breakdown"] = breakdown.model_dump(mode="json")
+                        evidence.append(self.tools.evidence("reconciliation_summary", str(reconciliation_id), facts))
+                    elif name == "get_exception_breakdown":
+                        breakdown = self.tools.get_exception_breakdown(reconciliation_id)
+                        calls.append(self.tools.traced("get_exception_breakdown", purpose, started, 4))
+                        evidence.append(self.tools.evidence("exception_breakdown", str(reconciliation_id), breakdown.model_dump(mode="json")))
+                    elif name == "get_record":
+                        rec_id = args.get("record_id")
+                        if rec_id:
+                            record_data = self.tools.get_record(reconciliation_id, rec_id)
+                            calls.append(self.tools.traced("get_record", purpose, started, 1))
+                            evidence.append(self.tools.evidence("exception_record", rec_id, record_data.model_dump(mode="json")))
+                    elif name == "lookup_record":
+                        rec_id = args.get("record_id") or args.get("row_query")
+                        if rec_id:
+                            lookup_res = self.tools.lookup_record(reconciliation_id, rec_id)
+                            calls.append(self.tools.traced("lookup_record", purpose, started, 1))
+                            evidence.append(self.tools.evidence("record_lookup", rec_id, lookup_res))
+                    elif name == "get_variance_analysis":
+                        rec_id = args.get("record_id")
+                        if rec_id:
+                            variance = self.tools.get_variance_analysis(reconciliation_id, rec_id)
+                            calls.append(self.tools.traced("get_variance_analysis", purpose, started, 1))
+                            evidence.append(self.tools.evidence("variance_analysis", rec_id, variance.model_dump(mode="json")))
+                            actions = [SuggestedAction.INVESTIGATE_VALUE_VARIANCE]
+                    elif name == "get_ranked_candidates":
+                        rec_id = args.get("record_id")
+                        if rec_id:
+                            candidates = self.tools.get_ranked_candidates(reconciliation_id, rec_id)
+                            calls.append(self.tools.traced("get_ranked_candidates", purpose, started, len(candidates)))
+                            facts = []
+                            for item in candidates[:2]:
+                                cand_fact = {
+                                    "purchase_register_record_id": item.purchase_register_record_id,
+                                    "match_score": float(item.match_score),
+                                    "rank": item.rank,
+                                    "score_gap": float(item.score_gap) if item.score_gap is not None else None,
+                                    "supplier_gstin_pr": str(item.purchase_register_values.get("supplier_gstin") or ""),
+                                    "supplier_gstin_govt": str(item.government_values.get("supplier_gstin") or ""),
+                                    "document_number_pr": str(item.purchase_register_values.get("document_number") or ""),
+                                    "document_number_govt": str(item.government_values.get("document_number") or ""),
+                                    "taxable_value_govt": float(item.government_values.get("taxable_value") or 0.0),
+                                    "taxable_value_pr": float(item.purchase_register_values.get("taxable_value") or 0.0),
+                                    "taxable_value_difference": float(item.features.taxable_value_difference),
+                                    "igst_difference": float(item.features.igst_difference),
+                                    "cgst_difference": float(item.features.cgst_difference),
+                                    "sgst_difference": float(item.features.sgst_difference),
+                                    "document_date_difference_days": float(item.features.document_date_difference_days),
+                                }
+                                facts.append(cand_fact)
+                            evidence.append(self.tools.evidence("ranked_candidates", rec_id, {"candidates": facts}))
+                            if len(candidates) > 1:
+                                actions = [SuggestedAction.SELECT_CANDIDATE, SuggestedAction.LEAVE_UNRESOLVED]
+                    elif name == "search_records":
+                        st = args.get("status")
+                        lim = args.get("limit", 10)
+                        if st:
+                            search_res = self.tools.search_records(reconciliation_id, ExceptionSearchRequest(statuses=[st], limit=lim))
+                            calls.append(self.tools.traced("search_records", purpose, started, len(search_res.records)))
+                            ids = [item.record_id for item in search_res.records]
+                            evidence.append(self.tools.evidence("exception_search", st, {"total": search_res.total, "record_ids": ids}))
+                    elif name == "get_pattern_summary":
+                        patterns = self.tools.get_pattern_summary(reconciliation_id)
+                        calls.append(self.tools.traced("get_pattern_summary", purpose, started, len(patterns)))
+                        evidence.append(self.tools.evidence("pattern_summary", str(reconciliation_id), patterns))
+                    elif name == "get_top_mismatches":
+                        lim = args.get("limit", 5)
+                        top_items = self.tools.get_top_mismatches(reconciliation_id, limit=lim)
+                        calls.append(self.tools.traced("get_top_mismatches", purpose, started, len(top_items)))
+                        evidence.append(self.tools.evidence("top_mismatches", str(reconciliation_id), {"top_mismatches": top_items}))
+                except Exception as tool_err:
+                    calls.append(self.tools.traced(name or "unknown_tool", f"Failed: {tool_err}", started, 0))
+
+            # Final Answer Synthesis Prompt
+            synthesis_prompt = f"""You are TARS Copilot, a grounded assistant for GST Reconciliation Workbench.
+
+User's Question: "{request.message}"
+
+Resolved Intent & Context:
+{json.dumps(decision_json.get('resolved_intent', request.message))}
+
+Verified Tool Evidence / Facts (CURRENT_TURN_EVIDENCE):
+{json.dumps([e.model_dump(mode='json') for e in evidence], default=str)}
+
+CRITICAL RESPONSE QUALITY & GROUNDING INVARIANTS:
+1. The FIRST sentence of your answer MUST DIRECTLY answer the user's current question.
+2. STRICT GROUNDING: Any factual statement (amounts, variances, scores, GSTINs, document numbers, dates, status, counts) MUST be derived strictly from the CURRENT_TURN_EVIDENCE above.
+3. Dialogue history may ONLY be used to resolve references (e.g. what 'it' or 'its candidate' refers to). Conversation text MUST NOT authorize financial evidence.
+4. Do NOT dump an entire reconciliation summary or exception breakdown unless specifically requested.
+5. Clean plain text or standard Markdown formatting only. NEVER output escaped syntax (no \\*\\*, no \\-, no &#x20;)."""
+
+            raw_answer, usage = self.provider.invoke_with_result([
+                {"role": "system", "content": "You are TARS Copilot. Write a direct, clear, grounded response matching the specified invariants strictly."},
+                {"role": "user", "content": synthesis_prompt},
+            ])
+
+            answer = self._clean_formatting(raw_answer.strip())
+            if not answer:
+                answer = "I have processed your request using TARS verified data tools."
 
             for call in calls:
                 self.reconciliation.repository.add_event(AgentEvent(
@@ -442,25 +401,11 @@ class CopilotService:
                                                              "duration_ms": call.duration_ms},
                 ))
 
-            provider_name = "deterministic"
-            if self.provider is not None and evidence:
-                try:
-                    grounded, usage = self.provider.invoke_with_result([
-                        {"role": "system", "content": "You are TARS Copilot. Rewrite the draft clearly using only the supplied facts. Explicitly separate Government population totals/unresolved from Purchase Register totals/unresolved. Do not invent numbers, IDs, conclusions, or actions."},
-                        {"role": "user", "content": json.dumps({"draft": answer, "facts": [item.model_dump(mode="json") for item in evidence]}, default=str)},
-                    ])
-                    if grounded.strip():
-                        answer, provider_name = grounded.strip(), self.provider.provider_name
-                except ProviderError:
-                    answer = ("AI Copilot is currently unavailable because the configured LLM provider failed to respond. "
-                              "Deterministic reconciliation results remain unaffected.")
-                    provider_name = "unavailable"
-
             response = CopilotResponse(
-                conversation_id=conversation_id, answer=answer, evidence=evidence if provider_name != "unavailable" else [],
-                tool_calls=calls if provider_name != "unavailable" else [], suggested_actions=actions if provider_name != "unavailable" else [],
-                requires_human_action=bool(actions) if provider_name != "unavailable" else False, provider=provider_name,
-                model=self.model_name if provider_name not in ("deterministic", "unavailable") else None,
+                conversation_id=conversation_id, answer=answer, evidence=evidence,
+                tool_calls=calls, suggested_actions=actions,
+                requires_human_action=bool(actions), provider=self.provider.provider_name,
+                model=self.model_name,
             )
             self.reconciliation.repository.save_copilot_message(CopilotMessage(
                 conversation_id=conversation_id, reconciliation_id=reconciliation_id,
@@ -469,11 +414,12 @@ class CopilotService:
             ))
             self.reconciliation.repository.add_event(AgentEvent(
                 event_type="copilot.response_completed", reconciliation_id=reconciliation_id,
-                actor_type=ActorType.AGENT, component="copilot_orchestrator", result="grounded" if provider_name != "unavailable" else "unavailable",
-                output_count=len(evidence), model_provider=provider_name, model_name=response.model,
+                actor_type=ActorType.AGENT, component="copilot_orchestrator", result="grounded",
+                output_count=len(evidence), model_provider=response.provider, model_name=response.model,
                 metadata={"conversation_id": str(conversation_id), "tool_count": len(calls)},
             ))
             return response
+
         except Exception:
             self.reconciliation.repository.add_event(AgentEvent(
                 event_type="copilot.failed", reconciliation_id=reconciliation_id,

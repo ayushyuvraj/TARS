@@ -879,6 +879,7 @@ export const api = {
     message: string,
     conversationId?: string,
     selectedRecordId?: string,
+    currentPage?: string,
   ) =>
     request<CopilotResponse>(`/api/reconciliations/${id}/copilot/messages`, {
       method: "POST",
@@ -887,6 +888,7 @@ export const api = {
         message,
         conversation_id: conversationId,
         selected_record_id: selectedRecordId,
+        current_page: currentPage,
       }),
     }),
   copilotConversation: (id: string, conversationId: string) =>

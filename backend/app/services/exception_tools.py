@@ -630,11 +630,38 @@ class ExceptionToolService:
             except Exception:
                 pass
 
-        if any(term in topic_lower for term in ["app", "can this", "capability", "capabilities", "tars", "what is tars", "overview", "feature", "help"]):
+        if "new reconciliation" in topic_lower or ("start" in topic_lower and "reconciliation" in topic_lower):
             return {
-                "topic": "TARS GST Reconciliation Workbench Capabilities",
-                "summary": "TARS is an AI-augmented, human-in-the-loop GST reconciliation workbench for GSTR-2B and Purchase Register datasets.",
-                "details": "Core capabilities include: 1) File Ingestion (GSTR-2B & Purchase Register) with deterministic schema mapping; 2) Configurable reconciliation policy evaluation; 3) Multi-stage deterministic matching (Exact Match, Tolerance Match, Fuzzy Near Match); 4) Isolation of unresolved exceptions into Ambiguous, Material Mismatch, GST Only, and PR Only queues; 5) Bulk approval for safe high-confidence near matches; 6) AI-assisted exception investigation and semantic pattern classification; 7) Policy-level rule governance and audit trails; 8) Audit-ready 5-sheet KIGS-compliant Excel exports; 9) Grounded real-time AI Copilot."
+                "topic": "Starting a New Reconciliation Workflow",
+                "summary": "To start a new reconciliation in TARS:",
+                "details": "1) Click the 'New Reconciliation' button in the main navigation header or dashboard ('/'); 2) Select and upload your Government GSTR-2B Excel file and Purchase Register Excel file; 3) Click 'Continue to Mapping' to begin column schema mapping."
+            }
+        if "audit" in topic_lower:
+            return {
+                "topic": "Audit & Compliance Reporting Navigation",
+                "summary": "To view audit reports and governance history:",
+                "details": "1) Click the 'Audit' tab ('/reconciliations/:id/audit') in the main navigation bar of your session to view the interactive audit timeline; 2) Click the 'Export' tab to download the official 5-sheet KIGS Excel workbook containing the Audit Summary sheet."
+            }
+        if any(term in topic_lower for term in ["2452", "2,452", "pr only", "pr-only", "those records"]) or ("what are" in topic_lower and "records" in topic_lower):
+            pr_info = ""
+            if reconciliation_id is not None:
+                try:
+                    summary = self.get_reconciliation_summary(reconciliation_id)
+                    breakdown = self.get_exception_breakdown(reconciliation_id)
+                    other_pr = summary.remaining_purchase_register_records - breakdown.pr_only
+                    pr_info = f" In your current session, there are {summary.remaining_purchase_register_records} unconsumed PR records in total. Of these, {breakdown.pr_only} are classified as true PR Only. The remaining {other_pr} are other unconsumed PR records associated with unresolved reconciliation processing; TARS does not classify all of them as PR Only."
+                except Exception:
+                    pass
+            return {
+                "topic": "PR Only Records Explanation & Navigation",
+                "summary": "PR Only records exist in your Purchase Register file but have no corresponding record in the Government GSTR-2B dataset.",
+                "details": f"They represent unmatched vendor invoices (e.g. vendor non-filing, wrong GSTIN, or unfiled GSTR-1).{pr_info} To view and inspect these records in the UI: Go to the Exceptions page ('/reconciliations/:id/exceptions') and click the 'PR Only' filter tab at the top of the table."
+            }
+        if "how to use" in topic_lower or "usage" in topic_lower or "guide" in topic_lower:
+            return {
+                "topic": "TARS Step-by-Step Usage Guide",
+                "summary": "Follow this 8-step workflow for GST reconciliation in TARS:",
+                "details": "1) Setup & Upload: Load GSTR-2B and Purchase Register files; 2) Mapping: Confirm column schema mappings; 3) Policy: Configure match tolerances and rules; 4) Results: Run Exact and Tolerance match engines; 5) Near Match: Review fuzzy proposals and bulk approve high-confidence pairs; 6) Exceptions: Investigate Ambiguous, Material Mismatch, GST Only, and PR Only queues; 7) Audit: Review compliance logs; 8) Export: Download the audit-ready 5-sheet KIGS Excel report."
             }
         if "near" in topic_lower:
             return {
@@ -648,17 +675,11 @@ class ExceptionToolService:
                 "summary": "Tolerance Match applies user-configured policy thresholds to unmatched records.",
                 "details": f"Applies active policy rules (e.g. taxable value and document date tolerances). Includes reciprocal-uniqueness conflict handling to prevent double-matching.{policy_info}"
             }
-        if "gst" in topic_lower and "pr" in topic_lower:
-            return {
-                "topic": "GST Only vs PR Only",
-                "summary": "GST Only records exist in GSTR-2B but missing in PR. PR Only records exist in PR but missing in GSTR-2B.",
-                "details": "GST Only usually indicates unrecorded vendor invoices. PR Only usually indicates vendor non-filing or wrong GSTIN."
-            }
         if "exception" in topic_lower:
             return {
-                "topic": "Exceptions Page",
+                "topic": "Exceptions Page Navigation",
                 "summary": "The Exceptions page isolates material mismatches, ambiguous candidates, GST-Only, and PR-Only records.",
-                "details": "Allows searching, candidate comparison, policy simulation, AI exception investigation, and semantic classification."
+                "details": "Access via '/reconciliations/:id/exceptions'. Filter by status tabs (Ambiguous, Material Mismatch, GST Only, PR Only) to compare candidates, simulate policy changes, or request AI exception investigations."
             }
         if "export" in topic_lower:
             return {

@@ -1,9 +1,29 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { api, CopilotMessage } from "./api";
 
-export function CopilotPanel({ reconciliationId, selectedRecordId }: {
+function renderFormattedContent(text: string) {
+  if (!text) return null;
+  const cleaned = text
+    .replaceAll("\\*\\*", "**")
+    .replaceAll("\\-", "-")
+    .replaceAll("&#x20;", " ")
+    .replaceAll("&amp;", "&")
+    .replaceAll("&lt;", "<")
+    .replaceAll("&gt;", ">");
+  const paragraphs = cleaned.split("\n\n").filter(p => p.trim());
+  return (
+    <div className="copilot-message-text">
+      {paragraphs.map((p, idx) => (
+        <p key={idx}>{p.trim()}</p>
+      ))}
+    </div>
+  );
+}
+
+export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }: {
   reconciliationId: string;
   selectedRecordId: string | null;
+  currentPage?: string;
 }) {
   const storageKey = `gst-copilot-${reconciliationId}`;
   const [conversationId, setConversationId] = useState<string | null>(() => localStorage.getItem(storageKey));
@@ -27,7 +47,7 @@ export function CopilotPanel({ reconciliationId, selectedRecordId }: {
     const optimistic: CopilotMessage = { id: crypto.randomUUID(), conversation_id: conversationId ?? "", role: "user", content: message.trim(), selected_record_id: selectedRecordId, response: null, created_at: new Date().toISOString() };
     setMessages(current => [...current, optimistic]); setDraft("");
     try {
-      const response = await api.askCopilot(reconciliationId, message.trim(), conversationId ?? undefined, selectedRecordId ?? undefined);
+      const response = await api.askCopilot(reconciliationId, message.trim(), conversationId ?? undefined, selectedRecordId ?? undefined, currentPage);
       if (!conversationId) { setConversationId(response.conversation_id); localStorage.setItem(storageKey, response.conversation_id); }
       setMessages(current => [...current, { id: response.id, conversation_id: response.conversation_id, role: "assistant", content: response.answer, selected_record_id: selectedRecordId, response, created_at: response.created_at }]);
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Copilot could not complete the request."); }
@@ -53,7 +73,7 @@ export function CopilotPanel({ reconciliationId, selectedRecordId }: {
       </div>}
       {messages.map(message => <article className={`copilot-message copilot-message--${message.role}`} key={message.id}>
         <span>{message.role === "user" ? "You" : "Copilot"}</span>
-        <p>{message.content}</p>
+        {renderFormattedContent(message.content)}
         {message.response && <>
           <details><summary>View evidence · {message.response.evidence.length} facts</summary>
             {message.response.provider && <div className="evidence-provider"><small>Provider: {message.response.provider} {message.response.model ? `(${message.response.model})` : ""}</small></div>}
