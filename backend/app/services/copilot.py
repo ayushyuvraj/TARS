@@ -45,6 +45,58 @@ class CopilotService:
             ),
         )
 
+    @classmethod
+    def _is_independent_intent(cls, message: str) -> bool:
+        msg = message.lower().strip()
+        if any(term in msg for term in [
+            "what can this app do", "what can tars do", "what does this app do", "what is tars",
+            "app capabilities", "how to use tars", "how does tars work", "what is near match",
+            "what is tolerance", "how to export", "how do i export"
+        ]):
+            return True
+        if any(phrase in msg for phrase in ["what can", "what does", "how to", "how do i", "how does", "what is", "tell me about", "help with"]) and \
+           any(term in msg for term in ["app", "tars", "workbench", "system", "capability", "capabilities", "do", "near match", "tolerance", "gst only", "pr only", "exception", "exceptions", "export", "workflow", "feature", "help"]):
+            return True
+
+        if any(phrase in msg for phrase in [
+            "population breakdown", "population summary", "reconciliation summary", "reconciliation breakdown",
+            "reconciliation status", "exact matches", "tolerance matches", "near matches", "unresolved records",
+            "total records", "how many exact", "how many unresolved", "how many records", "how many items",
+            "how many matched", "reconciliation overview", "reconciliation population"
+        ]) or ("how many" in msg and ("reconcil" in msg or "match" in msg or "unresolved" in msg or "record" in msg or "item" in msg)):
+            return True
+
+        if "rule" in msg or "profile" in msg:
+            return True
+
+        if "pattern" in msg or "signature" in msg or "trend" in msg or "largest" in msg or "top" in msg or "biggest" in msg:
+            return True
+
+        if re.search(r"\b(?:GST|PR)-\d{5}\b", message, re.IGNORECASE) or (re.search(r"\b(?:row\s*)?(\d{1,5})\b", message, re.IGNORECASE) and "row" in msg):
+            return True
+
+        return False
+
+    @classmethod
+    def _is_referential_followup(cls, message: str) -> bool:
+        msg = message.lower().strip()
+        if cls._is_independent_intent(message):
+            return False
+        referential_phrases = [
+            "its candidate", "the candidate", "that candidate", "what about candidate", "candidate",
+            "why is that", "explain that", "explain this", "explain that simply", "explain simply",
+            "simplify", "which one", "which candidate", "what should i do", "show me the difference",
+            "tell me more", "elaborate", "can you simplify", "what does that mean"
+        ]
+        if any(phrase in msg for phrase in referential_phrases):
+            return True
+        if msg in ["why", "why?", "why is it", "how so", "how so?"]:
+            return True
+        words = msg.split()
+        if len(words) <= 5 and any(w in words for w in ["it", "this", "that", "why", "candidate", "candidates", "they", "them"]):
+            return True
+        return False
+
     def _resolve_record_id(self, reconciliation_id: UUID, conversation_id: UUID | None, message: str, selected: str | None) -> str | None:
         match = re.search(r"\b(?:GST|PR)-\d{5}\b", message, re.IGNORECASE)
         if match:
@@ -52,9 +104,9 @@ class CopilotService:
         row_match = re.search(r"\b(?:row\s*)?(\d{1,5})\b", message, re.IGNORECASE)
         if row_match and "row" in message.lower():
             return f"row {row_match.group(1)}"
-        if selected:
+        if selected and not self._is_independent_intent(message):
             return selected
-        if conversation_id:
+        if conversation_id and self._is_referential_followup(message):
             recent = self.reconciliation.repository.list_copilot_messages(reconciliation_id, conversation_id, limit=5)
             for msg in reversed(recent):
                 if msg.selected_record_id:
@@ -235,12 +287,42 @@ class CopilotService:
                 else:
                     items_str = "; ".join(f"{item['record_id']} vs {item['candidate_id']} (variance: ₹{item['taxable_variance']:,.2f})" for item in top_items)
                     answer = f"The largest material mismatches by taxable value variance are: {items_str}."
-            elif ("what is" in message or "how to" in message or "how does" in message or "how do i" in message) and any(term in message for term in ["near match", "tolerance", "gst only", "pr only", "exceptions", "export"]):
+            elif (
+                any(phrase in message for phrase in [
+                    "what can", "what does", "how to", "how do i", "how does", "what is",
+                    "tell me about", "app capabilities", "tars capabilities", "overview of tars",
+                    "help with", "can this app", "can tars"
+                ]) and any(term in message for term in [
+                    "app", "tars", "workbench", "system", "capability", "capabilities", "do", "near match",
+                    "tolerance", "gst only", "pr only", "exceptions", "export", "workflow", "feature", "help"
+                ])
+            ) or message.strip() in ["help", "what can this app do?", "what can this app do", "what is tars", "what is tars?"]:
                 started = perf_counter()
                 help_data = self.tools.get_product_help(message, reconciliation_id)
                 calls.append(self.tools.traced("get_product_help", "Retrieve official TARS documentation context", started, 1))
                 evidence.append(self.tools.evidence("product_documentation", help_data["topic"], help_data))
                 answer = f"{help_data['topic']}: {help_data['summary']} {help_data['details']}"
+            elif (
+                any(phrase in message for phrase in [
+                    "population breakdown", "population summary", "reconciliation summary",
+                    "reconciliation breakdown", "reconciliation status", "exact matches",
+                    "tolerance matches", "near matches", "unresolved records", "total records",
+                    "how many exact", "how many unresolved", "how many records", "how many items",
+                    "how many matched", "reconciliation overview", "reconciliation population"
+                ]) or ("how many" in message and ("reconcil" in message or "match" in message or "unresolved" in message or "record" in message or "item" in message))
+            ) and not record_id:
+                started = perf_counter()
+                summary = self.tools.get_reconciliation_summary(reconciliation_id)
+                breakdown = self.tools.get_exception_breakdown(reconciliation_id)
+                calls.append(self.tools.traced("get_reconciliation_summary", "Retrieve actual reconciliation totals", started, 10))
+                facts = summary.model_dump(mode="json")
+                facts["breakdown"] = breakdown.model_dump(mode="json")
+                evidence.append(self.tools.evidence("reconciliation_summary", str(reconciliation_id), facts))
+                reco_pct = (summary.resolved_records / summary.government_records * 100) if summary.government_records > 0 else 0
+                answer = (f"Reconciliation session status: {summary.status.value}. "
+                          f"Government population (Total: {summary.government_records}): {summary.resolved_records} resolved ({reco_pct:.1f}% reconciled) including {summary.exact_matches} exact matches and {summary.tolerance_matches} tolerance matches. "
+                          f"Remaining Government unresolved records: {summary.remaining_government_records} ({breakdown.ambiguous} ambiguous, {breakdown.material_mismatch} material mismatch, {breakdown.gst_only} GST-only). "
+                          f"Purchase Register population (Total: {summary.purchase_register_records}): {summary.resolved_records} consumed/resolved, {summary.remaining_purchase_register_records} remaining PR-only records.")
             elif record_id and (record_id.startswith("row ") or "row" in message):
                 started = perf_counter()
                 lookup_res = self.tools.lookup_record(reconciliation_id, record_id)
@@ -324,19 +406,24 @@ class CopilotService:
                                                     {"total": results.total, "record_ids": [item.record_id for item in results.records]}))
                 answer = (f"{results.total} unresolved transactions currently carry the persisted prior-period adjustment classification."
                           if results.total else "No unresolved transactions have a persisted prior-period adjustment classification yet. Run semantic analysis first.")
-            elif ("exact" in message or "reconciled" in message or "unresolved" in message or "summary" in message or "percentage" in message or "how many" in message) and not record_id:
-                started = perf_counter()
-                summary = self.tools.get_reconciliation_summary(reconciliation_id)
-                breakdown = self.tools.get_exception_breakdown(reconciliation_id)
-                calls.append(self.tools.traced("get_reconciliation_summary", "Retrieve actual reconciliation totals", started, 10))
-                facts = summary.model_dump(mode="json")
-                facts["breakdown"] = breakdown.model_dump(mode="json")
-                evidence.append(self.tools.evidence("reconciliation_summary", str(reconciliation_id), facts))
-                reco_pct = (summary.resolved_records / summary.government_records * 100) if summary.government_records > 0 else 0
-                answer = (f"Reconciliation session status: {summary.status.value}. "
-                          f"Government population (Total: {summary.government_records}): {summary.resolved_records} resolved ({reco_pct:.1f}% reconciled) including {summary.exact_matches} exact matches and {summary.tolerance_matches} tolerance matches. "
-                          f"Remaining Government unresolved records: {summary.remaining_government_records} ({breakdown.ambiguous} ambiguous, {breakdown.material_mismatch} material mismatch, {breakdown.gst_only} GST-only). "
-                          f"Purchase Register population (Total: {summary.purchase_register_records}): {summary.resolved_records} consumed/resolved, {summary.remaining_purchase_register_records} remaining PR-only records.")
+            elif self._is_referential_followup(request.message) and conversation_id:
+                recent_msgs = self.reconciliation.repository.list_copilot_messages(reconciliation_id, conversation_id, limit=5)
+                prev_ev = []
+                for msg in reversed(recent_msgs[:-1]):
+                    if msg.response and msg.response.evidence:
+                        prev_ev = msg.response.evidence
+                        break
+                if prev_ev:
+                    evidence = prev_ev
+                    answer = f"Simplifying previous response facts for referential query '{request.message}'."
+                else:
+                    started = perf_counter()
+                    breakdown = self.tools.get_exception_breakdown(reconciliation_id)
+                    calls.append(self.tools.traced("get_exception_breakdown", "Retrieve actual unresolved counts", started, 4))
+                    facts = breakdown.model_dump(mode="json")
+                    evidence.append(self.tools.evidence("exception_breakdown", str(reconciliation_id), facts))
+                    answer = (f"Government population unresolved: {breakdown.remaining_government} records ({breakdown.ambiguous} ambiguous, {breakdown.material_mismatch} material mismatches, {breakdown.gst_only} GST-only). "
+                              f"Purchase Register population unresolved: {breakdown.remaining_purchase_register} remaining PR-only records.")
             else:
                 started = perf_counter()
                 breakdown = self.tools.get_exception_breakdown(reconciliation_id)

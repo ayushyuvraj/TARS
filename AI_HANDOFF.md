@@ -3,21 +3,22 @@
 ## Dynamic Session State
 
 - **Current Branch**: `antigravity-work`
-- **Current HEAD**: `antigravity-work` active HEAD (following Part 1 commit)
+- **Current HEAD**: `antigravity-work` active HEAD (following intent routing fix commit)
 - **Last Known-Good Commit**: `5edd2247c93c88241a42a5d5c53620c1b163e776` (Baseline)
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Universal TARS Copilot Part 1 implementation, verification, and freeze.
+- **Current Objective**: Universal TARS Copilot Part 1 freeze & conversational intent routing fix.
 - **Completed Work**: 
   - Universal Real TARS Copilot Part 1 implementation (`backend/app/services/copilot.py`, `backend/app/services/exception_tools.py`, `backend/app/providers/openai.py`).
-  - Added new grounded tools: `lookup_record`, `get_top_mismatches`, `get_pattern_summary`, `get_product_help`.
-  - Added explicit AI-unavailable state (`provider="unavailable"`) and out-of-domain refusal (`provider="domain_blocked"`).
-  - Added token usage extraction (`input_tokens`, `output_tokens`, `total_tokens`) in `OpenAIProvider`.
-  - Comprehensive unit test suite `backend/tests/test_universal_copilot.py`.
-  - Final data-integrity check verified 1,000 / 1,050 baseline fixture metrics and PR population conservation rule: $\text{PR Total} (1,050) = \text{Consumed} (760) + \text{Open Candidates} (160) + \text{PR Only} (130)$.
-  - Universal Copilot Part 1 = COMPLETE / ACCEPTED.
-- **Tests**: 98 backend tests passed cleanly (`pytest backend/tests`).
+  - Grounded tools: `lookup_record`, `get_top_mismatches`, `get_pattern_summary`, `get_product_help`.
+  - Token usage extraction (`input_tokens`, `output_tokens`, `total_tokens`) in `OpenAIProvider`.
+  - Conversational intent routing regression = FIXED (`_is_independent_intent`, `_is_referential_followup`, clean intent context switching).
+  - 4 new regression tests (A, B, C, D) added in `backend/tests/test_universal_copilot.py`.
+  - Live 4-turn sequence verified against active 10k session `ac6257c5-7d4d-441a-9557-a162ba875636` (5,200 exact matches returned in Turn C).
+  - Universal Copilot Part 1 = COMPLETE / ACCEPTED / FROZEN.
+- **Tests**: 102 backend tests passed cleanly (`102 passed, 0 failed`).
 - **Provider & Model**: Real OpenAI Provider using `gpt-5.4-mini` (live API call verified with usage extraction).
-- **Known Limitations**: The 10k / 10.5k reconciliation benchmark is not currently persisted in SQLite (small 1k / 1.05k fixture was used for validation). `run_command` standard handle redirection is restricted by local Windows ACL on `NUL` device.
+- **Authoritative Runtime DB Path**: `D:\Apps\My Experiments\10. TARS\data\gst_reconciliation.db` (53.8 MB; contains active 10k live session `ac6257c5-7d4d-441a-9557-a162ba875636`). Note: Relative path `Path("data/gst_reconciliation.db")` in `Settings` resolves to root `data/` when CWD is workspace root `D:\Apps\My Experiments\10. TARS`.
+- **Known Limitations**: `run_command` standard handle redirection is restricted by local Windows ACL on `NUL` device.
 - **Exact Next Action**: Task 2 — Quick Reconcile / zero-touch front door. Do NOT begin Task 2 until explicitly instructed.
 
 ---

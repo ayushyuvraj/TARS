@@ -630,6 +630,12 @@ class ExceptionToolService:
             except Exception:
                 pass
 
+        if any(term in topic_lower for term in ["app", "can this", "capability", "capabilities", "tars", "what is tars", "overview", "feature", "help"]):
+            return {
+                "topic": "TARS GST Reconciliation Workbench Capabilities",
+                "summary": "TARS is an AI-augmented, human-in-the-loop GST reconciliation workbench for GSTR-2B and Purchase Register datasets.",
+                "details": "Core capabilities include: 1) File Ingestion (GSTR-2B & Purchase Register) with deterministic schema mapping; 2) Configurable reconciliation policy evaluation; 3) Multi-stage deterministic matching (Exact Match, Tolerance Match, Fuzzy Near Match); 4) Isolation of unresolved exceptions into Ambiguous, Material Mismatch, GST Only, and PR Only queues; 5) Bulk approval for safe high-confidence near matches; 6) AI-assisted exception investigation and semantic pattern classification; 7) Policy-level rule governance and audit trails; 8) Audit-ready 5-sheet KIGS-compliant Excel exports; 9) Grounded real-time AI Copilot."
+            }
         if "near" in topic_lower:
             return {
                 "topic": "Near Match Engine",
@@ -661,9 +667,9 @@ class ExceptionToolService:
                 "details": "Sheets: KIGS_Reconciliation, Summary, Unresolved_Exceptions, Configuration, Audit_Summary."
             }
         return {
-            "topic": "TARS GST Reconciliation Workbench",
-            "summary": "TARS is a human-in-the-loop GST reconciliation workbench pairing GSTR-2B data with client Purchase Registers.",
-            "details": "Workflow: Upload & Setup -> Mapping -> Policy -> Results -> Near Match -> Exceptions -> Audit -> Final Review & Export."
+            "topic": "TARS GST Reconciliation Workbench Capabilities",
+            "summary": "TARS is an AI-augmented, human-in-the-loop GST reconciliation workbench for GSTR-2B and Purchase Register datasets.",
+            "details": "Core capabilities include: 1) File Ingestion (GSTR-2B & Purchase Register) with deterministic schema mapping; 2) Configurable reconciliation policy evaluation; 3) Multi-stage deterministic matching (Exact Match, Tolerance Match, Fuzzy Near Match); 4) Isolation of unresolved exceptions into Ambiguous, Material Mismatch, GST Only, and PR Only queues; 5) Bulk approval for safe high-confidence near matches; 6) AI-assisted exception investigation and semantic pattern classification; 7) Policy-level rule governance and audit trails; 8) Audit-ready 5-sheet KIGS-compliant Excel exports; 9) Grounded real-time AI Copilot."
         }
 
 

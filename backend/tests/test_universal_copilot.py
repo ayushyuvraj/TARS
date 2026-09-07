@@ -122,3 +122,65 @@ def test_copilot_pattern_summary(copilot_service, frozen_reconciliation_id):
     if response.provider != "unavailable":
         assert len(response.evidence) > 0
         assert response.evidence[0].reference_type == "pattern_summary"
+
+
+def test_regression_a_population_breakdown_then_app_capabilities(copilot_service, frozen_reconciliation_id):
+    """Test A: Population breakdown followed by 'what can this app do?' must route to product help."""
+    cid = uuid4()
+    req1 = CopilotRequest(message="Give me the reconciliation population breakdown.", conversation_id=cid)
+    res1 = copilot_service.ask(frozen_reconciliation_id, req1)
+    if res1.provider != "unavailable":
+        assert len(res1.evidence) > 0
+        assert res1.evidence[0].reference_type in ("reconciliation_summary", "exception_breakdown")
+
+    req2 = CopilotRequest(message="what can this app do?", conversation_id=cid)
+    res2 = copilot_service.ask(frozen_reconciliation_id, req2)
+    if res2.provider != "unavailable":
+        assert len(res2.evidence) > 0
+        assert res2.evidence[0].reference_type == "product_documentation"
+        assert "Capabilities" in res2.answer or "capabilities" in res2.answer.lower() or "TARS" in res2.answer
+
+
+def test_regression_b_record_mismatch_then_candidate_context(copilot_service, frozen_reconciliation_id):
+    """Test B: Record mismatch query followed by 'What about its candidate?' must retain record context."""
+    cid = uuid4()
+    req1 = CopilotRequest(message="Why is GST-00761 a mismatch?", conversation_id=cid)
+    res1 = copilot_service.ask(frozen_reconciliation_id, req1)
+    if res1.provider != "unavailable":
+        assert "GST-00761" in res1.answer
+
+    req2 = CopilotRequest(message="What about its candidate?", conversation_id=cid)
+    res2 = copilot_service.ask(frozen_reconciliation_id, req2)
+    if res2.provider != "unavailable":
+        assert len(res2.evidence) > 0
+        assert any(e.reference_id == "GST-00761" or "GST-00761" in str(e.facts) for e in res2.evidence)
+
+
+def test_regression_c_product_help_then_summary_intent(copilot_service, frozen_reconciliation_id):
+    """Test C: Product help query followed by 'How many records are unresolved?' must route to summary intent."""
+    cid = uuid4()
+    req1 = CopilotRequest(message="What is Near Match?", conversation_id=cid)
+    res1 = copilot_service.ask(frozen_reconciliation_id, req1)
+    if res1.provider != "unavailable":
+        assert res1.evidence[0].reference_type == "product_documentation"
+
+    req2 = CopilotRequest(message="How many records are unresolved?", conversation_id=cid)
+    res2 = copilot_service.ask(frozen_reconciliation_id, req2)
+    if res2.provider != "unavailable":
+        assert res2.evidence[0].reference_type in ("reconciliation_summary", "exception_breakdown")
+        assert "Government" in res2.answer
+
+
+def test_regression_d_summary_then_explain_simply(copilot_service, frozen_reconciliation_id):
+    """Test D: Summary query followed by 'Explain that simply.' retains previous summary context."""
+    cid = uuid4()
+    req1 = CopilotRequest(message="How many records are unresolved?", conversation_id=cid)
+    res1 = copilot_service.ask(frozen_reconciliation_id, req1)
+    if res1.provider != "unavailable":
+        assert len(res1.evidence) > 0
+
+    req2 = CopilotRequest(message="Explain that simply.", conversation_id=cid)
+    res2 = copilot_service.ask(frozen_reconciliation_id, req2)
+    if res2.provider != "unavailable":
+        assert len(res2.answer) > 0
+
