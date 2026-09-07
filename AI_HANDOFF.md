@@ -3,8 +3,8 @@
 ## Dynamic Session State
 
 - **Current Branch**: `antigravity-work`
-- **Current HEAD**: `antigravity-work` active HEAD (following runtime fixes & Global Copilot checkpoint)
-- **Last Known-Good Commit**: `5edd2247c93c88241a42a5d5c53620c1b163e776` (Baseline)
+- **Current HEAD**: `6d77c24990217badbf18bda2bcfbd79cee8a87ba`
+- **Last Known-Good Working Checkpoint**: `6d77c24990217badbf18bda2bcfbd79cee8a87ba`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **New Checkpoint Tag**: `tars-runtime-stable-before-quickreconcile-validation`
 - **Current Objective**: Checkpoint runtime stable state before Task 2 Quick Reconcile live end-to-end testing.
@@ -32,7 +32,7 @@
     - Task 2 is NOT YET fully acceptance-frozen because the complete end-to-end upload/run flow still needs final live testing with synthetic 10k/10.5k files.
 - **Manual Startup Status**: `START_TARS.bat` confirmed to launch successfully and run without backend errors.
 - **Automated Validation Limitation**: Antigravity `run_command` tool is restricted by local Windows ACL on the `NUL` device.
-- **Exact Next Action**: Continue Task 2 live Quick Reconcile testing using the 10k/10.5k synthetic files.
+- **Exact Next Action**: Continue Task 2 live Quick Reconcile validation using the 10k/10.5k synthetic files.
 
 ---
 
