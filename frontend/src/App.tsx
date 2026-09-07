@@ -14,6 +14,7 @@ import {
   BookOpenCheck,
   Building2,
   Check,
+  ChevronDown,
   ChevronRight,
   CircleAlert,
   ClipboardCheck,
@@ -62,8 +63,8 @@ import { ExceptionWorkspace } from "./ExceptionWorkspace";
 import { CopilotPanel } from "./CopilotPanel";
 import { GovernanceWorkspace } from "./GovernanceWorkspace";
 import { AuditTimeline } from "./AuditTimeline";
-import { FinalReviewWorkspace } from "./FinalReviewWorkspace";
 import { QuickReconcile } from "./QuickReconcile";
+import { TarsRunMonitor, TarsRunMonitorErrorBoundary } from "./TarsRunMonitor";
 
 type BusyState =
   | "idle"
@@ -289,6 +290,38 @@ function Progress({
   complete: number;
   finalState: "none" | "current" | "stale";
 }) {
+  const [telemetry, setTelemetry] = useState<ReconciliationProgress | null>(null);
+
+  useEffect(() => {
+    if (!id || id === "new") return;
+    let active = true;
+    const fetchProg = () => {
+      api.progress(id).then((res) => {
+        if (active) setTelemetry(res);
+      }).catch(() => {});
+    };
+    fetchProg();
+    const interval = setInterval(fetchProg, 2000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [id]);
+
+  const mapKeyToStageName = (key: StageKey): string => {
+    switch (key) {
+      case "setup": return "setup";
+      case "mapping": return "mapping";
+      case "policy": return "policy";
+      case "results": return "exact_matching";
+      case "near": return "near_match_analysis";
+      case "exceptions": return "exception_construction";
+      case "audit": return "audit";
+      case "final-review": return "finalization";
+      default: return key;
+    }
+  };
+
   return (
     <nav className="progress-rail" aria-label="Reconciliation progress">
       <div className="progress-rail__label">
@@ -301,16 +334,35 @@ function Progress({
             i <= complete + 1 ||
             s.key === "audit" ||
             (s.key === "final-review" && complete >= 5);
+          
+          const stageName = mapKeyToStageName(s.key);
+          const stageItem = (telemetry?.stages || []).find((st) => st.name === stageName);
+          const backendStatus = stageItem?.status;
+
           const state =
             current === s.key
               ? "current"
               : s.key === "final-review" && finalState === "stale"
                 ? "stale"
-              : i <= complete
+              : backendStatus === "completed" || i <= complete
                 ? "complete"
                 : open
                   ? "available"
                   : "blocked";
+
+          let icon = i + 1;
+          if (backendStatus === "completed" || state === "complete") {
+            icon = "✓" as any;
+          } else if (backendStatus === "running") {
+            icon = "●" as any;
+          } else if (backendStatus === "interrupted") {
+            icon = "⚠" as any;
+          } else if (backendStatus === "failed") {
+            icon = "✕" as any;
+          } else if (backendStatus === "aborted") {
+            icon = "■" as any;
+          }
+
           return (
             <li key={s.key} data-state={state}>
               {open ? (
@@ -318,8 +370,8 @@ function Progress({
                   to={`/reconciliations/${id}/${s.key}`}
                   aria-current={current === s.key ? "step" : undefined}
                 >
-                  <span>
-                    {state === "complete" ? <Check size={13} /> : i + 1}
+                  <span className={`rail-badge rail-badge--${backendStatus || (state === "complete" ? "completed" : "pending")}`}>
+                    {icon === "✓" ? <Check size={13} /> : typeof icon === "string" ? icon : i + 1}
                   </span>
                   <b>{s.label}</b>
                 </NavLink>
@@ -381,7 +433,15 @@ export default function App() {
     [navOpen, setNavOpen] = useState(false),
     [copilotOpen, setCopilotOpen] = useState(false);
   const [exportHistory, setExportHistory] = useState<ExportRecord[]>([]);
+  const [showDetailedResults, setShowDetailedResults] = useState(false);
+
+  // PROTECTED INVARIANT:
+  // Reconciliations is a global persisted registry.
+  // Never gate or clear this list based on active session state.
   const [reconciliations, setReconciliations] = useState<ReconciliationListItem[]>([]);
+  const [reconciliationsError, setReconciliationsError] = useState<string | null>(null);
+
+  const sidebarCollapsedRef = useRef(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_KEY) === "true",
   );
@@ -391,8 +451,17 @@ export default function App() {
     copilotDialogRef = useRef<HTMLDivElement>(null),
     isBusy = busy !== "idle";
   const loadEvents = async (id: string) => setEvents(await api.auditEvents(id));
-  const loadReconciliations = async () =>
-    setReconciliations(await api.listReconciliations());
+  const loadReconciliations = async () => {
+    try {
+      const items = await api.listReconciliations();
+      setReconciliations(items);
+      setReconciliationsError(null);
+    } catch (r: any) {
+      setReconciliationsError(
+        r instanceof Error ? r.message : "Unable to load reconciliations",
+      );
+    }
+  };
   const loadResults = async (id: string, status: ResultStatus) => {
     const r = await api.results(id, status);
     setResults(r);
@@ -453,8 +522,8 @@ export default function App() {
       await loadResults(id, f);
     }
     const supporting = Promise.all([
-      api.auditEvents(id),
-      api.exports(id),
+      api.auditEvents(id).catch(() => []),
+      api.exports(id).catch(() => []),
     ]);
     if (lightweight) {
       void supporting.then(([nextEvents, nextExports]) => {
@@ -522,9 +591,7 @@ export default function App() {
       setBusy("idle");
     }
     if (loc.pathname === "/reconciliations") {
-      void loadReconciliations().catch((r) =>
-        setError(r instanceof Error ? r.message : "Could not load reconciliations."),
-      );
+      void loadReconciliations();
     }
     if (loc.pathname === "/audit") {
       void api.auditEvents(sessionId ?? undefined)
@@ -1203,18 +1270,31 @@ export default function App() {
         title={
           summary
             ? "The ledgers are reconciled"
+            : busy === "matching"
+            ? "Reconciliation in progress"
             : "Run deterministic reconciliation"
         }
         description={
           summary
             ? "Every count below comes from persisted reconciliation results."
+            : busy === "matching"
+            ? "Comparing deterministic invoice identity keys and evaluating confirmed policy tolerances..."
             : "Exact matching runs first, followed by the confirmed tolerance policy."
         }
         actions={
           !summary && (
             <button onClick={runRecon} disabled={isBusy}>
-              <Play size={17} />
-              Run reconciliation
+              {busy === "matching" ? (
+                <>
+                  <Activity className="spin" size={17} />
+                  Reconciling...
+                </>
+              ) : (
+                <>
+                  <Play size={17} />
+                  Run reconciliation
+                </>
+              )}
             </button>
           )
         }
@@ -1254,7 +1334,20 @@ export default function App() {
               tone="warn"
             />
           </div>
-          {resultTable}
+          <div style={{ display: "flex", justifyContent: "flex-end", margin: "12px 0" }}>
+            <button
+              type="button"
+              className="button-secondary button-sm"
+              onClick={() => setShowDetailedResults((v) => !v)}
+            >
+              {showDetailedResults ? "Collapse detailed record table" : "View detailed record table"}
+              <ChevronDown
+                size={14}
+                style={{ transform: showDetailedResults ? "rotate(180deg)" : "rotate(0deg)", marginLeft: "4px" }}
+              />
+            </button>
+          </div>
+          {showDetailedResults && resultTable}
           <div className="next-step">
             <div>
               <strong>Deterministic pass complete</strong>
@@ -1266,6 +1359,12 @@ export default function App() {
             </button>
           </div>
         </>
+      ) : busy === "matching" ? (
+        <div className="run-state">
+          <Activity className="spin" size={25} style={{ color: "var(--accent)" }} />
+          <h2>Reconciliation in progress</h2>
+          <p>TARS is running exact identity matching and checking policy tolerances.</p>
+        </div>
       ) : (
         <div className="run-state">
           <Play size={25} />
@@ -1673,20 +1772,17 @@ export default function App() {
                     }
                   />
                   <section className="surface list-surface">
-                    {error ? (
+                    {reconciliationsError ? (
                       <div className="inline-alert" role="alert" style={{ margin: "1.5rem" }}>
                         <CircleAlert size={17} />
                         <div style={{ flex: 1 }}>
-                          <strong>Could not load reconciliations</strong>
-                          <p style={{ margin: 0, fontSize: "0.85rem", opacity: 0.9 }}>{error}</p>
+                          <strong>Unable to load reconciliations</strong>
+                          <p style={{ margin: 0, fontSize: "0.85rem", opacity: 0.9 }}>{reconciliationsError}</p>
                         </div>
                         <button
                           className="button-secondary"
                           onClick={() => {
-                            setError(null);
-                            void loadReconciliations().catch((r) =>
-                              setError(r instanceof Error ? r.message : "Could not load reconciliations."),
-                            );
+                            void loadReconciliations();
                           }}
                         >
                           Retry
@@ -1751,9 +1847,10 @@ export default function App() {
                 <QuickReconcile
                   onSessionCreated={(id, targetStage) => {
                     setSessionId(id);
-                    void loadSession(id);
+                    void loadSession(id, true);
                     void loadEvents(id);
-                    if (targetStage && targetStage !== "final-review") {
+                    void loadReconciliations();
+                    if (targetStage === "mapping" || targetStage === "policy") {
                       nav(`/reconciliations/${id}/${targetStage}`);
                     }
                   }}
@@ -1905,6 +2002,18 @@ export default function App() {
       {selected && (
         <ToleranceDetail item={selected} onClose={() => setSelected(null)} />
       )}
+      <TarsRunMonitorErrorBoundary>
+        <TarsRunMonitor
+          reconciliationId={sessionId}
+          stageName={current}
+          copilotOpen={copilotOpen}
+          onResume={() => void loadSession(sessionId!)}
+          onOpenCopilot={() => setCopilotOpen(true)}
+          onConfirmMapping={confirmMapping}
+          onConfirmPolicy={confirmPolicy}
+          onNavigateStage={(st) => go(st as StageKey)}
+        />
+      </TarsRunMonitorErrorBoundary>
     </div>
   );
 }
