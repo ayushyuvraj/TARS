@@ -1,0 +1,11 @@
+[
+  {"narration":"Prior month adjustment","expected_category":"PRIOR_PERIOD_ADJUSTMENT"},
+  {"narration":"Advance booked against invoice","expected_category":"ADVANCE_ADJUSTMENT"},
+  {"narration":"Reverse ITC - vendor invoice not received","expected_category":"ITC_REVERSAL"},
+  {"narration":"Vendor GST registration updated","expected_category":"GST_REGISTRATION_CHANGE"},
+  {"narration":"RCM adjustment","expected_category":"RCM_ADJUSTMENT"},
+  {"narration":"Price correction posted","expected_category":"PRICE_CORRECTION"},
+  {"narration":"Freight allocation adjustment","expected_category":"FREIGHT_ALLOCATION"},
+  {"narration":"Regular purchase invoice","expected_category":"REGULAR_PURCHASE"},
+  {"narration":"Miscellaneous note with no useful context","expected_category":"INSUFFICIENT_EVIDENCE"}
+]

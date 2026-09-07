@@ -1,0 +1,60 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.env
+*.env.*
+!*.env.example
+.venv/
+venv/
+env/
+*.pem
+*.key
+*.p12
+*.pfx
+credentials*.json
+secrets*.json
+
+# Python caches and test output
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Frontend dependencies, builds, and caches
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vite/
+frontend/.vite/
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Local application state and generated data
+data/
+backend/data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+uploads/
+exports/
+backups/
+logs/
+*.log
+
+# Temporary/tooling artifacts
+.codex-artifact/
+.codex-tmp/
+tmp/
+temp/
+*.tmp
+*.temp
+~$*
+.DS_Store
+Thumbs.db

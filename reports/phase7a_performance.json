@@ -1,0 +1,21 @@
+{
+  "dataset": {
+    "government_records": 10000,
+    "purchase_register_records": 10500
+  },
+  "exact": {
+    "matches": 8000,
+    "runtime_ms": 7402.67
+  },
+  "near": {
+    "candidate_count": 2000,
+    "high_confidence_proposals": 2000,
+    "runtime_ms": 8522.01
+  },
+  "total_runtime_ms": 15924.68,
+  "peak_memory_mb": 29.83,
+  "notes": [
+    "Synthetic deterministic benchmark, not a production SLA.",
+    "Unique GSTIN blocking bounds the remaining candidate set after 8,000 exact matches."
+  ]
+}
