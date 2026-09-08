@@ -1160,5 +1160,14 @@ export const api = {
       `/api/rules/${encodeURIComponent(ruleId)}`,
       { method: "DELETE" }
     ),
+  bulkDeleteRules: (ruleIds: string[]) =>
+    request<{ success: boolean; deleted_count: number; rule_ids: string[] }>(
+      "/api/rules/bulk-delete",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rule_ids: ruleIds }),
+      }
+    ),
 };
 

@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.api.governance import get_governance_service
 from app.domain.models import (
@@ -646,3 +647,28 @@ def delete_rule(
     except Exception as exc:
         logger.error(f"Failed to delete rule {rule_id}: {exc}")
         raise HTTPException(status_code=500, detail=f"Failed to delete rule {rule_id}: {str(exc)}")
+
+
+class BulkDeleteRulesRequest(BaseModel):
+    rule_ids: list[str]
+
+
+@rules_catalog_router.post("/bulk-delete")
+def bulk_delete_rules(
+    request: BulkDeleteRulesRequest,
+    governance_service: Annotated[GovernanceService, Depends(get_governance_service)],
+) -> dict[str, Any]:
+    locked_selected = [rid for rid in request.rule_ids if rid in LOCKED_GUARDRAIL_IDS]
+    if locked_selected:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Cannot delete mandatory system guardrails: {', '.join(locked_selected)}",
+        )
+    deleted: list[str] = []
+    for rid in request.rule_ids:
+        try:
+            governance_service.delete_rule(rid)
+            deleted.append(rid)
+        except Exception as exc:
+            logger.warning(f"Error deleting rule {rid} in bulk operation: {exc}")
+    return {"success": True, "deleted_count": len(deleted), "rule_ids": deleted}

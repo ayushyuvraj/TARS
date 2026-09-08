@@ -60,6 +60,11 @@ export function RulesWiki() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  const [selectedRuleIds, setSelectedRuleIds] = useState<string[]>([]);
+  const [showBulkDeleteModal, setShowBulkDeleteModal] = useState(false);
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [bulkDeleteError, setBulkDeleteError] = useState<string | null>(null);
+
   const ACTUAL_DATA_CONTEXT = `[ACTUAL GROUND TRUTH DATA & RECONCILIATION SCHEMA IN USE]
 Canonical Schema Mapping (GSTR-2B vs Purchase Register):
 • supplier_gstin       : [STRING, 15 chars] Matches vendor GSTIN identifier
@@ -244,6 +249,30 @@ Rule Compilation & Authority Constraints:
     { key: "EXPORT_OUTPUT_RULE", label: "Export & Output" },
   ];
 
+  const selectedRules = rules.filter((r) => selectedRuleIds.includes(r.rule_id));
+  const selectedLockedCount = selectedRules.filter((r) => !r.configurable).length;
+  const selectedDeletableCount = selectedRules.filter((r) => r.configurable).length;
+  const isBulkDeleteDisabled = selectedRuleIds.length === 0 || selectedLockedCount > 0;
+
+  const toggleSelectRule = (ruleId: string, e?: React.MouseEvent | React.ChangeEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedRuleIds((prev) =>
+      prev.includes(ruleId) ? prev.filter((id) => id !== ruleId) : [...prev, ruleId]
+    );
+  };
+
+  const toggleSelectAllFiltered = () => {
+    const filteredIds = filteredRules.map((r) => r.rule_id);
+    const allSelected =
+      filteredIds.length > 0 && filteredIds.every((id) => selectedRuleIds.includes(id));
+    if (allSelected) {
+      setSelectedRuleIds((prev) => prev.filter((id) => !filteredIds.includes(id)));
+    } else {
+      const newSet = new Set([...selectedRuleIds, ...filteredIds]);
+      setSelectedRuleIds(Array.from(newSet));
+    }
+  };
+
   return (
     <div className="rules-wiki-container">
       {/* Header Bar */}
@@ -256,7 +285,45 @@ Rule Compilation & Authority Constraints:
             financial integrity guardrails, execution order, and learned patterns.
           </p>
         </div>
-        <div className="rules-wiki-header__actions">
+        <div className="rules-wiki-header__actions" style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          {selectedRuleIds.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {selectedLockedCount > 0 && (
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "#dc2626",
+                    background: "#fef2f2",
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #fca5a5",
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                  title="Bulk delete is disabled because non-deletable locked guardrail(s) are selected. Uncheck locked guardrails to enable."
+                >
+                  <Lock size={13} /> {selectedLockedCount} locked guardrail(s) selected (Delete Disabled)
+                </span>
+              )}
+              <button
+                className={`btn-danger ${isBulkDeleteDisabled ? "disabled" : ""}`}
+                disabled={isBulkDeleteDisabled}
+                onClick={() => {
+                  setBulkDeleteError(null);
+                  setShowBulkDeleteModal(true);
+                }}
+                title={
+                  selectedLockedCount > 0
+                    ? `Disabled: ${selectedLockedCount} non-deletable guardrail(s) included in selection.`
+                    : `Delete ${selectedDeletableCount} selected editable rule(s) permanently`
+                }
+              >
+                <Trash2 size={16} /> Delete Selected ({selectedRuleIds.length})
+              </button>
+            </div>
+          )}
           <button
             className="btn-sparkle"
             onClick={() => {
@@ -436,6 +503,18 @@ Rule Compilation & Authority Constraints:
               <table className="rules-table">
                 <thead>
                   <tr>
+                    <th style={{ width: "36px", textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={
+                          filteredRules.length > 0 &&
+                          filteredRules.every((r) => selectedRuleIds.includes(r.rule_id))
+                        }
+                        onChange={toggleSelectAllFiltered}
+                        title="Select / Deselect all visible rules"
+                        style={{ cursor: "pointer" }}
+                      />
+                    </th>
                     <th style={{ width: "160px" }}>Governance Tier</th>
                     <th style={{ width: "60px" }}>Order</th>
                     <th style={{ width: "110px" }}>Rule ID</th>
@@ -454,15 +533,24 @@ Rule Compilation & Authority Constraints:
                   {filteredRules.map((rule) => {
                     const isExpanded = expandedRuleId === rule.rule_id;
                     const isTech = Boolean(showTechnicalConditions[rule.rule_id]);
+                    const isSelected = selectedRuleIds.includes(rule.rule_id);
 
                     return (
                       <React.Fragment key={rule.rule_id}>
                         <tr
                           className={`rule-row-item ${isExpanded ? "expanded" : ""} ${
-                            rule.rule_id === "R-001" ? "hero-rule-row" : ""
-                          }`}
+                            isSelected ? "selected" : ""
+                          } ${rule.rule_id === "R-001" ? "hero-rule-row" : ""}`}
                           onClick={() => toggleExpandRow(rule.rule_id)}
                         >
+                          <td onClick={(e) => e.stopPropagation()} style={{ textAlign: "center" }}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => toggleSelectRule(rule.rule_id, e)}
+                              style={{ cursor: "pointer" }}
+                            />
+                          </td>
                           <td>
                             {rule.configurable ? (
                               <span className="tier-badge tier-badge--configurable" title="Configurable per business policy">
@@ -539,7 +627,7 @@ Rule Compilation & Authority Constraints:
                         </tr>
                         {isExpanded && (
                           <tr>
-                            <td colSpan={12} style={{ padding: 0 }}>
+                            <td colSpan={13} style={{ padding: 0 }}>
                               <RuleInspectorDrawer
                                 rule={rule}
                                 isTech={isTech}
@@ -949,6 +1037,98 @@ Rule Compilation & Authority Constraints:
                   ) : (
                     <>
                       <Trash2 size={16} /> Confirm Permanent Deletion
+                    </>
+                  )}
+                </button>
+              </footer>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {/* Bulk Permanent Deletion Confirmation Modal - Portaled to document.body */}
+      {showBulkDeleteModal &&
+        createPortal(
+          <div className="ai-rule-modal-backdrop" onClick={() => !isBulkDeleting && setShowBulkDeleteModal(false)}>
+            <div className="ai-rule-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 540 }}>
+              <header className="ai-rule-modal__header" style={{ background: "#fef2f2", borderColor: "#fca5a5" }}>
+                <h3 style={{ color: "#991b1b" }}>
+                  <AlertTriangle size={20} color="#dc2626" /> Permanent Bulk Rule Deletion
+                </h3>
+                <button
+                  disabled={isBulkDeleting}
+                  onClick={() => setShowBulkDeleteModal(false)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#991b1b" }}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+
+              <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ padding: "14px 16px", background: "#fff5f5", border: "1px solid #fed7d7", borderRadius: 12, color: "#9b2c2c", fontSize: 13, lineHeight: 1.5 }}>
+                  <strong style={{ color: "#742a2a", fontSize: 14, display: "block", marginBottom: 4 }}>
+                    ⚠️ Warning: This action is IRREVERSIBLE.
+                  </strong>
+                  <p style={{ margin: 0 }}>
+                    Are you sure you want to permanently delete the <strong>{selectedRuleIds.length}</strong> selected rule(s)?
+                    This will permanently remove them from backend SQLite storage and exclude them from all future reconciliation runs.
+                  </p>
+                </div>
+
+                <div style={{ maxHeight: 150, overflowY: "auto", background: "#f8fafc", padding: "10px 14px", borderRadius: 8, border: "1px solid var(--border)", fontSize: 12 }}>
+                  <strong style={{ display: "block", marginBottom: 6, color: "var(--primary)" }}>Selected rules to be permanently deleted:</strong>
+                  <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+                    {selectedRules.map((r) => (
+                      <li key={r.rule_id} style={{ color: "var(--secondary)" }}>
+                        <code style={{ background: "#e2e8f0", padding: "1px 5px", borderRadius: 4, marginRight: 6 }}>{r.rule_id}</code>
+                        <strong>{r.name}</strong>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                {bulkDeleteError && (
+                  <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", borderRadius: 8, fontSize: 12 }}>
+                    {bulkDeleteError}
+                  </div>
+                )}
+              </div>
+
+              <footer className="ai-rule-modal__footer" style={{ background: "#f8fafc" }}>
+                <button
+                  className="button-secondary"
+                  disabled={isBulkDeleting}
+                  onClick={() => setShowBulkDeleteModal(false)}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="btn-danger"
+                  disabled={isBulkDeleting}
+                  onClick={async () => {
+                    setIsBulkDeleting(true);
+                    setBulkDeleteError(null);
+                    try {
+                      const res = await api.bulkDeleteRules(selectedRuleIds);
+                      setSuccessNotification(`Successfully deleted ${res.deleted_count} rules from live Rules Catalog.`);
+                      setSelectedRuleIds([]);
+                      setShowBulkDeleteModal(false);
+                      await fetchCatalog();
+                    } catch (err) {
+                      setBulkDeleteError(err instanceof Error ? err.message : "Failed to execute bulk deletion.");
+                    } finally {
+                      setIsBulkDeleting(false);
+                    }
+                  }}
+                >
+                  {isBulkDeleting ? (
+                    <>
+                      <Activity className="spin" size={16} /> Deleting {selectedRuleIds.length} Rules...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={16} /> Confirm Permanent Bulk Deletion
                     </>
                   )}
                 </button>
