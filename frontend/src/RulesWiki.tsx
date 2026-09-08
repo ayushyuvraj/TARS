@@ -115,6 +115,7 @@ Rule Compilation & Authority Constraints:
       addStep(`> [STATUS] Rule ${compiledRule.rule_id} ("${compiledRule.name}") active & saved to SQLite persistence engine!`);
 
       setCompiledRuleResult(compiledRule);
+      await fetchCatalog();
     } catch (err) {
       setCompileError(
         err instanceof Error ? err.message : "Failed to compile AI rule. Please check prompt and try again."
@@ -337,7 +338,7 @@ Rule Compilation & Authority Constraints:
             className={activeTab === "table" ? "active" : ""}
             onClick={() => setActiveTab("table")}
           >
-            <Layers size={15} /> Rules Library ({filteredRules.length})
+            <Layers size={15} /> Rules Library ({filteredRules.length === rules.length ? rules.length : `${filteredRules.length} of ${rules.length}`})
           </button>
           <button
             className={activeTab === "pipeline" ? "active" : ""}

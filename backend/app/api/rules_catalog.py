@@ -321,6 +321,69 @@ def get_rule_catalog(
         )
         catalog_items.append(catalog_item)
 
+    # Include database-persisted rules that were not present in raw_discovery inventory
+    inventory_rule_ids = {item["rule_id"] for item in raw_discovery}
+    for rule_id, db_rule in db_rules.items():
+        if rule_id not in inventory_rule_ids:
+            cond_str_list = []
+            if db_rule.conditions:
+                for c in db_rule.conditions:
+                    if c.operator == "EXACT":
+                        cond_str_list.append(f"{c.field} matches exactly")
+                    elif c.operator == "NORMALIZED_EXACT":
+                        cond_str_list.append(f"{c.field} matches after normalization")
+                    elif c.operator == "ABSOLUTE_TOLERANCE":
+                        cond_str_list.append(f"{c.field} variance <= ₹{c.value}")
+                    elif c.operator == "DATE_TOLERANCE":
+                        cond_str_list.append(f"{c.field} drift <= {c.value} days")
+                    else:
+                        cond_str_list.append(f"{c.field} {c.operator} {c.value or ''}")
+            h_if = f"IF {' AND '.join(cond_str_list)}" if cond_str_list else (db_rule.description or db_rule.name)
+
+            action_type = db_rule.action.type if db_rule.action else "PROPOSE_NEAR_MATCH"
+            h_then = f"THEN {action_type.replace('_', ' ')} (Authority: {db_rule.action_authority.value if hasattr(db_rule.action_authority, 'value') else db_rule.action_authority})"
+
+            status_str = db_rule.status.value if hasattr(db_rule.status, "value") else str(db_rule.status)
+            authority_str = db_rule.action_authority.value if hasattr(db_rule.action_authority, "value") else str(db_rule.action_authority)
+            rule_type_val = db_rule.rule_type.value if hasattr(db_rule.rule_type, "value") else str(db_rule.rule_type)
+
+            db_catalog_item = RuleCatalogItem(
+                rule_id=rule_id,
+                name=db_rule.name,
+                suggested_human_friendly_name=db_rule.name,
+                category="LEARNED_RULE" if rule_type_val == "LEARNED" else "MATCHING_RULE",
+                description=db_rule.description or f"AI-compiled rule {rule_id}",
+                stage="GOVERNANCE_REVIEW",
+                execution_order=11,
+                enabled=(status_str == "ACTIVE"),
+                configurable=True,
+                locked=False,
+                if_condition=h_if,
+                then_result=h_then,
+                human_friendly_if=h_if,
+                human_friendly_then=h_then,
+                authority=authority_str,
+                source_of_truth="DATABASE",
+                version=db_rule.version,
+                status=status_str,
+                parameters=None,
+                dependencies=[],
+                conflicts_with=[],
+                side_effects=None,
+                audit_event_produced=True,
+                safe_to_disable=True,
+                toggle_safety="SAFE_TO_TOGGLE",
+                execution_sequencing="ORDER_WITHIN_STAGE",
+                file_function_db_location="SQLite table: reusable_rules",
+                notes="AI-compiled DB rule",
+                approval=db_rule.approval.model_dump() if db_rule.approval else None,
+                provenance=db_rule.provenance.model_dump() if db_rule.provenance else None,
+                effectiveness=db_rule.effectiveness.model_dump() if db_rule.effectiveness else None,
+                conditions=[c.model_dump() for c in db_rule.conditions] if db_rule.conditions else None,
+                action=db_rule.action.model_dump() if db_rule.action else None,
+            )
+            catalog_items.append(db_catalog_item)
+
     # Sort rules by execution_order
     catalog_items.sort(key=lambda r: r.execution_order)
 
@@ -339,7 +402,23 @@ def get_rule_catalog(
         learned_count=learned_count,
     )
 
-    stages = [ExecutionStageInfo(**stage) for stage in STAGES_DEFINITION]
+    stage_map = {s["stage_id"]: list(s["rule_ids"]) for s in STAGES_DEFINITION}
+    for item in catalog_items:
+        stg = item.stage
+        if stg in stage_map and item.rule_id not in stage_map[stg]:
+            stage_map[stg].append(item.rule_id)
+
+    stages = [
+        ExecutionStageInfo(
+            stage_id=s["stage_id"],
+            stage_name=s["stage_name"],
+            description=s["description"],
+            execution_order=s["execution_order"],
+            reorderability=s["reorderability"],
+            rule_ids=stage_map.get(s["stage_id"], s["rule_ids"]),
+        )
+        for s in STAGES_DEFINITION
+    ]
 
     from app.config import get_settings
     from app.providers.factory import create_llm_provider
