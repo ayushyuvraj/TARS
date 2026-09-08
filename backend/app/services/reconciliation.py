@@ -234,12 +234,33 @@ class ReconciliationService:
         datasets = enforce_one_source_per_canonical(
             [self.schema_mapper.propose_dataset(profile) for profile in profiles], profiles
         )
-        unresolved = [
+        from difflib import SequenceMatcher
+        from app.services.schema_mapping import normalize_name
+
+        def _is_plausible_candidate(mapping: ColumnMappingCandidate) -> bool:
+            norm = normalize_name(mapping.source_column)
+            for aliases in self.schema_mapper._aliases.values():
+                if any(alias in norm or norm in alias for alias in aliases if len(alias) >= 3):
+                    return True
+                if any(SequenceMatcher(None, norm, alias).ratio() >= 0.35 for alias in aliases):
+                    return True
+            return False
+
+        required_set = set(REQUIRED_EXACT_FIELDS)
+        all_required_mapped = all(
+            required_set.issubset({m.canonical_field for m in dataset.mappings if m.canonical_field})
+            for dataset in datasets
+        )
+
+        unresolved = [] if all_required_mapped else [
             mapping
             for dataset in datasets
             for mapping in dataset.mappings
             if mapping.confidence < self.schema_mapper.high_confidence_threshold
+            and _is_plausible_candidate(mapping)
         ]
+
+
         provider_used: str | None = None
         provider_failure: SchemaProviderUnavailable | None = None
         if unresolved and self.llm_provider is not None:

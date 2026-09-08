@@ -540,6 +540,77 @@ export type RuleVersion = {
   } | null;
   created_at: string;
 };
+
+export type RuleCatalogItem = {
+  rule_id: string;
+  name: string;
+  suggested_human_friendly_name: string;
+  category: string;
+  description: string;
+  stage: string;
+  execution_order: number;
+  enabled: boolean;
+  configurable: boolean;
+  locked: boolean;
+  if_condition: string;
+  then_result: string;
+  human_friendly_if: string;
+  human_friendly_then: string;
+  authority: string;
+  source_of_truth: string;
+  version: number | string;
+  status: string;
+  parameters?: unknown;
+  dependencies: string[];
+  conflicts_with: string[];
+  side_effects: string | null;
+  audit_event_produced: boolean;
+  safe_to_disable: boolean;
+  toggle_safety: string;
+  execution_sequencing: string;
+  file_function_db_location: string;
+  notes: string | null;
+  approval?: {
+    approved_by: string;
+    approved_at: string;
+    note: string | null;
+  } | null;
+  provenance?: {
+    type: string;
+    reconciliation_id?: string;
+    pattern_suggestion_id?: string;
+    decision_count?: number;
+    summary?: string;
+    evidence_ids?: string[];
+  } | null;
+  effectiveness?: Record<string, unknown> | null;
+  conditions?: { field: string; operator: string; value: unknown }[] | null;
+  action?: { type: string; value: unknown } | null;
+};
+
+export type RuleCatalogSummary = {
+  total_rules: number;
+  configurable_count: number;
+  locked_count: number;
+  active_count: number;
+  learned_count: number;
+};
+
+export type ExecutionStageInfo = {
+  stage_id: string;
+  stage_name: string;
+  description: string;
+  execution_order: number;
+  reorderability: "FIXED_ORDER" | "ORDER_WITHIN_STAGE";
+  rule_ids: string[];
+};
+
+export type RuleCatalogResponse = {
+  rules: RuleCatalogItem[];
+  summary: RuleCatalogSummary;
+  stages: ExecutionStageInfo[];
+};
+
 export type PatternSuggestion = {
   id: string;
   reconciliation_id: string;
@@ -977,6 +1048,7 @@ export const api = {
     }),
   exportDownloadUrl: (id: string, exportId: string) =>
     `/api/reconciliations/${id}/exports/${exportId}/download`,
+  rulesCatalog: () => request<RuleCatalogResponse>("/api/rules/catalog"),
   rules: (profileId?: string) =>
     request<RuleVersion[]>(
       profileId ? `/api/client-profiles/${profileId}/rules` : "/api/rules",

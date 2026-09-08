@@ -42,6 +42,14 @@ This document specifies operational guidelines, safety boundaries, and continuit
    - Do **NOT** alter product functionality, matching algorithms, governance policies, or export structures unless requested.
    - Python code and persisted structured contracts remain the source of financial truth.
 
+7. **RULES CONTROL PLANE INVARIANT**
+   - The Rules Wiki must distinguish configurable business rules from mandatory system guardrails.
+   - Mandatory safety/integrity rules must never become user-disableable through ordinary UI controls.
+   - Macro reconciliation stage order is dependency-controlled and may not be arbitrarily reordered.
+   - LLM-created rules must eventually compile only into validated declarative rule objects; LLM-generated executable Python must never become rule logic.
+   - Rule status, authority, sequencing and version information shown to users must come from authoritative runtime/configuration truth.
+
+
 ---
 
 ## Baseline Reference & Working Branch Protocol

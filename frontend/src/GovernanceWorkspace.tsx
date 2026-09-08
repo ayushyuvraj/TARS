@@ -74,6 +74,7 @@ export function GovernanceWorkspace({
   };
   const saveProfile = () =>
     act(async () => {
+      if (!reconciliationId) throw new Error("Save a reconciliation first.");
       const created = await api.createProfile(
         reconciliationId,
         clientName,
@@ -84,6 +85,7 @@ export function GovernanceWorkspace({
     });
   const detect = () =>
     act(async () => {
+      if (!reconciliationId) throw new Error("No active reconciliation session.");
       const found = await api.detectPatterns(reconciliationId);
       setPatterns(found);
       setView("patterns");
@@ -96,6 +98,7 @@ export function GovernanceWorkspace({
   const createRule = (patternId: string) =>
     act(async () => {
       if (!profile) throw new Error("Save a client profile first.");
+      if (!reconciliationId) throw new Error("No active reconciliation session.");
       const draft = await api.patternToRule(
         reconciliationId,
         patternId,
@@ -110,6 +113,7 @@ export function GovernanceWorkspace({
   const simulate = (rule: RuleVersion) =>
     act(async () => {
       setSelectedRule(rule);
+      if (!reconciliationId) throw new Error("No active reconciliation session.");
       setSimulation(await api.simulateRule(rule.rule_id, reconciliationId));
     });
   const approve = (rule: RuleVersion) =>

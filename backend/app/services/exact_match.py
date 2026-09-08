@@ -59,6 +59,19 @@ class ExactMatchEngine:
         # comparison belongs to the later near-match engine.
         return text
 
+    def _record_key(
+        self,
+        row: dict,
+        field_cols: list[tuple[str, str]],
+    ) -> tuple[Hashable, ...] | None:
+        values = []
+        for field, col in field_cols:
+            val = self._normalize(field, row.get(col))
+            if val is None:
+                return None
+            values.append(val)
+        return tuple(values)
+
     def _key(
         self,
         row: pd.Series,
@@ -76,24 +89,31 @@ class ExactMatchEngine:
         mappings: dict[DatasetRole, dict[str, str]] | None = None,
     ) -> list[MatchResult]:
         resolved_mappings = mappings or CANONICAL_MAPPINGS
-        pr_index: dict[tuple[Hashable, ...], deque[str]] = defaultdict(deque)
         pr_mapping = resolved_mappings[DatasetRole.PURCHASE_REGISTER]
-        for _, row in purchase_register.iterrows():
-            key = self._key(row, DatasetRole.PURCHASE_REGISTER, resolved_mappings)
+        pr_field_cols = [(field, pr_mapping[field]) for field in MATCH_FIELDS]
+        pr_id_col = pr_mapping["record_id"]
+
+        pr_index: dict[tuple[Hashable, ...], deque[str]] = defaultdict(deque)
+        for row in purchase_register.to_dict("records"):
+            key = self._record_key(row, pr_field_cols)
             if key is not None:
-                pr_index[key].append(str(row[pr_mapping["record_id"]]).strip())
+                pr_index[key].append(str(row[pr_id_col]).strip())
 
         government_mapping = resolved_mappings[DatasetRole.GOVERNMENT]
+        gov_field_cols = [(field, government_mapping[field]) for field in MATCH_FIELDS]
+        gov_id_col = government_mapping["record_id"]
+
         matches: list[MatchResult] = []
-        for _, row in government.iterrows():
-            key = self._key(row, DatasetRole.GOVERNMENT, resolved_mappings)
+        for row in government.to_dict("records"):
+            key = self._record_key(row, gov_field_cols)
             if key is None or not pr_index[key]:
                 continue
             matches.append(
                 MatchResult(
-                    government_record_id=str(row[government_mapping["record_id"]]).strip(),
+                    government_record_id=str(row[gov_id_col]).strip(),
                     purchase_register_record_id=pr_index[key].popleft(),
                     matched_fields=list(MATCH_FIELDS),
                 )
             )
         return matches
+

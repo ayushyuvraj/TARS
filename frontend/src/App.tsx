@@ -65,6 +65,7 @@ import { GovernanceWorkspace } from "./GovernanceWorkspace";
 import { AuditTimeline } from "./AuditTimeline";
 import { FinalReviewWorkspace } from "./FinalReviewWorkspace";
 import { QuickReconcile } from "./QuickReconcile";
+import { RulesWiki } from "./RulesWiki";
 
 type BusyState =
   | "idle"
@@ -1468,9 +1469,9 @@ export default function App() {
             <Building2 />
             <span>Client Profiles</span>
           </NavLink>
-          <NavLink to="/rules" data-tooltip="Rules" title={sidebarCollapsed ? "Rules" : undefined}>
+          <NavLink to="/rules" data-tooltip="Rules Wiki" title={sidebarCollapsed ? "Rules Wiki" : undefined}>
             <BookOpenCheck />
-            <span>Rules</span>
+            <span>Rules Wiki</span>
           </NavLink>
           <NavLink to="/audit" data-tooltip="Audit" title={sidebarCollapsed ? "Audit" : undefined}>
             <History />
@@ -1766,7 +1767,7 @@ export default function App() {
                 <QuickReconcile
                   onSessionCreated={(id, targetStage) => {
                     setSessionId(id);
-                    void loadSession(id);
+                    void hydrate(id);
                     void loadEvents(id);
                     if (targetStage && targetStage !== "final-review") {
                       nav(`/reconciliations/${id}/${targetStage}`);
@@ -1833,20 +1834,7 @@ export default function App() {
             />
             <Route
               path="/rules"
-              element={
-                <>
-                  <PageHeader
-                    eyebrow="Governed automation"
-                    title="Rules"
-                    description="Turn repeated human decisions into versioned, simulated, explicitly activated rules."
-                  />
-                  <GovernanceWorkspace
-                    initialView="rules"
-                    reconciliationId={sessionId ?? undefined}
-                    onAuditChanged={() => void api.auditEvents(sessionId ?? undefined).then(setEvents)}
-                  />
-                </>
-              }
+              element={<RulesWiki />}
             />
             <Route
               path="/audit"

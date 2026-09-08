@@ -142,21 +142,26 @@ class ToleranceMatchEngine:
             for rule in policy.rules
             if rule.enabled and rule.operator == MatchOperator.EXACT
         ]
-        purchase_buckets: dict[tuple[str, ...], list[pd.Series]] = defaultdict(list)
-        for _, pr_row in pr_rows.iterrows():
+        purchase_buckets: dict[tuple[str, ...], list[dict]] = defaultdict(list)
+        pr_records = pr_rows.to_dict("records")
+        pr_mapping = mappings[DatasetRole.PURCHASE_REGISTER]
+        for pr_row in pr_records:
             key_values = [
-                self._text(pr_row[mappings[DatasetRole.PURCHASE_REGISTER][field]], field)
+                self._text(pr_row[pr_mapping[field]], field)
                 for field in exact_fields
             ]
             if all(value is not None for value in key_values):
-                purchase_buckets[tuple(key_values)].append(pr_row)  # type: ignore[arg-type]
+                purchase_buckets[tuple(key_values)].append(pr_row)
 
         candidates: dict[str, list[tuple[str, tuple]]] = defaultdict(list)
         pr_claims: Counter[str] = Counter()
-        for _, gov_row in gov_rows.iterrows():
+        gov_records = gov_rows.to_dict("records")
+        gov_mapping = mappings[DatasetRole.GOVERNMENT]
+
+        for gov_row in gov_records:
             gov_id = str(gov_row[gov_id_column]).strip()
             key_values = [
-                self._text(gov_row[mappings[DatasetRole.GOVERNMENT][field]], field)
+                self._text(gov_row[gov_mapping[field]], field)
                 for field in exact_fields
             ]
             if not all(value is not None for value in key_values):
@@ -168,6 +173,7 @@ class ToleranceMatchEngine:
                 pr_id = str(pr_row[pr_id_column]).strip()
                 candidates[gov_id].append((pr_id, evidence))
                 pr_claims[pr_id] += 1
+
 
         matches: list[MatchResult] = []
         conflicts: list[MatchConflict] = []

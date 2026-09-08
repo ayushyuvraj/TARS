@@ -1220,3 +1220,63 @@ class QuickReconcileResponse(BaseModel):
     interrupt: QuickReconcileInterrupt | None = None
     error: str | None = None
 
+
+class RuleCatalogItem(BaseModel):
+    rule_id: str
+    name: str
+    suggested_human_friendly_name: str
+    category: str
+    description: str
+    stage: str
+    execution_order: int
+    enabled: bool = True
+    configurable: bool
+    locked: bool
+    if_condition: str
+    then_result: str
+    human_friendly_if: str
+    human_friendly_then: str
+    authority: str
+    source_of_truth: str
+    version: int | str
+    status: str
+    parameters: Any | None = None
+    dependencies: list[str] = Field(default_factory=list)
+    conflicts_with: list[str] = Field(default_factory=list)
+    side_effects: str | None = None
+    audit_event_produced: bool = True
+    safe_to_disable: bool = False
+    toggle_safety: str
+    execution_sequencing: str
+    file_function_db_location: str
+    notes: str | None = None
+    approval: dict[str, Any] | None = None
+    provenance: dict[str, Any] | None = None
+    effectiveness: dict[str, Any] | None = None
+    conditions: list[dict[str, Any]] | None = None
+    action: dict[str, Any] | None = None
+
+
+class RuleCatalogSummary(BaseModel):
+    total_rules: int = Field(ge=0)
+    configurable_count: int = Field(ge=0)
+    locked_count: int = Field(ge=0)
+    active_count: int = Field(ge=0)
+    learned_count: int = Field(ge=0)
+
+
+class ExecutionStageInfo(BaseModel):
+    stage_id: str
+    stage_name: str
+    description: str
+    execution_order: int
+    reorderability: str
+    rule_ids: list[str] = Field(default_factory=list)
+
+
+class RuleCatalogResponse(BaseModel):
+    rules: list[RuleCatalogItem]
+    summary: RuleCatalogSummary
+    stages: list[ExecutionStageInfo]
+
+

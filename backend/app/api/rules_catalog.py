@@ -1,0 +1,328 @@
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException
+
+from app.api.governance import get_governance_service
+from app.domain.models import (
+    ExecutionStageInfo,
+    RuleCatalogItem,
+    RuleCatalogResponse,
+    RuleCatalogSummary,
+)
+from app.services.governance import GovernanceService
+
+logger = logging.getLogger(__name__)
+
+rules_catalog_router = APIRouter(prefix="/rules", tags=["rules-catalog"])
+
+
+def _find_inventory_file() -> Path:
+    current = Path(__file__).resolve().parent
+    for _ in range(5):
+        candidate = current / "docs" / "rules_inventory.json"
+        if candidate.exists():
+            return candidate
+        current = current.parent
+    raise FileNotFoundError("docs/rules_inventory.json could not be located")
+
+
+def _human_friendly_if(rule_id: str, raw_if: str) -> str:
+    friendly_map = {
+        "EXACT-D001": "Supplier GSTIN, Invoice Number, Invoice Date, Invoice Type, Taxable Value, GST Rate, IGST, CGST, SGST, and Cess are 100% identical after standard string case & decimal quantization.",
+        "EXACT-D002": "Monetary field value is provided in financial record.",
+        "TOL-D001": "Absolute variance in Taxable Value between Government and PR invoice is <= confirmed policy limit (Default: ₹10.00).",
+        "TOL-D002": "Difference in invoice document dates is <= confirmed policy limit (Default: 5 days).",
+        "TOL-D003": "Government record has multiple PR candidates OR PR candidate is claimed by multiple Government records during tolerance matching.",
+        "NEAR-D001": "Same GSTIN, same invoice type, invoice date diff <= 30 days, taxable value diff <= max(₹20,000, 50%), and invoice similarity >= 0.55.",
+        "NEAR-D002": "Candidate pair satisfies candidate generation search window filters.",
+        "NEAR-D003": "Multiple candidates score >= 0.92 OR gap between top candidate and second candidate is <= 0.05.",
+        "NEAR-D004": "Candidate PR record ranks #1 for the Government record AND reciprocally the Government record ranks #1 for that PR record.",
+        "NEAR-D005": "Normalized invoice numbers match exactly but taxable variance > ₹10.00 or tax variance > ₹2.00.",
+        "NEAR-D006": "Match score >= 0.92, taxable variance <= ₹10.00, tax variance <= ₹2.00, and reciprocal best match.",
+        "GOV-D001": "Learned or reusable rule has action authority PROPOSE_ONLY.",
+        "GOV-D002": "Observed >= 5 human-approved near matches with >= 80% human acceptance ratio for a consistent pattern.",
+        "GOV-D003": "Draft rule collides with known past human rejections or causes duplicate PR record consumption.",
+        "R-001": "Supplier GSTIN matches exactly AND invoice numbers become identical after separator normalization (removing slashes, dashes, dots).",
+        "R-002": "Supplier GSTIN matches exactly AND invoice numbers become identical after separator normalization.",
+        "SAFE-D001": "Record ID is present in consumed matches set.",
+        "SAFE-D002": "Any governance, matching, or export state transition occurs.",
+        "SAFE-D003": "Export cell string starts with '=', '+', '@', or '-'.",
+        "SAFE-D004": "Policy contains rules for mandatory identifier fields (gstin, document_number).",
+        "DATA-D001": "Column header matches known canonical alias or lexical similarity >= 0.84.",
+        "DATA-D002": "Multiple source columns are proposed for the same canonical field.",
+        "EXCEPT-D001": "Government invoice has no candidate PR pair after all matching stages.",
+        "EXCEPT-D002": "Purchase Register invoice has no candidate GST pair after all matching stages.",
+        "EXEC-D001": "Executing TARS reconciliation workflow pipeline.",
+    }
+    return friendly_map.get(rule_id, raw_if)
+
+
+def _human_friendly_then(rule_id: str, raw_then: str) -> str:
+    friendly_map = {
+        "EXACT-D001": "Mark pair as EXACT match and consume both records from subsequent matching stages.",
+        "EXACT-D002": "Quantize value to Decimal('0.01') using standard ROUND_HALF_UP rounding.",
+        "TOL-D001": "Satisfy Taxable Amount Tolerance requirement for candidate matching.",
+        "TOL-D002": "Satisfy Invoice Date Tolerance requirement for candidate matching.",
+        "TOL-D003": "Emit MatchConflict and require human review; do NOT auto-match.",
+        "NEAR-D001": "Pass record pair to 6-feature scoring engine.",
+        "NEAR-D002": "Calculate 6-feature weighted composite score: 35% Invoice + 25% Taxable Value + 20% Tax Amounts + 10% Date + 5% Rate + 5% Type.",
+        "NEAR-D003": "Classify Government record as AMBIGUOUS and force human review.",
+        "NEAR-D004": "Mark candidate pair as reciprocal best match.",
+        "NEAR-D005": "Classify record as MATERIAL_MISMATCH exception.",
+        "NEAR-D006": "Mark candidate pair as eligible for fast-track human bulk approval.",
+        "GOV-D001": "Set automatic reconciliations = 0; create candidate proposals requiring human confirmation.",
+        "GOV-D002": "Generate a governed PatternSuggestion for client profile review.",
+        "GOV-D003": "Set activation_blocked = True and reject rule activation.",
+        "R-001": "Propose Near Match (Authority: PROPOSE_ONLY — Performs 0 automatic reconciliations without human confirmation).",
+        "R-002": "Propose Near Match (Draft Status — Currently inactive).",
+        "SAFE-D001": "Block re-pairing to prevent double-counting an invoice.",
+        "SAFE-D002": "Insert append-only immutable record into DB audit_events.",
+        "SAFE-D003": "Neutralize formula injection by prefixing cell string with a single quote (').",
+        "SAFE-D004": "Enforce operator EXACT and required = True.",
+        "DATA-D001": "Propose canonical field mapping with confidence score.",
+        "DATA-D002": "Select candidate with highest selection score and clear lower-scoring mapping.",
+        "EXCEPT-D001": "Classify into GST_ONLY exception queue.",
+        "EXCEPT-D002": "Classify into PR_ONLY exception queue.",
+        "EXEC-D001": "Enforce strict stage prerequisite dependencies.",
+    }
+    return friendly_map.get(rule_id, raw_then)
+
+
+STAGES_DEFINITION = [
+    {
+        "stage_id": "UPLOAD_PROFILING",
+        "stage_name": "1. File Upload & Profiling",
+        "description": "Workbook ingestion, structure analysis, and sheet profiling.",
+        "execution_order": 1,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["EXEC-D001"],
+    },
+    {
+        "stage_id": "SCHEMA_MAPPING",
+        "stage_name": "2. Schema Mapping Proposal",
+        "description": "Deterministic alias matching and canonical column arbitration.",
+        "execution_order": 2,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["DATA-D001", "DATA-D002"],
+    },
+    {
+        "stage_id": "SCHEMA_CONFIRMATION",
+        "stage_name": "3. Human Schema Confirmation",
+        "description": "User reviews and locks column mapping assignments.",
+        "execution_order": 3,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": [],
+    },
+    {
+        "stage_id": "POLICY_CONFIRMATION",
+        "stage_name": "4. Policy Proposal & Confirmation",
+        "description": "Validation of mandatory identity fields and tolerance limits.",
+        "execution_order": 4,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["SAFE-D004"],
+    },
+    {
+        "stage_id": "EXACT_MATCHING",
+        "stage_name": "5. Stage 1: Exact Matching Engine",
+        "description": "10-field exact identity matching and monetary quantization.",
+        "execution_order": 5,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["EXACT-D001", "EXACT-D002"],
+    },
+    {
+        "stage_id": "TOLERANCE_MATCHING",
+        "stage_name": "6. Stage 2: Tolerance Matching Engine",
+        "description": "Policy-based taxable amount and date tolerance evaluation with reciprocal uniqueness check.",
+        "execution_order": 6,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["TOL-D001", "TOL-D002", "TOL-D003"],
+    },
+    {
+        "stage_id": "NEAR_CANDIDATE_GEN",
+        "stage_name": "7. Stage 3: Near Match Candidate Generation",
+        "description": "Search window filtering over unmatched records.",
+        "execution_order": 7,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["NEAR-D001"],
+    },
+    {
+        "stage_id": "NEAR_SCORING",
+        "stage_name": "8. Stage 4: Feature Scoring & Ranking",
+        "description": "6-feature weighted composite scoring formula.",
+        "execution_order": 8,
+        "reorderability": "ORDER_WITHIN_STAGE",
+        "rule_ids": ["NEAR-D002"],
+    },
+    {
+        "stage_id": "AMBIGUITY_SAFETY",
+        "stage_name": "9. Stage 5: Ambiguity & Reciprocal Best Evaluation",
+        "description": "Score gap ambiguity detection, reciprocal best verification, and single-consumption guard.",
+        "execution_order": 9,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["NEAR-D003", "NEAR-D004", "SAFE-D001"],
+    },
+    {
+        "stage_id": "HUMAN_REVIEW",
+        "stage_name": "10. Stage 6: Human Review & Bulk Approval",
+        "description": "Human decision review and high-confidence bulk approval gate.",
+        "execution_order": 10,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["NEAR-D006"],
+    },
+    {
+        "stage_id": "GOVERNANCE_REVIEW",
+        "stage_name": "11. Stage 7: Governance & Pattern Learning",
+        "description": "Execution of active client profile learned rules with PROPOSE_ONLY authority.",
+        "execution_order": 11,
+        "reorderability": "ORDER_WITHIN_STAGE",
+        "rule_ids": ["GOV-D001", "GOV-D002", "GOV-D003", "R-001", "R-002"],
+    },
+    {
+        "stage_id": "EXCEPTION_CLASSIFICATION",
+        "stage_name": "12. Stage 8: Exception Classification",
+        "description": "Classification into Material Mismatch, GST Only, and PR Only queues.",
+        "execution_order": 12,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["NEAR-D005", "EXCEPT-D001", "EXCEPT-D002"],
+    },
+    {
+        "stage_id": "EXPORT_GENERATION",
+        "stage_name": "13. Stage 9: Audit & KIGS Export Generation",
+        "description": "Audit logging and 5-sheet KIGS Excel workbook export.",
+        "execution_order": 13,
+        "reorderability": "FIXED_ORDER",
+        "rule_ids": ["SAFE-D002", "SAFE-D003"],
+    },
+]
+
+
+@rules_catalog_router.get("/catalog", response_model=RuleCatalogResponse)
+def get_rule_catalog(
+    governance_service: Annotated[GovernanceService, Depends(get_governance_service)],
+) -> RuleCatalogResponse:
+    try:
+        inventory_path = _find_inventory_file()
+        with open(inventory_path, "r", encoding="utf-8") as f:
+            raw_discovery = json.load(f)
+    except Exception as exc:
+        logger.error(f"Failed to load rules inventory: {exc}")
+        raise HTTPException(status_code=500, detail="Failed to load rule inventory discovery metadata") from exc
+
+    # Load live persisted rules from authoritative database
+    try:
+        db_rules = {r.rule_id: r for r in governance_service.list_rules()}
+    except Exception as exc:
+        logger.warning(f"Could not load DB rules: {exc}")
+        db_rules = {}
+
+    catalog_items: list[RuleCatalogItem] = []
+
+    for item in raw_discovery:
+        rule_id = item["rule_id"]
+        currently_toggleable = item.get("currently_toggleable", False)
+        toggle_safety = item.get("toggle_safety", "MANDATORY_SAFETY_RULE")
+
+        # Determine configurable vs locked
+        configurable = currently_toggleable and (toggle_safety in ("SAFE_TO_TOGGLE", "CONDITIONALLY_TOGGLEABLE"))
+        locked = not configurable
+
+        source_of_truth = item.get("source_of_truth", "HARDCODED_PYTHON")
+        status = "ACTIVE" if item.get("currently_active", True) else "INACTIVE"
+        version: int | str = 1
+        authority = item.get("authority", "SYSTEM")
+        approval_meta = None
+        provenance_meta = None
+        effectiveness_meta = None
+        conditions_data = None
+        action_data = None
+
+        # Check if live database has an authoritative persisted version
+        if rule_id in db_rules:
+            db_rule = db_rules[rule_id]
+            source_of_truth = "DATABASE"
+            status = db_rule.status.value if hasattr(db_rule.status, "value") else str(db_rule.status)
+            version = db_rule.version
+            authority = db_rule.action_authority.value if hasattr(db_rule.action_authority, "value") else str(db_rule.action_authority)
+            if db_rule.approval:
+                approval_meta = db_rule.approval.model_dump()
+            if db_rule.provenance:
+                provenance_meta = db_rule.provenance.model_dump()
+            if db_rule.effectiveness:
+                effectiveness_meta = db_rule.effectiveness.model_dump()
+            if db_rule.conditions:
+                conditions_data = [c.model_dump() for c in db_rule.conditions]
+            if db_rule.action:
+                action_data = db_rule.action.model_dump()
+
+        raw_if = item.get("if_condition", "")
+        raw_then = item.get("then_result", "")
+        h_if = _human_friendly_if(rule_id, raw_if)
+        h_then = _human_friendly_then(rule_id, raw_then)
+
+        catalog_item = RuleCatalogItem(
+            rule_id=rule_id,
+            name=item.get("current_name", rule_id),
+            suggested_human_friendly_name=item.get("suggested_human_friendly_name", item.get("current_name", rule_id)),
+            category=item.get("category", "BUSINESS_RULE"),
+            description=item.get("description", ""),
+            stage=item.get("stage", "UNKNOWN"),
+            execution_order=item.get("current_execution_order", 99),
+            enabled=item.get("currently_active", True) if rule_id not in db_rules else (status == "ACTIVE"),
+            configurable=configurable,
+            locked=locked,
+            if_condition=raw_if,
+            then_result=raw_then,
+            human_friendly_if=h_if,
+            human_friendly_then=h_then,
+            authority=authority,
+            source_of_truth=source_of_truth,
+            version=version,
+            status=status,
+            parameters=item.get("thresholds_parameters"),
+            dependencies=item.get("depends_on", []),
+            conflicts_with=item.get("conflicts_with", []),
+            side_effects=item.get("side_effects"),
+            audit_event_produced=item.get("audit_event_produced", True),
+            safe_to_disable=item.get("safe_to_disable", False),
+            toggle_safety=toggle_safety,
+            execution_sequencing=item.get("execution_sequencing", "FIXED_ORDER"),
+            file_function_db_location=item.get("file_function_db_location", ""),
+            notes=item.get("notes"),
+            approval=approval_meta,
+            provenance=provenance_meta,
+            effectiveness=effectiveness_meta,
+            conditions=conditions_data,
+            action=action_data,
+        )
+        catalog_items.append(catalog_item)
+
+    # Sort rules by execution_order
+    catalog_items.sort(key=lambda r: r.execution_order)
+
+    # Dynamically compute summary statistics from catalog items
+    total_rules = len(catalog_items)
+    configurable_count = sum(1 for r in catalog_items if r.configurable)
+    locked_count = sum(1 for r in catalog_items if r.locked)
+    active_count = sum(1 for r in catalog_items if r.status in ("ACTIVE", "SYSTEM", "AUTOMATIC", "SYSTEM_ENFORCED"))
+    learned_count = sum(1 for r in catalog_items if r.category == "LEARNED_RULE")
+
+    summary = RuleCatalogSummary(
+        total_rules=total_rules,
+        configurable_count=configurable_count,
+        locked_count=locked_count,
+        active_count=active_count,
+        learned_count=learned_count,
+    )
+
+    stages = [ExecutionStageInfo(**stage) for stage in STAGES_DEFINITION]
+
+    return RuleCatalogResponse(
+        rules=catalog_items,
+        summary=summary,
+        stages=stages,
+    )

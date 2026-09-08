@@ -12,10 +12,11 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAIProvider(LLMProvider):
-    def __init__(self, api_key: str, model: str, max_repair_attempts: int = 1) -> None:
-        self._client = OpenAI(api_key=api_key)
+    def __init__(self, api_key: str, model: str, max_repair_attempts: int = 1, timeout: float = 5.0) -> None:
+        self._client = OpenAI(api_key=api_key, timeout=timeout)
         self._model = model
         self._max_repair_attempts = max_repair_attempts
+
 
     @property
     def provider_name(self) -> str:

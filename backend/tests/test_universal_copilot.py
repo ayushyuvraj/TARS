@@ -74,7 +74,7 @@ def test_copilot_conversational_multi_turn_context(copilot_service, frozen_recon
     req3 = CopilotRequest(message="Explain that in simple words.", conversation_id=conversation_id)
     res3 = copilot_service.ask(frozen_reconciliation_id, req3)
     if res3.provider != "unavailable":
-        assert response_ok := len(res3.answer) > 0
+        assert len(res3.answer) > 0
 
 def test_copilot_product_help_near_match(copilot_service, frozen_reconciliation_id):
     """Verify product help query about Near Match."""

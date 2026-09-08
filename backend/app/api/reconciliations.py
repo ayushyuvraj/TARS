@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
+from time import perf_counter
 from typing import Annotated
 from uuid import UUID, uuid4
+
+logger = logging.getLogger(__name__)
+
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 
@@ -185,39 +190,45 @@ async def quick_reconcile(
     if not file_2.filename or Path(file_2.filename).suffix.lower() != ".xlsx":
         raise HTTPException(status_code=415, detail="Only .xlsx workbooks are supported (File 2 invalid)")
 
-    # Pre-validate readability & determine roles BEFORE persisting session to prevent orphan sessions
-    temp_dir = service.settings.upload_dir / "pre-validation"
-    temp_dir.mkdir(parents=True, exist_ok=True)
-    t1 = temp_dir / f"val1-{uuid4().hex}.xlsx"
-    t2 = temp_dir / f"val2-{uuid4().hex}.xlsx"
-    try:
-        content1 = await file_1.read()
-        content2 = await file_2.read()
-        t1.write_bytes(content1)
-        t2.write_bytes(content2)
-        await file_1.seek(0)
-        await file_2.seek(0)
+    role1 = file_1_role
+    role2 = file_2_role
 
-        role1 = file_1_role
-        role2 = file_2_role
-        if not role1 or not role2:
-            detected = service.parser.detect_roles(t1, t2)
-            role1 = detected.file_1_role
-            role2 = detected.file_2_role
-    except ExcelParseError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=422, detail=f"Workbook validation failed: {exc}") from exc
-    finally:
-        t1.unlink(missing_ok=True)
-        t2.unlink(missing_ok=True)
-
-    # Session is created ONLY after workbooks pass pre-validation
     session = service.create()
     reconciliation_id = session.id
 
-    await _save_and_register(reconciliation_id, role1, file_1, service)
-    await _save_and_register(reconciliation_id, role2, file_2, service)
+    try:
+        if role1 and role2:
+            up1 = await _save_and_register(reconciliation_id, role1, file_1, service)
+            up2 = await _save_and_register(reconciliation_id, role2, file_2, service)
+        else:
+            # Temporary save for role detection
+            temp_dir = service.settings.upload_dir / "pre-validation"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            t1 = temp_dir / f"val1-{uuid4().hex}.xlsx"
+            t2 = temp_dir / f"val2-{uuid4().hex}.xlsx"
+            try:
+                content1 = await file_1.read()
+                content2 = await file_2.read()
+                t1.write_bytes(content1)
+                t2.write_bytes(content2)
+                await file_1.seek(0)
+                await file_2.seek(0)
+                detected = service.parser.detect_roles(t1, t2)
+                role1 = detected.file_1_role
+                role2 = detected.file_2_role
+            finally:
+                t1.unlink(missing_ok=True)
+                t2.unlink(missing_ok=True)
+
+            up1 = await _save_and_register(reconciliation_id, role1, file_1, service)
+            up2 = await _save_and_register(reconciliation_id, role2, file_2, service)
+    except Exception:
+        # Clean up session if file registration fails
+        try:
+            service.repository.delete_session(reconciliation_id)
+        except Exception:
+            pass
+        raise
 
     return service.quick_reconcile(
         reconciliation_id=reconciliation_id,
@@ -299,7 +310,10 @@ async def upload_government_file(
     file: Annotated[UploadFile, File(...)],
     service: Annotated[ReconciliationService, Depends(get_service)],
 ) -> UploadedFile:
-    return await _save_and_register(reconciliation_id, DatasetRole.GOVERNMENT, file, service)
+    t0 = perf_counter()
+    res = await _save_and_register(reconciliation_id, DatasetRole.GOVERNMENT, file, service)
+    logger.info(f"[TIMING] Government file upload and parsing took {perf_counter() - t0:.3f}s")
+    return res
 
 
 @router.post("/{reconciliation_id}/files/purchase-register", response_model=UploadedFile)
@@ -308,9 +322,10 @@ async def upload_purchase_register_file(
     file: Annotated[UploadFile, File(...)],
     service: Annotated[ReconciliationService, Depends(get_service)],
 ) -> UploadedFile:
-    return await _save_and_register(
-        reconciliation_id, DatasetRole.PURCHASE_REGISTER, file, service
-    )
+    t0 = perf_counter()
+    res = await _save_and_register(reconciliation_id, DatasetRole.PURCHASE_REGISTER, file, service)
+    logger.info(f"[TIMING] Purchase Register file upload and parsing took {perf_counter() - t0:.3f}s")
+    return res
 
 
 @router.post("/{reconciliation_id}/run/exact-match", response_model=ReconciliationSummary)
@@ -335,9 +350,13 @@ def analyze_mapping(
     workflow: Annotated[SchemaMappingWorkflow, Depends(get_mapping_workflow)],
 ) -> SchemaMappingProposal:
     try:
-        return workflow.start(reconciliation_id)
+        t0 = perf_counter()
+        res = workflow.start(reconciliation_id)
+        logger.info(f"[TIMING] Schema mapping analyze took {perf_counter() - t0:.3f}s")
+        return res
     except ReconciliationNotFoundError as exc:
         raise _not_found(exc) from exc
+
     except ReconciliationNotReadyError as exc:
         raise HTTPException(status_code=409, detail={"code": "files_required", "message": str(exc)}) from exc
     except SchemaProviderUnavailable as exc:

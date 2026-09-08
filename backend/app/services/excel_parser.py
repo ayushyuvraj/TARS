@@ -37,7 +37,14 @@ class ExcelParser:
         "documentno", "companycode", "purchaseorder",
     }
 
+    def __init__(self) -> None:
+        self._cache: dict[tuple[str, str, float], ParsedDataset] = {}
+
+    def clear_cache(self) -> None:
+        self._cache.clear()
+
     def detect_header_row(self, path: Path, role: DatasetRole = DatasetRole.GOVERNMENT) -> tuple[str, int]:
+
         try:
             workbook = load_workbook(path, read_only=True, data_only=True)
         except Exception as exc:
@@ -61,9 +68,22 @@ class ExcelParser:
 
     def _header_scores(self, path: Path) -> tuple[int, int]:
         try:
-            sheet_name, header_row = self.detect_header_row(path)
-            frame = pd.read_excel(path, sheet_name=sheet_name, header=header_row - 1, nrows=5)
-            headers = [re.sub(r"[^a-z0-9]", "", str(c).lower()) for c in frame.columns]
+            workbook = load_workbook(path, read_only=True, data_only=True)
+            try:
+                worksheet = workbook.worksheets[0]
+                row_iterator = worksheet.iter_rows(min_row=1, max_row=30, values_only=True)
+                candidates: list[tuple[int, int, list[str]]] = []
+                for row_number, row in enumerate(row_iterator, start=1):
+                    values = [str(value).strip() for value in row if value is not None and str(value).strip()]
+                    unique_values = set(values)
+                    if len(values) >= 2 and len(unique_values) == len(values):
+                        candidates.append((len(values), row_number, values))
+                if not candidates:
+                    return 0, 0
+                _, _, header_vals = max(candidates, key=lambda candidate: (candidate[0], -candidate[1]))
+                headers = [re.sub(r"[^a-z0-9]", "", str(c).lower()) for c in header_vals]
+            finally:
+                workbook.close()
             fname = path.name.lower()
             gov_score = sum(1 for h in headers if any(m in h for m in self.GOV_MARKERS))
             pr_score = sum(1 for h in headers if any(m in h for m in self.PR_MARKERS))
@@ -74,6 +94,74 @@ class ExcelParser:
             return gov_score, pr_score
         except Exception:
             return 0, 0
+
+    def _read_frame(self, path: Path, header_row: int) -> pd.DataFrame:
+        try:
+            return pd.read_excel(path, sheet_name=0, header=header_row - 1, engine="calamine")
+        except Exception:
+            pass
+        try:
+            return pd.read_excel(path, sheet_name=0, header=header_row - 1)
+        except Exception:
+            pass
+        try:
+            workbook = load_workbook(path, read_only=True, data_only=True)
+            try:
+                worksheet = workbook.worksheets[0]
+                data = list(worksheet.values)
+                if not data or len(data) < header_row:
+                    raise ExcelParseError("The worksheet header row is empty")
+                header_values = data[header_row - 1]
+                columns = [str(col).strip() if col is not None else "" for col in header_values]
+                rows_data = data[header_row:]
+                return pd.DataFrame(rows_data, columns=columns)
+            finally:
+                workbook.close()
+        except ExcelParseError:
+            raise
+        except Exception as exc:
+            raise ExcelParseError("Failed to parse the Excel worksheet") from exc
+
+    def parse(self, path: Path, role: DatasetRole) -> ParsedDataset:
+        resolved_path = str(path.resolve())
+        mtime = path.stat().st_mtime if path.exists() else 0.0
+        cache_key = (resolved_path, role.value, mtime)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
+        sheet_name, header_row = self.detect_header_row(path, role)
+        frame = self._read_frame(path, header_row)
+        frame = frame.dropna(how="all").reset_index(drop=True)
+        frame.columns = [str(column).strip() for column in frame.columns]
+        if len(frame.columns) < 2:
+            raise ExcelParseError("The worksheet must contain at least two columns")
+        if len(set(frame.columns)) != len(frame.columns):
+            raise ExcelParseError("Duplicate source column names are not supported")
+
+        row_count = len(frame)
+        nunique_dict = frame.nunique(dropna=True).to_dict()
+        null_counts = frame.isna().sum().to_dict()
+
+        column_profiles = [
+            self._profile_column(
+                column, frame[column], row_count, nunique_dict.get(column, 0), null_counts.get(column, 0)
+            )
+            for column in frame.columns
+        ]
+        profile = DatasetProfile(
+            role=role,
+            sheet_name=sheet_name,
+            header_row=header_row,
+            row_count=row_count,
+            column_count=len(frame.columns),
+            columns=list(frame.columns),
+            inferred_types={column: str(cp.inferred_dtype.value) for column, cp in zip(frame.columns, column_profiles)},
+            null_counts=null_counts,
+            column_profiles=column_profiles,
+        )
+        dataset = ParsedDataset(dataframe=frame, profile=profile)
+        self._cache[cache_key] = dataset
+        return dataset
 
     def detect_roles(self, file1_path: Path, file2_path: Path) -> RoleDetectionResult:
         g1, p1 = self._header_scores(file1_path)
@@ -128,97 +216,156 @@ class ExcelParser:
                 reason="File header semantics are ambiguous. Please confirm file role assignment.",
             )
 
-
-
     @staticmethod
     def _stringify(value: object) -> str:
+        if value is None or pd.isna(value):
+            return ""
         if isinstance(value, (datetime, date)):
-            return value.isoformat()
+            try:
+                return value.isoformat()
+            except Exception:
+                return str(value)[:80]
         return str(value)[:80]
 
-    def _infer_dtype(self, series: pd.Series) -> CanonicalDataType:
-        non_null = series.dropna()
-        if pd.api.types.is_datetime64_any_dtype(series):
-            return CanonicalDataType.DATE
-        if pd.api.types.is_numeric_dtype(series):
-            return CanonicalDataType.NUMBER
-        if non_null.empty:
-            return CanonicalDataType.STRING
-        parsed_dates = pd.to_datetime(non_null.astype(str), errors="coerce", format="mixed")
-        if float(parsed_dates.notna().mean()) >= 0.9:
-            return CanonicalDataType.DATE
-        parsed_numbers = pd.to_numeric(non_null.astype(str), errors="coerce")
-        if float(parsed_numbers.notna().mean()) >= 0.95:
-            return CanonicalDataType.NUMBER
-        return CanonicalDataType.STRING
-
-    def _profile_column(self, name: str, series: pd.Series, row_count: int) -> ColumnProfile:
-        non_null = series.dropna()
-        non_null_count = int(non_null.size)
-        inferred = self._infer_dtype(series)
-        samples = [self._stringify(value) for value in non_null.drop_duplicates().head(5).tolist()]
-        minimum: str | None = None
-        maximum: str | None = None
-        if non_null_count and inferred == CanonicalDataType.NUMBER:
-            numeric = pd.to_numeric(non_null, errors="coerce").dropna()
-            if not numeric.empty:
-                minimum, maximum = self._stringify(numeric.min()), self._stringify(numeric.max())
-        elif non_null_count and inferred == CanonicalDataType.DATE:
-            dates = pd.to_datetime(non_null, errors="coerce", format="mixed").dropna()
-            if not dates.empty:
-                minimum, maximum = dates.min().date().isoformat(), dates.max().date().isoformat()
-
-        string_values = non_null.astype(str).str.strip().str.upper()
-        hints: list[str] = []
-        if non_null_count and float(string_values.str.match(self.GSTIN_PATTERN).mean()) >= 0.8:
-            hints.append("gstin")
-        if inferred == CanonicalDataType.DATE:
-            hints.append("date")
-        if inferred == CanonicalDataType.NUMBER:
-            hints.append("numeric")
-            numeric = pd.to_numeric(non_null, errors="coerce").dropna()
-            if not numeric.empty and float(numeric.between(0, 100).mean()) >= 0.95:
-                hints.append("percentage_range")
-
-        non_null_percentage = 0.0 if row_count == 0 else round(non_null_count * 100 / row_count, 2)
-        return ColumnProfile(
-            column_name=name,
-            inferred_dtype=inferred,
-            pandas_dtype=str(series.dtype),
-            non_null_count=non_null_count,
-            non_null_percentage=non_null_percentage,
-            null_percentage=round(100 - non_null_percentage, 2),
-            unique_count=int(non_null.nunique(dropna=True)),
-            sample_values=samples,
-            minimum=minimum,
-            maximum=maximum,
-            pattern_hints=hints,
-        )
-
-    def parse(self, path: Path, role: DatasetRole) -> ParsedDataset:
-        sheet_name, header_row = self.detect_header_row(path, role)
+    def _infer_dtype(self, series: pd.Series) -> tuple[CanonicalDataType, pd.Series | None]:
         try:
-            frame = pd.read_excel(path, sheet_name=sheet_name, header=header_row - 1)
-        except Exception as exc:
-            raise ExcelParseError("Failed to parse the Excel worksheet") from exc
-        frame = frame.dropna(how="all").reset_index(drop=True)
-        frame.columns = [str(column).strip() for column in frame.columns]
-        if len(frame.columns) < 2:
-            raise ExcelParseError("The worksheet must contain at least two columns")
-        if len(set(frame.columns)) != len(frame.columns):
-            raise ExcelParseError("Duplicate source column names are not supported")
-        column_profiles = [
-            self._profile_column(column, frame[column], len(frame)) for column in frame.columns
-        ]
-        profile = DatasetProfile(
-            role=role,
-            sheet_name=sheet_name,
-            header_row=header_row,
-            row_count=len(frame),
-            column_count=len(frame.columns),
-            columns=list(frame.columns),
-            inferred_types={column: str(dtype) for column, dtype in frame.dtypes.items()},
-            null_counts={column: int(count) for column, count in frame.isna().sum().items()},
-            column_profiles=column_profiles,
-        )
-        return ParsedDataset(dataframe=frame, profile=profile)
+            non_null = series.dropna()
+            if non_null.empty:
+                return CanonicalDataType.STRING, None
+            if pd.api.types.is_datetime64_any_dtype(series):
+                return CanonicalDataType.DATE, non_null
+            if pd.api.types.is_numeric_dtype(series):
+                return CanonicalDataType.NUMBER, non_null
+
+            # Fast 50-row strided sample probe across non-null rows
+            step = max(1, len(non_null) // 50)
+            sample = non_null.iloc[::step][:50].astype(str)
+
+            # Check numeric sample first (fastest)
+            try:
+                parsed_sample_num = pd.to_numeric(sample, errors="coerce")
+                if float(parsed_sample_num.notna().mean()) >= 0.85:
+                    parsed_numbers = pd.to_numeric(non_null.astype(str), errors="coerce").dropna()
+                    if float(len(parsed_numbers) / len(non_null)) >= 0.95:
+                        return CanonicalDataType.NUMBER, parsed_numbers
+            except Exception:
+                pass
+
+            # Check date sample next
+            try:
+                parsed_sample_date = pd.to_datetime(sample, errors="coerce", format="mixed", dayfirst=True)
+                if float(parsed_sample_date.notna().mean()) >= 0.75:
+                    known_formats = (
+                        "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d-%b-%y", "%Y/%m/%d", "%Y-%m-%dT%H:%M:%S"
+                    )
+                    str_non_null = non_null.astype(str).str.strip()
+                    for fmt in known_formats:
+                        try:
+                            fast_dates = pd.to_datetime(str_non_null, errors="coerce", format=fmt).dropna()
+                            if float(len(fast_dates) / len(non_null)) >= 0.85:
+                                return CanonicalDataType.DATE, fast_dates
+                        except Exception:
+                            continue
+
+                    parsed_dates = pd.to_datetime(str_non_null, errors="coerce", format="mixed", dayfirst=True).dropna()
+                    if float(len(parsed_dates) / len(non_null)) >= 0.9:
+                        return CanonicalDataType.DATE, parsed_dates
+            except Exception:
+                pass
+
+            return CanonicalDataType.STRING, None
+        except Exception:
+            return CanonicalDataType.STRING, None
+
+    def _profile_column(
+        self,
+        name: str,
+        series: pd.Series,
+        row_count: int,
+        unique_count: int | None = None,
+        null_count: int | None = None,
+    ) -> ColumnProfile:
+        try:
+            non_null = series.dropna()
+            non_null_count = row_count - null_count if null_count is not None else int(non_null.size)
+            inferred, parsed_series = self._infer_dtype(series)
+            samples = [self._stringify(value) for value in non_null.head(50).drop_duplicates().head(5).tolist()]
+            minimum: str | None = None
+            maximum: str | None = None
+
+            if non_null_count and inferred == CanonicalDataType.NUMBER and parsed_series is not None and not parsed_series.empty:
+                try:
+                    minimum, maximum = self._stringify(parsed_series.min()), self._stringify(parsed_series.max())
+                except Exception:
+                    pass
+            elif non_null_count and inferred == CanonicalDataType.DATE and parsed_series is not None and not parsed_series.empty:
+                try:
+                    minimum, maximum = self._stringify(parsed_series.min()), self._stringify(parsed_series.max())
+                except Exception:
+                    pass
+
+            hints: list[str] = []
+            if non_null_count:
+                try:
+                    norm_name = re.sub(r"[^a-z0-9]", "", name.lower())
+                    has_gstin_header = any(k in norm_name for k in ("gstin", "ctin", "taxid", "tin", "supplier", "vendor", "party", "counterparty", "seller", "buyer"))
+                    if has_gstin_header:
+                        hints.append("gstin")
+                    else:
+                        sample_strings = [str(s).strip() for s in non_null.head(30)]
+                        potential_gstin = any(len(s) == 15 and s[:2].isdigit() for s in sample_strings)
+                        if potential_gstin:
+                            sample_gstin = [s for s in sample_strings if len(s) == 15]
+                            if sample_gstin and any(self.GSTIN_PATTERN.match(s.upper()) for s in sample_gstin):
+                                string_values = non_null.astype(str).str.strip().str.upper()
+                                if float(string_values.str.match(self.GSTIN_PATTERN).mean()) >= 0.5:
+                                    hints.append("gstin")
+                except Exception:
+                    pass
+
+            if inferred == CanonicalDataType.DATE:
+                hints.append("date")
+            if inferred == CanonicalDataType.NUMBER:
+                hints.append("numeric")
+                try:
+                    if parsed_series is not None and not parsed_series.empty and float(parsed_series.between(0, 100).mean()) >= 0.95:
+                        hints.append("percentage_range")
+                except Exception:
+                    pass
+
+            non_null_percentage = 0.0 if row_count == 0 else round(non_null_count * 100 / row_count, 2)
+            u_count = unique_count if unique_count is not None else int(non_null.nunique(dropna=True))
+            return ColumnProfile(
+                column_name=name,
+                inferred_dtype=inferred,
+                pandas_dtype=str(series.dtype),
+                non_null_count=non_null_count,
+                non_null_percentage=non_null_percentage,
+                null_percentage=round(100 - non_null_percentage, 2),
+                unique_count=u_count,
+                sample_values=samples,
+                minimum=minimum,
+                maximum=maximum,
+                pattern_hints=hints,
+            )
+        except Exception:
+            non_null = series.dropna()
+            non_null_count = int(non_null.size)
+            non_null_percentage = 0.0 if row_count == 0 else round(non_null_count * 100 / row_count, 2)
+            samples = [str(v)[:80] for v in non_null.head(5).tolist()]
+            return ColumnProfile(
+                column_name=name,
+                inferred_dtype=CanonicalDataType.STRING,
+                pandas_dtype=str(series.dtype),
+                non_null_count=non_null_count,
+                non_null_percentage=non_null_percentage,
+                null_percentage=round(100 - non_null_percentage, 2),
+                unique_count=int(non_null.nunique(dropna=True)),
+                sample_values=samples,
+                minimum=None,
+                maximum=None,
+                pattern_hints=[],
+            )
+
+
+

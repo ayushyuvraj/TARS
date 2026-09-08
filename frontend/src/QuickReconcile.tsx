@@ -436,7 +436,7 @@ export function QuickReconcile({
                 <span className="stage-label">Near-Match Analysis & Rules</span>
                 <span className="stage-detail">
                   {response.near_summary
-                    ? `${nf.format(response.near_summary.near_match_approvals)} Approved Near Matches`
+                    ? `${nf.format(response.near_summary.near_matches)} Approved Near Matches`
                     : "Pending"}
                 </span>
               </div>
@@ -504,7 +504,7 @@ export function QuickReconcile({
                 </div>
                 <div className="metric-box metric-box--good">
                   <small>Approved Near</small>
-                  <strong>{nf.format(response.near_summary?.near_match_approvals ?? 0)}</strong>
+                  <strong>{nf.format(response.near_summary?.near_matches ?? 0)}</strong>
                 </div>
                 <div className="metric-box metric-box--warn">
                   <small>Ambiguous / Open</small>

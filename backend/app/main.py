@@ -43,7 +43,9 @@ from app.api.exports import get_export_service, router as export_router
 from app.api.governance import (
     get_governance_service, governance_reconciliation_router, profile_router, rule_router,
 )
+from app.api.rules_catalog import rules_catalog_router
 from app.providers.investigation import OpenAIInvestigationModel
+
 from app.services.investigation_tools import InvestigationToolService
 from app.services.investigation import AIInvestigationService
 from app.workflows.exception_investigation import ExceptionInvestigationWorkflow
@@ -139,6 +141,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router, prefix=resolved.api_prefix)
     app.include_router(schema_router, prefix=resolved.api_prefix)
     app.include_router(profile_router, prefix=resolved.api_prefix)
+    app.include_router(rules_catalog_router, prefix=resolved.api_prefix)
     app.include_router(rule_router, prefix=resolved.api_prefix)
     app.include_router(governance_reconciliation_router, prefix=resolved.api_prefix)
     app.include_router(export_router, prefix=resolved.api_prefix)

@@ -93,15 +93,16 @@ class NearMatchEngine:
         mappings: dict[DatasetRole, dict[str, str]],
         consumed_government: set[str],
         consumed_purchase: set[str],
-    ) -> list[tuple[pd.Series, pd.Series]]:
+    ) -> list[tuple[dict, dict]]:
         gov_map, pr_map = mappings[DatasetRole.GOVERNMENT], mappings[DatasetRole.PURCHASE_REGISTER]
-        pr_by_gstin: dict[str, list[pd.Series]] = defaultdict(list)
-        for _, row in purchase_register.iterrows():
+        pr_by_gstin: dict[str, list[dict]] = defaultdict(list)
+        for row in purchase_register.to_dict("records"):
             if self._text(row[pr_map["record_id"]]) in consumed_purchase:
                 continue
             pr_by_gstin[self._text(row[pr_map["gstin"]]).upper()].append(row)
-        pairs: list[tuple[pd.Series, pd.Series]] = []
-        for _, government_row in government.iterrows():
+
+        pairs: list[tuple[dict, dict]] = []
+        for government_row in government.to_dict("records"):
             if self._text(government_row[gov_map["record_id"]]) in consumed_government:
                 continue
             gstin = self._text(government_row[gov_map["gstin"]]).upper()
@@ -122,6 +123,7 @@ class NearMatchEngine:
                     continue
                 pairs.append((government_row, purchase_row))
         return pairs
+
 
     def calculate_features(
         self, government_row: pd.Series, purchase_row: pd.Series,
@@ -260,8 +262,8 @@ class NearMatchEngine:
                 material_ids.append(government_id)
 
         unresolved_government_ids = {
-            self._text(row[gov_map["record_id"]]) for _, row in government.iterrows()
-            if self._text(row[gov_map["record_id"]]) not in consumed_government
+            self._text(val) for val in government[gov_map["record_id"]]
+            if self._text(val) not in consumed_government
         }
         classified_government = set(candidates_by_government) & ({item.government_record_id for item in proposals} | {item.government_record_id for item in ambiguities} | set(material_ids))
         gst_only_ids = sorted(unresolved_government_ids - classified_government)
@@ -270,10 +272,11 @@ class NearMatchEngine:
             if item.features.document_number_normalized_equal or item.match_score >= self.thresholds.near_match_threshold - self.thresholds.ambiguity_margin
         }
         unresolved_purchase_ids = {
-            self._text(row[pr_map["record_id"]]) for _, row in purchase_register.iterrows()
-            if self._text(row[pr_map["record_id"]]) not in consumed_purchase
+            self._text(val) for val in purchase_register[pr_map["record_id"]]
+            if self._text(val) not in consumed_purchase
         }
         pr_only_ids = sorted(unresolved_purchase_ids - linked_purchase)
+
         runtime_ms = round((perf_counter() - started) * 1000, 2)
         return NearMatchAnalysis(
             reconciliation_id=reconciliation_id, thresholds=self.thresholds,
