@@ -1,20 +1,28 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Dynamic Session State — Rules Wiki Completed Checkpoint (8th September 2026)
+## Dynamic Session State — KPMG Agentic Dashboard Checkpoint (9th September 2026)
 
-- **Checkpoint Name**: `Rules Wiki Multi-Select & Bulk Delete Completed Checkpoint`
+- **Checkpoint Name**: `KPMG Agentic Dashboard Completed Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Current HEAD Commit**: `83ce596` (`docs(handoff): update AI_HANDOFF.md checkpoint hash`)
-- **Checkpoint Tag**: `rules-wiki-bulk-delete-complete`
-- **Pre-Completion Tag**: `rules-wiki-pre-completion` (`de2329e`)
+- **Current HEAD Commit**: `4c7f6db` (`docs(handoff): update AI_HANDOFF.md with KPMG Agentic Dashboard checkpoint`)
+- **Checkpoint Tag**: `kpmg-agentic-dashboard-complete`
+- **Pre-Completion Tag**: `rules-wiki-bulk-delete-complete` (`bce346b`)
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Rules Wiki Control Plane — Multi-rule selection checkboxes, conditional top bulk delete button with locked guardrail protection, backend bulk deletion API, and irreversible confirmation modal complete.
+- **Current Objective**: KPMG Zero-Scroll Agentic Dashboard (`/dashboard`) with full-bleed widescreen layout, authentic KPMG brand hierarchy (#00338D, #0091DA, #6D2077, #009A44), interactive company profile filter, Codex/Claude Code CLI prompt bar, and zero hardcodings complete. Overview route (`/overview`) remains 100% intact.
 
 ---
 
 ## Operational Capabilities & State Summary
 
-1. **Core TARS Application Fully Usable**:
+1. **KPMG Zero-Scroll Agentic Command Dashboard (`/dashboard`)**:
+   - Integrated full-bleed edge-to-edge widescreen layout (`.workspace--dashboard`).
+   - Completely scrollbar-free viewport fit (`calc(100vh - 56px)`).
+   - 100% dynamic values (zero hardcoding) polling `api.listReconciliations()`, `api.rulesCatalog()`, `api.profiles()`, and `api.auditEvents()`.
+   - Interactive company profile filter dynamically recalculating all 5 KPIs, focusing the active flight deck, and scoping the session matrix and audit stream.
+   - Interactive Claude Code / Codex CLI command bar supporting instant commands (`all`, `filter`, `quick`, `rules`, `audit`, `sync`, `copilot`) and execution feedback.
+   - Original `/overview` section remains 100% intact and untouched.
+
+2. **Core TARS Application Fully Usable**:
    - Sidebar, top navigation, and workflow routing are 100% functional.
    - Stage 4 Results renders the 6 KPI metrics cleanly plus the collapsible detailed record table toggle ("View detailed record table" / "Collapse detailed record table" with `<ChevronDown />`).
 
