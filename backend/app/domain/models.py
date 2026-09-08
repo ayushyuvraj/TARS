@@ -963,12 +963,12 @@ class RuleProvenanceType(StrEnum):
 
 class RuleCondition(BaseModel):
     field: str
-    operator: Literal["EXACT", "NORMALIZED_EXACT", "ABSOLUTE_TOLERANCE", "DATE_TOLERANCE", "EQUALS"]
+    operator: str
     value: Decimal | int | str | None = None
 
 
 class RuleAction(BaseModel):
-    type: Literal["PROPOSE_NEAR_MATCH", "TOLERANCE_MATCH", "SUGGEST_CLASSIFICATION", "FLAG_FOR_REVIEW"]
+    type: str
     value: str | None = None
 
 
@@ -995,7 +995,7 @@ class RuleEffectiveness(BaseModel):
 class ReusableRuleVersion(BaseModel):
     rule_id: str
     version: int = Field(ge=1)
-    client_profile_id: UUID
+    client_profile_id: UUID | str | None = None
     name: str = Field(min_length=1, max_length=200)
     description: str = Field(min_length=1, max_length=1000)
     rule_type: RuleType
@@ -1008,6 +1008,90 @@ class ReusableRuleVersion(BaseModel):
     created_by: str = "POC user"
     approval: ApprovalMetadata | None = None
     created_at: datetime = Field(default_factory=utc_now)
+    parent_version: int | None = None
+    rationale: str | None = None
+    validation_state: str | None = None
+    governance_tier: str | None = None
+    execution_stage: str | None = None
+    thinking_steps: list[str] = Field(default_factory=list)
+    formula: str | None = None
+
+
+class RuleDraftCreateRequest(BaseModel):
+    rule_id: str | None = Field(default=None, max_length=50)
+    name: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=1000)
+    rule_type: RuleType = RuleType.NORMALIZATION
+    conditions: list[RuleCondition] = Field(min_length=1)
+    action: RuleAction
+    action_authority: ActionAuthority = ActionAuthority.PROPOSE_ONLY
+    parent_version: int | None = None
+    rationale: str | None = Field(default=None, max_length=1000)
+    created_by: str = "POC user"
+    client_profile_id: UUID | None = None
+
+
+class AIRuleCompileRequest(BaseModel):
+    prompt: str = Field(..., min_length=3, max_length=2000)
+    reconciliation_id: UUID | None = None
+    client_profile_id: UUID | None = None
+    actor: str = "POC user"
+
+
+class AIRuleInterpretationOutput(BaseModel):
+    name: str = Field(..., description="Short descriptive name for the compiled rule")
+    description: str = Field(..., description="Detailed description of what the rule checks and does")
+    rule_type: RuleType = Field(default=RuleType.DETERMINISTIC, description="Rule category type")
+    conditions: list[RuleCondition] = Field(..., min_length=1, description="Rule conditions to evaluate")
+    action: RuleAction = Field(default_factory=lambda: RuleAction(type="PROPOSE_NEAR_MATCH"), description="Rule action")
+    rationale: str = Field(..., description="Explanation of how the natural language prompt was interpreted into declarative rule logic")
+    thinking_steps: list[str] = Field(default_factory=list, description="Claude-style step-by-step reasoning logs")
+    formula: str = Field(default="", description="Column formula / mathematical logic representation")
+
+
+class RuleDraftUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    description: str | None = Field(default=None, min_length=1, max_length=1000)
+    rule_type: RuleType | None = None
+    conditions: list[RuleCondition] | None = None
+    action: RuleAction | None = None
+    action_authority: ActionAuthority | None = None
+    rationale: str | None = Field(default=None, max_length=1000)
+    created_by: str | None = None
+
+
+class RuleValidationIssue(BaseModel):
+    code: str
+    message: str
+    field: str | None = None
+    severity: Literal["error", "warning"] = "error"
+
+
+class RuleValidationResult(BaseModel):
+    valid: bool
+    rule_id: str
+    version: int | None = None
+    issues: list[RuleValidationIssue] = Field(default_factory=list)
+    checked_at: datetime = Field(default_factory=utc_now)
+
+
+class RuleHistoryResponse(BaseModel):
+    rule_id: str
+    name: str
+    configurable: bool
+    locked: bool
+    versions: list[ReusableRuleVersion]
+    current_version: int
+    draft_version: int | None = None
+    active_version: int | None = None
+
+
+class RuleVersionDetailResponse(BaseModel):
+    rule: ReusableRuleVersion
+    validation: RuleValidationResult
+    history_count: int
+    is_latest: bool
+    is_editable_draft: bool
 
 
 class RuleCreateRequest(BaseModel):

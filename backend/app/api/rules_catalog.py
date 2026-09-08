@@ -9,12 +9,32 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.governance import get_governance_service
 from app.domain.models import (
+    ActionAuthority,
+    AIRuleCompileRequest,
     ExecutionStageInfo,
+    ReusableRuleVersion,
+    RuleAction,
     RuleCatalogItem,
     RuleCatalogResponse,
     RuleCatalogSummary,
+    RuleCondition,
+    RuleDraftCreateRequest,
+    RuleDraftUpdateRequest,
+    RuleHistoryResponse,
+    RuleProvenance,
+    RuleProvenanceType,
+    RuleStatus,
+    RuleType,
+    RuleValidationIssue,
+    RuleValidationResult,
+    RuleVersionDetailResponse,
 )
-from app.services.governance import GovernanceService
+from app.services.governance import (
+    LOCKED_GUARDRAIL_IDS,
+    GovernanceError,
+    GovernanceService,
+    LockedGuardrailError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -325,4 +345,186 @@ def get_rule_catalog(
         rules=catalog_items,
         summary=summary,
         stages=stages,
+    )
+
+
+@rules_catalog_router.get("/{rule_id}/history", response_model=RuleHistoryResponse)
+def get_rule_history(
+    rule_id: str,
+    governance_service: Annotated[GovernanceService, Depends(get_governance_service)],
+) -> RuleHistoryResponse:
+    try:
+        db_history = governance_service.history(rule_id)
+    except Exception as exc:
+        logger.warning(f"Error fetching rule history for {rule_id}: {exc}")
+        db_history = []
+
+    try:
+        inventory_path = _find_inventory_file()
+        with open(inventory_path, "r", encoding="utf-8") as f:
+            inventory = json.load(f)
+        cat_rule = next((r for r in inventory if r["rule_id"] == rule_id), None)
+    except Exception:
+        cat_rule = None
+
+    if not db_history and not cat_rule:
+        raise HTTPException(status_code=404, detail=f"Rule '{rule_id}' not found in catalog or history persistence.")
+
+    is_locked = rule_id in LOCKED_GUARDRAIL_IDS
+    is_configurable = not is_locked if cat_rule else True
+    rule_name = db_history[0].name if db_history else (cat_rule.get("current_name") if cat_rule else rule_id)
+
+    versions = db_history
+    if not versions and cat_rule:
+        virtual_rule = ReusableRuleVersion(
+            rule_id=rule_id,
+            version=1,
+            name=cat_rule.get("current_name", rule_id),
+            description=cat_rule.get("description", ""),
+            rule_type=RuleType.DETERMINISTIC,
+            status=RuleStatus.ACTIVE if cat_rule.get("currently_active", True) else RuleStatus.DISABLED,
+            conditions=[RuleCondition(field="document_number", operator="EXACT")],
+            action=RuleAction(type="PROPOSE_NEAR_MATCH"),
+            action_authority=ActionAuthority.PROPOSE_ONLY if cat_rule.get("authority") == "PROPOSE_ONLY" else ActionAuthority.AUTO_EXECUTE,
+            governance_tier="LOCKED_SYSTEM_GUARDRAIL" if is_locked else "CONFIGURABLE_BUSINESS_RULE",
+            provenance=RuleProvenance(type=RuleProvenanceType.MIGRATED, summary=cat_rule.get("description", "Discovered system rule.")),
+        )
+        versions = [virtual_rule]
+
+    cur_ver = versions[0].version if versions else 1
+    draft_ver = next((v.version for v in versions if v.status == RuleStatus.DRAFT), None)
+    active_ver = next((v.version for v in versions if v.status == RuleStatus.ACTIVE), None)
+
+    return RuleHistoryResponse(
+        rule_id=rule_id,
+        name=rule_name,
+        configurable=is_configurable,
+        locked=is_locked,
+        versions=versions,
+        current_version=cur_ver,
+        draft_version=draft_ver,
+        active_version=active_ver,
+    )
+
+
+@rules_catalog_router.get("/{rule_id}/versions/{version}", response_model=RuleVersionDetailResponse)
+def get_rule_version_detail(
+    rule_id: str,
+    version: int,
+    governance_service: Annotated[GovernanceService, Depends(get_governance_service)],
+) -> RuleVersionDetailResponse:
+    rule = governance_service.repository.get_rule(rule_id, version)
+    try:
+        history = governance_service.history(rule_id)
+    except Exception:
+        history = []
+
+    if not rule:
+        if version == 1:
+            try:
+                hist_resp = get_rule_history(rule_id, governance_service)
+                if hist_resp.versions:
+                    rule = hist_resp.versions[0]
+            except Exception:
+                pass
+
+    if not rule:
+        raise HTTPException(status_code=404, detail=f"Version {version} of rule '{rule_id}' not found.")
+
+    validation = governance_service.validate_rule_definition(
+        rule_id=rule.rule_id,
+        name=rule.name,
+        description=rule.description,
+        conditions=rule.conditions,
+        action=rule.action,
+        version=rule.version,
+    )
+
+    is_latest = history[0].version == rule.version if history else True
+    is_editable_draft = (rule.status == RuleStatus.DRAFT) and (rule_id not in LOCKED_GUARDRAIL_IDS)
+
+    return RuleVersionDetailResponse(
+        rule=rule,
+        validation=validation,
+        history_count=len(history) if history else 1,
+        is_latest=is_latest,
+        is_editable_draft=is_editable_draft,
+    )
+
+
+@rules_catalog_router.post("/compile-ai", response_model=ReusableRuleVersion, status_code=201)
+def compile_rule_with_ai(
+    request: AIRuleCompileRequest,
+    governance_service: Annotated[GovernanceService, Depends(get_governance_service)],
+) -> ReusableRuleVersion:
+    try:
+        return governance_service.compile_rule_from_ai(
+            prompt=request.prompt,
+            reconciliation_id=request.reconciliation_id,
+            client_profile_id=request.client_profile_id,
+            actor=request.actor,
+        )
+    except GovernanceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Failed to compile AI rule: {exc}")
+        raise HTTPException(status_code=500, detail=f"Rule compilation failed: {str(exc)}")
+
+
+@rules_catalog_router.post("/draft", response_model=ReusableRuleVersion, status_code=201)
+def create_rule_draft(
+    request: RuleDraftCreateRequest,
+    governance_service: Annotated[GovernanceService, Depends(get_governance_service)],
+) -> ReusableRuleVersion:
+    try:
+        return governance_service.create_rule_draft(request)
+    except LockedGuardrailError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except GovernanceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@rules_catalog_router.put("/draft/{rule_id}", response_model=ReusableRuleVersion)
+def update_rule_draft(
+    rule_id: str,
+    request: RuleDraftUpdateRequest,
+    governance_service: Annotated[GovernanceService, Depends(get_governance_service)],
+    version: int | None = None,
+) -> ReusableRuleVersion:
+    try:
+        return governance_service.update_rule_draft(rule_id, request, version=version)
+    except LockedGuardrailError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except GovernanceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@rules_catalog_router.post("/draft/{rule_id}/validate", response_model=RuleValidationResult)
+def validate_rule_draft(
+    rule_id: str,
+    request: RuleDraftUpdateRequest,
+    governance_service: Annotated[GovernanceService, Depends(get_governance_service)],
+    version: int | None = None,
+) -> RuleValidationResult:
+    if rule_id in LOCKED_GUARDRAIL_IDS:
+        return RuleValidationResult(
+            valid=False,
+            rule_id=rule_id,
+            version=version,
+            issues=[RuleValidationIssue(code="LOCKED_GUARDRAIL", message=f"Rule '{rule_id}' is a locked system guardrail and cannot be modified.", severity="error")],
+        )
+
+    existing = governance_service.repository.get_rule(rule_id, version)
+    name = request.name if request.name is not None else (existing.name if existing else rule_id)
+    desc = request.description if request.description is not None else (existing.description if existing else "Draft rule")
+    conds = request.conditions if request.conditions is not None else (existing.conditions if existing else [RuleCondition(field="document_number", operator="EXACT")])
+    action = request.action if request.action is not None else (existing.action if existing else RuleAction(type="PROPOSE_NEAR_MATCH"))
+
+    return governance_service.validate_rule_definition(
+        rule_id=rule_id,
+        name=name,
+        description=desc,
+        conditions=conds,
+        action=action,
+        version=version or (existing.version if existing else 1),
     )

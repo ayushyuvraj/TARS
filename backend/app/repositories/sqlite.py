@@ -249,9 +249,21 @@ class SQLiteReconciliationRepository:
             connection.commit()
 
     def save_rule_version(self, rule: ReusableRuleVersion) -> None:
+        profile_id_str = str(rule.client_profile_id) if rule.client_profile_id else None
         with closing(self._connect()) as connection:
+            if not profile_id_str or profile_id_str == "00000000-0000-0000-0000-000000000000":
+                row = connection.execute("SELECT id FROM client_profiles LIMIT 1").fetchone()
+                if row:
+                    profile_id_str = row["id"]
+                else:
+                    default_id = "00000000-0000-0000-0000-000000000000"
+                    connection.execute(
+                        "INSERT OR IGNORE INTO client_profiles (id, client_name, profile_name, status, version, saved_mapping_json, saved_policy_json, created_from_reconciliation_id, metadata_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (default_id, "System", "Default Global Profile", "active", 1, "{}", "{}", "00000000-0000-0000-0000-000000000000", "{}", rule.created_at.isoformat(), rule.created_at.isoformat())
+                    )
+                    profile_id_str = default_id
             connection.execute("INSERT OR IGNORE INTO reusable_rules(rule_id, client_profile_id, current_version, created_at) VALUES (?, ?, ?, ?)",
-                               (rule.rule_id, str(rule.client_profile_id), rule.version, rule.created_at.isoformat()))
+                               (rule.rule_id, profile_id_str, rule.version, rule.created_at.isoformat()))
             connection.execute("UPDATE reusable_rules SET current_version=MAX(current_version, ?) WHERE rule_id=?", (rule.version, rule.rule_id))
             connection.execute("""INSERT INTO rule_versions(rule_id, version, status, payload_json, created_at)
                 VALUES (?, ?, ?, ?, ?) ON CONFLICT(rule_id,version) DO UPDATE SET status=excluded.status,payload_json=excluded.payload_json""",
@@ -757,12 +769,19 @@ class SQLiteReconciliationRepository:
             connection.commit()
 
     def add_event(self, event: AgentEvent) -> None:
+        rec_id_str = str(event.reconciliation_id)
         with closing(self._connect()) as connection:
+            if rec_id_str == "00000000-0000-0000-0000-000000000000" or not connection.execute("SELECT 1 FROM reconciliations WHERE id=?", (rec_id_str,)).fetchone():
+                row = connection.execute("SELECT id FROM reconciliations ORDER BY updated_at DESC LIMIT 1").fetchone()
+                if row:
+                    rec_id_str = row["id"]
+                else:
+                    return
             connection.execute(
                 "INSERT INTO audit_events(id, reconciliation_id, timestamp, payload_json) VALUES (?, ?, ?, ?)",
                 (
                     str(event.id),
-                    str(event.reconciliation_id),
+                    rec_id_str,
                     event.timestamp.isoformat(),
                     event.model_dump_json(),
                 ),

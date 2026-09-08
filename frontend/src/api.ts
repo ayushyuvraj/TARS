@@ -568,6 +568,10 @@ export type RuleCatalogItem = {
   safe_to_disable: boolean;
   toggle_safety: string;
   execution_sequencing: string;
+  thinking_steps?: string[];
+  formula?: string;
+  conditions?: unknown[];
+  action?: unknown;
   file_function_db_location: string;
   notes: string | null;
   approval?: {
@@ -1142,5 +1146,11 @@ export const api = {
         ? `/api/reconciliations/${id}/audit-events?limit=200`
         : "/api/reconciliations/audit-events?limit=200",
     ),
+  compileRuleWithAI: (prompt: string, reconciliationId?: string) =>
+    request<RuleCatalogItem>("/api/rules/compile-ai", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, reconciliation_id: reconciliationId ?? null }),
+    }),
 };
 

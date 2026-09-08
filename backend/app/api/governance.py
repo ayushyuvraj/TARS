@@ -98,7 +98,7 @@ def approve(rule_id: str, request: RuleDecisionRequest,
 @rule_router.post("/{rule_id}/activate", response_model=ReusableRuleVersion)
 def activate(rule_id: str, request: RuleDecisionRequest,
              service: Annotated[GovernanceService, Depends(get_governance_service)]):
-    return _call(lambda: service.activate(rule_id, request))
+    raise HTTPException(status_code=403, detail="Rule activation is not permitted in Phase 2A.")
 
 
 @rule_router.post("/{rule_id}/disable", response_model=ReusableRuleVersion)

@@ -543,7 +543,7 @@ export default function App() {
       heading?.focus();
     });
     const label = stages.find((item) => item.key === loc.pathname.split("/").pop())?.label;
-    document.title = `${label ?? (loc.pathname === "/overview" ? "Overview" : "GST reconciliation")} · TARS`;
+    document.title = `${label ?? (loc.pathname === "/overview" ? "Overview" : loc.pathname === "/rules" ? "Rules Wiki" : "GST reconciliation")} · TARS`;
   }, [loc.pathname]);
   useEffect(() => {
     if (!copilotOpen) return;
@@ -1500,6 +1500,8 @@ export default function App() {
             <strong>
               {loc.pathname.includes("reconciliations")
                 ? "Reconciliation workspace"
+                : loc.pathname === "/rules"
+                ? "Rules Wiki"
                 : loc.pathname.split("/")[1]?.replaceAll("-", " ") ||
                   "Overview"}
             </strong>
