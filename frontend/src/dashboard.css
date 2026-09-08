@@ -1,0 +1,961 @@
+/* ============================================================================
+   TARS AGENTIC COMMAND DASHBOARD — KPMG EXECUTIVE WIDESCREEN HUD
+   Zero-Scroll, Full-Bleed Horizon, Signature KPMG Brand Hierarchy
+   ============================================================================ */
+
+/* ----------------------------------------------------------------------------
+   KPMG CORPORATE BRAND DESIGN TOKENS
+   ---------------------------------------------------------------------------- */
+:root {
+  --kpmg-blue: #00338d;         /* KPMG Classic Heritage Blue */
+  --kpmg-cobalt: #0091da;       /* KPMG Pacific / Cobalt Blue */
+  --kpmg-light-blue: #72cdf4;   /* KPMG Sky Blue */
+  --kpmg-violet: #6d2077;       /* KPMG Digital Lighthouse / Innovation Purple */
+  --kpmg-deep-violet: #470a68;  /* KPMG Executive Plum */
+  --kpmg-green: #009a44;        /* KPMG ESG / Assurance Green */
+  --kpmg-midnight: #0c233c;     /* KPMG Dark Navy / Charcoal */
+  --kpmg-surface-ice: #f8fafc;  /* Clean Surface Ice */
+}
+
+/* ----------------------------------------------------------------------------
+   1. VIEWPORT-FIT FULL-BLEED WORKSPACE (ZERO SCROLLBAR)
+   ---------------------------------------------------------------------------- */
+.workspace--dashboard {
+  width: 100% !important;
+  max-width: 100% !important;
+  margin: 0 !important;
+  padding: 10px 24px 14px 24px !important;
+  height: calc(100vh - 56px) !important;
+  max-height: calc(100vh - 56px) !important;
+  overflow: hidden !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.workspace--dashboard::-webkit-scrollbar {
+  display: none !important;
+}
+
+.agentic-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  height: 100%;
+  max-height: 100%;
+  width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "DM Sans", sans-serif;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+.agentic-dashboard::-webkit-scrollbar {
+  display: none !important;
+}
+
+.agentic-mono {
+  font-family: "JetBrains Mono", "SF Mono", "Fira Code", Menlo, Monaco, Consolas, monospace;
+}
+
+/* Hide all scrollbars globally within the dashboard */
+.agentic-dashboard * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.agentic-dashboard *::-webkit-scrollbar {
+  display: none !important;
+}
+
+/* ----------------------------------------------------------------------------
+   2. KPMG SIGNATURE TELEMETRY HEADER
+   ---------------------------------------------------------------------------- */
+.dash-telemetry-bar {
+  background: linear-gradient(135deg, #07192f 0%, #0c233c 55%, #18223d 100%);
+  border: 1px solid rgba(0, 145, 218, 0.28);
+  border-radius: 8px;
+  padding: 8px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: #e2e8f0;
+  box-shadow: 0 4px 20px rgba(0, 51, 141, 0.16);
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* KPMG Tricolor Signature Gradient Bar (Accent Line) */
+.dash-telemetry-bar::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, #00338d 0%, #0091da 45%, #6d2077 80%, #009a44 100%);
+}
+
+.dash-telemetry-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.dash-brand-kpmg {
+  font-family: "Manrope", sans-serif;
+  font-size: 0.85rem;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dash-brand-kpmg span {
+  color: var(--kpmg-cobalt);
+}
+
+.dash-agent-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(0, 154, 68, 0.14);
+  border: 1px solid rgba(0, 154, 68, 0.4);
+  color: #22c55e;
+  padding: 3px 9px;
+  border-radius: 4px;
+  font-size: 0.68rem;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dash-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--kpmg-green);
+  box-shadow: 0 0 8px var(--kpmg-green);
+  animation: agentic-beacon 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes agentic-beacon {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.35; transform: scale(0.85); }
+}
+
+.dash-telemetry-tags {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dash-pill {
+  font-size: 0.68rem;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.dash-pill strong { color: #f1f5f9; font-weight: 600; }
+
+.dash-pill--cyan {
+  border-color: rgba(0, 145, 218, 0.38);
+  color: #38bdf8;
+  background: rgba(0, 145, 218, 0.1);
+}
+.dash-pill--cyan strong { color: #7dd3fc; }
+
+.dash-pill--emerald {
+  border-color: rgba(0, 154, 68, 0.4);
+  color: #4ade80;
+  background: rgba(0, 154, 68, 0.1);
+}
+.dash-pill--emerald strong { color: #86efac; }
+
+.dash-pill--violet {
+  border-color: rgba(109, 32, 119, 0.45);
+  color: #d8b4fe;
+  background: rgba(109, 32, 119, 0.15);
+}
+.dash-pill--violet strong { color: #f3e8ff; }
+
+.dash-telemetry-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dash-btn-terminal {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f1f5f9;
+  padding: 4px 11px;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  min-height: 28px;
+}
+
+.dash-btn-terminal:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #ffffff;
+}
+
+.dash-btn-terminal--primary {
+  background: var(--kpmg-blue);
+  border-color: var(--kpmg-cobalt);
+  color: #ffffff;
+}
+.dash-btn-terminal--primary:hover {
+  background: #004bbb;
+  border-color: var(--kpmg-light-blue);
+  box-shadow: 0 0 10px rgba(0, 145, 218, 0.45);
+}
+
+.dash-btn-terminal--violet {
+  background: var(--kpmg-violet);
+  border-color: #a855f7;
+  color: #ffffff;
+}
+.dash-btn-terminal--violet:hover {
+  background: #86198f;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+}
+
+.dash-btn-terminal--danger {
+  background: rgba(239, 68, 68, 0.16);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #fca5a5;
+}
+.dash-btn-terminal--danger:hover {
+  background: rgba(239, 68, 68, 0.28);
+  border-color: #ef4444;
+  color: #ffffff;
+}
+
+/* ----------------------------------------------------------------------------
+   3. CLAUDE CODE / CODEX INTERACTIVE CLI BAR
+   ---------------------------------------------------------------------------- */
+.dash-cli-bar {
+  background: #0a1b2d;
+  border: 1px solid rgba(0, 145, 218, 0.2);
+  border-radius: 6px;
+  padding: 4px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #cbd5e1;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.74rem;
+  flex-shrink: 0;
+}
+
+.dash-cli-prompt {
+  color: var(--kpmg-cobalt);
+  font-weight: 700;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.dash-cli-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: #f1f5f9;
+  font-family: inherit;
+  font-size: 0.74rem;
+  outline: none;
+  padding: 2px 0;
+}
+
+.dash-cli-input::placeholder { color: #475569; }
+
+.dash-cli-shortcuts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dash-cli-tag {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.12s ease;
+  user-select: none;
+}
+
+.dash-cli-tag:hover {
+  background: rgba(0, 145, 218, 0.15);
+  border-color: var(--kpmg-cobalt);
+  color: #7dd3fc;
+}
+
+.dash-cli-feedback {
+  font-size: 0.68rem;
+  color: var(--kpmg-cobalt);
+  background: rgba(0, 145, 218, 0.08);
+  border: 1px solid rgba(0, 145, 218, 0.22);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* ----------------------------------------------------------------------------
+   4. INTERACTIVE COMPANY FILTER PILLS STRIP
+   ---------------------------------------------------------------------------- */
+.dash-client-filter-strip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 1px 0;
+  flex-shrink: 0;
+}
+
+.dash-filter-label {
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.dash-client-filter-btn {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  padding: 3px 10px;
+  border-radius: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+  min-height: 26px;
+}
+
+.dash-client-filter-btn:hover {
+  border-color: var(--kpmg-blue);
+  color: var(--kpmg-blue);
+  background: #eff6ff;
+}
+
+.dash-client-filter-btn--active {
+  background: var(--kpmg-midnight);
+  border-color: var(--kpmg-cobalt);
+  color: #7dd3fc;
+  box-shadow: 0 0 8px rgba(0, 145, 218, 0.28);
+}
+
+/* ----------------------------------------------------------------------------
+   5. SPACISED MACRO KPI RIBBON (HEROIC NUMBERS)
+   ---------------------------------------------------------------------------- */
+.dash-macro-ribbon {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  flex-shrink: 0;
+  width: 100%;
+}
+
+.dash-kpi-card {
+  background: var(--surface);
+  border: 1px solid rgba(0, 51, 141, 0.12);
+  border-top: 3px solid var(--kpmg-blue);
+  border-radius: 7px;
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  box-shadow: 0 2px 6px rgba(12, 35, 60, 0.04);
+  transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.dash-kpi-card:hover {
+  transform: translateY(-1px);
+  border-color: var(--kpmg-cobalt);
+  box-shadow: 0 4px 12px rgba(0, 51, 141, 0.09);
+}
+
+.dash-kpi-card--green { border-top-color: var(--kpmg-green); }
+.dash-kpi-card--violet { border-top-color: var(--kpmg-violet); }
+.dash-kpi-card--cobalt { border-top-color: var(--kpmg-cobalt); }
+
+.dash-kpi-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.dash-kpi-telemetry-code {
+  font-size: 0.62rem;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  color: var(--ink-3);
+  letter-spacing: 0.04em;
+  font-weight: 600;
+}
+
+.dash-kpi-icon { color: var(--ink-3); }
+
+.dash-kpi-value {
+  font-family: "Manrope", sans-serif;
+  font-size: 1.65rem;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.dash-kpi-label {
+  font-size: 0.72rem;
+  color: var(--ink-2);
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dash-kpi-meta {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--line);
+  font-size: 0.66rem;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.dash-kpi-meta-badge { font-weight: 600; }
+.dash-kpi-meta-badge--good { color: var(--kpmg-green); }
+.dash-kpi-meta-badge--warn { color: var(--warn); }
+.dash-kpi-meta-badge--cyan { color: var(--kpmg-cobalt); }
+
+/* ----------------------------------------------------------------------------
+   6. MAIN WIDESCREEN BENTO GRID (ZERO-SCROLL, FULL-BLEED)
+   ---------------------------------------------------------------------------- */
+.dash-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(340px, 1.15fr);
+  gap: 10px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.dash-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Card Container */
+.dash-card {
+  background: var(--surface);
+  border: 1px solid rgba(0, 51, 141, 0.12);
+  border-radius: 7px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(12, 35, 60, 0.03);
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-card-header {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.dash-card-header h3 {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 750;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  letter-spacing: 0.01em;
+}
+
+.dash-card-badge {
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.64rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #eff6ff;
+  color: var(--kpmg-blue);
+  border: 1px solid rgba(0, 51, 141, 0.2);
+}
+
+/* ----------------------------------------------------------------------------
+   7. FLIGHT DECK & PIPELINE STEPPER
+   ---------------------------------------------------------------------------- */
+.dash-flight-deck {
+  padding: 10px 14px;
+  flex-shrink: 0;
+}
+
+.dash-flight-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.dash-flight-session-id {
+  font-size: 0.65rem;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  color: var(--ink-3);
+}
+
+.dash-flight-title {
+  font-family: "Manrope", sans-serif;
+  font-size: 1.05rem;
+  font-weight: 750;
+  color: var(--ink);
+  margin: 1px 0 2px 0;
+}
+
+.dash-flight-sub {
+  font-size: 0.72rem;
+  color: var(--ink-2);
+  margin: 0;
+}
+
+/* Pipeline Stepper */
+.dash-pipeline-wrapper {
+  margin: 6px 0;
+  background: var(--kpmg-midnight);
+  border: 1px solid rgba(0, 145, 218, 0.25);
+  border-radius: 6px;
+  padding: 7px 10px;
+  color: #e2e8f0;
+}
+
+.dash-pipeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 5px;
+  font-size: 0.64rem;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.dash-pipeline-steps {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow-x: auto;
+}
+
+.dash-step-node {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.65rem;
+  font-weight: 600;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.dash-step-node--done {
+  background: rgba(0, 154, 68, 0.16);
+  border-color: rgba(0, 154, 68, 0.45);
+  color: #4ade80;
+}
+
+.dash-step-node--active {
+  background: rgba(0, 145, 218, 0.22);
+  border-color: var(--kpmg-cobalt);
+  color: #7dd3fc;
+  box-shadow: 0 0 8px rgba(0, 145, 218, 0.35);
+}
+
+.dash-step-node--pending { color: #475569; }
+
+.dash-step-arrow {
+  color: #334155;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.65rem;
+}
+
+/* Flight Stats Strip */
+.dash-flight-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.dash-stat-box {
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 8px;
+}
+
+.dash-stat-label {
+  font-size: 0.62rem;
+  color: var(--ink-3);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.dash-stat-val {
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.95rem;
+  font-weight: 750;
+  color: var(--ink);
+}
+
+.dash-stat-val--good { color: var(--kpmg-green); }
+.dash-stat-val--warn { color: var(--warn); }
+.dash-stat-val--blue { color: var(--kpmg-blue); }
+
+/* ----------------------------------------------------------------------------
+   8. SESSIONS MATRIX TABLE (CLEAN ZERO-SCROLL FIT)
+   ---------------------------------------------------------------------------- */
+.dash-card--table {
+  flex: 1;
+  min-height: 0;
+}
+
+.dash-table-wrap {
+  overflow-y: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.dash-matrix-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.74rem;
+  text-align: left;
+}
+
+.dash-matrix-table th {
+  background: #f8fafc;
+  color: var(--ink-3);
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dash-matrix-table td {
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  vertical-align: middle;
+}
+
+.dash-matrix-table tr:hover td { background: #f8fafc; }
+
+.dash-table-id {
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.65rem;
+  color: var(--ink-3);
+}
+
+.dash-table-client {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.dash-table-progress-bar {
+  width: 75px;
+  height: 5px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 3px;
+}
+
+.dash-table-progress-fill {
+  height: 100%;
+  background: var(--kpmg-green);
+  border-radius: 999px;
+}
+
+.dash-stage-pill {
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.63rem;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 3px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  text-transform: uppercase;
+}
+
+.dash-stage-pill--active {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  color: var(--kpmg-blue);
+}
+
+/* ----------------------------------------------------------------------------
+   9. GOVERNANCE & CONTROL PLANE GAUGE
+   ---------------------------------------------------------------------------- */
+.dash-governance-body {
+  padding: 8px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  flex-shrink: 0;
+}
+
+.dash-guardrail-alert {
+  background: #f0fdf4;
+  border: 1px solid rgba(0, 154, 68, 0.3);
+  border-radius: 5px;
+  padding: 6px 9px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #14532d;
+  font-size: 0.7rem;
+}
+
+.dash-guardrail-alert strong {
+  display: block;
+  font-weight: 750;
+  color: #14532d;
+}
+
+.dash-rule-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+
+.dash-rule-counter {
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 5px 3px;
+  text-align: center;
+  background: #fafbfd;
+}
+
+.dash-rule-counter-num {
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 1.1rem;
+  font-weight: 750;
+  color: var(--ink);
+  line-height: 1.1;
+}
+
+.dash-rule-counter-label {
+  font-size: 0.61rem;
+  color: var(--ink-3);
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* ----------------------------------------------------------------------------
+   10. LIVE AGENT AUDIT TERMINAL STREAM (ZERO-SCROLL FIT)
+   ---------------------------------------------------------------------------- */
+.dash-card--terminal {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-terminal-window {
+  background: var(--kpmg-midnight);
+  border: 1px solid rgba(0, 145, 218, 0.25);
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.dash-terminal-top {
+  background: #091a2e;
+  border-bottom: 1px solid rgba(0, 145, 218, 0.2);
+  padding: 4px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.63rem;
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.dash-terminal-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.dash-terminal-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.dash-terminal-dot--red { background: #ef4444; }
+.dash-terminal-dot--yellow { background: #f59e0b; }
+.dash-terminal-dot--green { background: var(--kpmg-green); }
+
+.dash-terminal-stream {
+  padding: 6px 10px;
+  overflow-y: hidden;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.67rem;
+  line-height: 1.35;
+}
+
+.dash-stream-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-left: 2px solid #334155;
+  padding-left: 6px;
+}
+
+.dash-stream-entry--copilot { border-left-color: var(--kpmg-cobalt); }
+.dash-stream-entry--operator { border-left-color: var(--kpmg-green); }
+
+.dash-stream-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.61rem;
+  color: #64748b;
+}
+
+.dash-stream-actor { color: #cbd5e1; font-weight: 700; }
+.dash-stream-type { color: var(--kpmg-cobalt); font-weight: 600; }
+.dash-stream-msg { color: #cbd5e1; word-break: break-word; }
+
+/* ----------------------------------------------------------------------------
+   11. CLIENT PROFILES SUMMARY DIRECTORY
+   ---------------------------------------------------------------------------- */
+.dash-profiles-list {
+  padding: 6px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.dash-profile-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 8px;
+  background: #f8fafc;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  font-size: 0.71rem;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.dash-profile-item:hover {
+  background: #eff6ff;
+  border-color: var(--kpmg-cobalt);
+}
+
+.dash-profile-item--selected {
+  background: #eff6ff;
+  border-color: var(--kpmg-blue);
+  box-shadow: 0 0 6px rgba(0, 51, 141, 0.2);
+}
+
+.dash-profile-name {
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.dash-profile-meta {
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 0.63rem;
+  color: var(--ink-3);
+}
+
+/* Loading State */
+.dash-loading-box {
+  padding: 40px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  color: var(--ink-2);
+}
+
+.dash-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}

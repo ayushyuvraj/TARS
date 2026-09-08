@@ -33,6 +33,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Sparkles,
+  Terminal,
   X,
   Zap,
 } from "lucide-react";
@@ -66,6 +67,7 @@ import { AuditTimeline } from "./AuditTimeline";
 import { FinalReviewWorkspace } from "./FinalReviewWorkspace";
 import { QuickReconcile } from "./QuickReconcile";
 import { RulesWiki } from "./RulesWiki";
+import { AgenticDashboard } from "./AgenticDashboard";
 
 type BusyState =
   | "idle"
@@ -543,7 +545,7 @@ export default function App() {
       heading?.focus();
     });
     const label = stages.find((item) => item.key === loc.pathname.split("/").pop())?.label;
-    document.title = `${label ?? (loc.pathname === "/overview" ? "Overview" : loc.pathname === "/rules" ? "Rules Wiki" : "GST reconciliation")} · TARS`;
+    document.title = `${label ?? (loc.pathname === "/dashboard" ? "Dashboard" : loc.pathname === "/overview" ? "Overview" : loc.pathname === "/rules" ? "Rules Wiki" : "GST reconciliation")} · TARS`;
   }, [loc.pathname]);
   useEffect(() => {
     if (!copilotOpen) return;
@@ -1453,6 +1455,10 @@ export default function App() {
           <span>{sidebarCollapsed ? "Expand" : "Collapse sidebar"}</span>
         </button>
         <nav aria-label="Primary navigation">
+          <NavLink to="/dashboard" data-tooltip="Dashboard" title={sidebarCollapsed ? "Dashboard" : undefined}>
+            <Terminal />
+            <span>Dashboard</span>
+          </NavLink>
           <NavLink to="/overview" data-tooltip="Overview" title={sidebarCollapsed ? "Overview" : undefined}>
             <LayoutDashboard />
             <span>Overview</span>
@@ -1527,7 +1533,7 @@ export default function App() {
             <div className="avatar">PO</div>
           </div>
         </header>
-        <main id="workspace" className="workspace">
+        <main id="workspace" className={loc.pathname === "/dashboard" ? "workspace workspace--dashboard" : "workspace"}>
           <Routes>
             <Route
               path="/"
@@ -1539,6 +1545,17 @@ export default function App() {
                       : "/overview"
                   }
                   replace
+                />
+              }
+            />
+            <Route
+              path="/dashboard"
+              element={
+                <AgenticDashboard
+                  onSelectReconciliation={(id, stage) => nav(`/reconciliations/${id}/${stage || "setup"}`)}
+                  onStartNew={startNew}
+                  onOpenCopilot={() => setCopilotOpen(true)}
+                  activeSessionId={sessionId}
                 />
               }
             />
