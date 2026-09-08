@@ -505,34 +505,36 @@ Rule Compilation & Authority Constraints:
                             </span>
                           </td>
                           <td><code>v{rule.version}</code></td>
-                          <td style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            {rule.configurable ? (
+                          <td>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 6 }}>
+                              {rule.configurable ? (
+                                <button
+                                  className="btn-delete-rule"
+                                  title={`Delete rule ${rule.rule_id}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeleteError(null);
+                                    setRuleToDelete(rule);
+                                  }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              ) : (
+                                <button
+                                  className="btn-delete-rule disabled"
+                                  disabled
+                                  title="🔒 Locked System Guardrail — Cannot be deleted"
+                                >
+                                  <Lock size={12} />
+                                </button>
+                              )}
                               <button
-                                className="btn-delete-rule"
-                                title={`Delete rule ${rule.rule_id}`}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeleteError(null);
-                                  setRuleToDelete(rule);
-                                }}
+                                className="expand-toggle-btn"
+                                aria-label="Toggle details"
                               >
-                                <Trash2 size={13} />
+                                {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
                               </button>
-                            ) : (
-                              <button
-                                className="btn-delete-rule disabled"
-                                disabled
-                                title="🔒 Locked System Guardrail — Cannot be deleted"
-                              >
-                                <Lock size={12} />
-                              </button>
-                            )}
-                            <button
-                              className="expand-toggle-btn"
-                              aria-label="Toggle details"
-                            >
-                              {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-                            </button>
+                            </div>
                           </td>
                         </tr>
                         {isExpanded && (
