@@ -213,6 +213,18 @@ class GovernanceService:
                     human=True, rule_id=rule.rule_id, rule_version=1)
         return rule
 
+    def delete_rule(self, rule_id: str) -> None:
+        if rule_id in LOCKED_GUARDRAIL_IDS:
+            raise LockedGuardrailError(f"Rule '{rule_id}' is a mandatory system guardrail and cannot be deleted.")
+        self.repository.delete_rule(rule_id)
+        self._event(
+            UUID("00000000-0000-0000-0000-000000000000"),
+            "rule.deleted",
+            "rule_governance",
+            human=True,
+            rule_id=rule_id,
+        )
+
     def create_rule_from_pattern(self, reconciliation_id: UUID, pattern_id: UUID, profile_id: UUID) -> ReusableRuleVersion:
         pattern = self._pattern(reconciliation_id, pattern_id)
         if pattern.disposition == PatternDisposition.DISMISSED:

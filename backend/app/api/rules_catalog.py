@@ -622,3 +622,27 @@ def validate_rule_draft(
         action=action,
         version=version or (existing.version if existing else 1),
     )
+
+
+@rules_catalog_router.delete("/{rule_id}")
+def delete_rule(
+    rule_id: str,
+    governance_service: Annotated[GovernanceService, Depends(get_governance_service)],
+) -> dict[str, Any]:
+    if rule_id in LOCKED_GUARDRAIL_IDS:
+        raise HTTPException(
+            status_code=403,
+            detail=f"Rule '{rule_id}' is a mandatory system guardrail and cannot be deleted.",
+        )
+    try:
+        governance_service.delete_rule(rule_id)
+        return {
+            "success": True,
+            "message": f"Rule '{rule_id}' has been permanently deleted from backend database storage.",
+            "rule_id": rule_id,
+        }
+    except LockedGuardrailError as exc:
+        raise HTTPException(status_code=403, detail=str(exc))
+    except Exception as exc:
+        logger.error(f"Failed to delete rule {rule_id}: {exc}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete rule {rule_id}: {str(exc)}")

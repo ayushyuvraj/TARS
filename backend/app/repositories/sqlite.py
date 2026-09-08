@@ -270,6 +270,12 @@ class SQLiteReconciliationRepository:
                                (rule.rule_id, rule.version, rule.status.value, rule.model_dump_json(), rule.created_at.isoformat()))
             connection.commit()
 
+    def delete_rule(self, rule_id: str) -> None:
+        with closing(self._connect()) as connection:
+            connection.execute("DELETE FROM rule_versions WHERE rule_id = ?", (rule_id,))
+            connection.execute("DELETE FROM reusable_rules WHERE rule_id = ?", (rule_id,))
+            connection.commit()
+
     def get_rule(self, rule_id: str, version: int | None = None) -> ReusableRuleVersion | None:
         with closing(self._connect()) as connection:
             row = connection.execute("SELECT payload_json FROM rule_versions WHERE rule_id=? " +

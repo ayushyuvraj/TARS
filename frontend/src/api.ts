@@ -1155,5 +1155,10 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ prompt, reconciliation_id: reconciliationId ?? null }),
     }),
+  deleteRule: (ruleId: string) =>
+    request<{ success: boolean; message: string; rule_id: string }>(
+      `/api/rules/${encodeURIComponent(ruleId)}`,
+      { method: "DELETE" }
+    ),
 };
 

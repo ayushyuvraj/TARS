@@ -10,6 +10,7 @@ import {
 import {
   Activity,
   AlertCircle,
+  AlertTriangle,
   BookOpen,
   CheckCircle2,
   ChevronDown,
@@ -26,6 +27,7 @@ import {
   ShieldAlert,
   ShieldCheck,
   Sparkles,
+  Trash2,
   Unlock,
   Wand2,
   X,
@@ -53,6 +55,10 @@ export function RulesWiki() {
   const [compiledRuleResult, setCompiledRuleResult] = useState<RuleCatalogItem | null>(null);
   const [compileError, setCompileError] = useState<string | null>(null);
   const [successNotification, setSuccessNotification] = useState<string | null>(null);
+
+  const [ruleToDelete, setRuleToDelete] = useState<RuleCatalogItem | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const ACTUAL_DATA_CONTEXT = `[ACTUAL GROUND TRUTH DATA & RECONCILIATION SCHEMA IN USE]
 Canonical Schema Mapping (GSTR-2B vs Purchase Register):
@@ -499,7 +505,28 @@ Rule Compilation & Authority Constraints:
                             </span>
                           </td>
                           <td><code>v{rule.version}</code></td>
-                          <td>
+                          <td style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            {rule.configurable ? (
+                              <button
+                                className="btn-delete-rule"
+                                title={`Delete rule ${rule.rule_id}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteError(null);
+                                  setRuleToDelete(rule);
+                                }}
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            ) : (
+                              <button
+                                className="btn-delete-rule disabled"
+                                disabled
+                                title="🔒 Locked System Guardrail — Cannot be deleted"
+                              >
+                                <Lock size={12} />
+                              </button>
+                            )}
                             <button
                               className="expand-toggle-btn"
                               aria-label="Toggle details"
@@ -516,6 +543,10 @@ Rule Compilation & Authority Constraints:
                                 isTech={isTech}
                                 onToggleTech={() => toggleTechnical(rule.rule_id)}
                                 onClose={() => setExpandedRuleId(null)}
+                                onOpenDelete={(r) => {
+                                  setDeleteError(null);
+                                  setRuleToDelete(r);
+                                }}
                               />
                             </td>
                           </tr>
@@ -840,6 +871,90 @@ Rule Compilation & Authority Constraints:
           </div>,
           document.body,
         )}
+
+      {/* Permanent Deletion Confirmation Modal - Portaled to document.body */}
+      {ruleToDelete &&
+        createPortal(
+          <div className="ai-rule-modal-backdrop" onClick={() => !isDeleting && setRuleToDelete(null)}>
+            <div className="ai-rule-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 520 }}>
+              <header className="ai-rule-modal__header" style={{ background: "#fef2f2", borderColor: "#fca5a5" }}>
+                <h3 style={{ color: "#991b1b" }}>
+                  <AlertTriangle size={20} color="#dc2626" /> Permanent Rule Deletion
+                </h3>
+                <button
+                  disabled={isDeleting}
+                  onClick={() => setRuleToDelete(null)}
+                  style={{ background: "none", border: "none", cursor: "pointer", color: "#991b1b" }}
+                >
+                  <X size={18} />
+                </button>
+              </header>
+
+              <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ padding: "14px 16px", background: "#fff5f5", border: "1px solid #fed7d7", borderRadius: 12, color: "#9b2c2c", fontSize: 13, lineHeight: 1.5 }}>
+                  <strong style={{ color: "#742a2a", fontSize: 14, display: "block", marginBottom: 4 }}>
+                    ⚠️ Warning: This action is IRREVERSIBLE.
+                  </strong>
+                  <p style={{ margin: 0 }}>
+                    Are you sure you want to permanently delete rule <strong>{ruleToDelete.rule_id}</strong> (<em>"{ruleToDelete.name}"</em>)?
+                    This will permanently remove the rule from backend SQLite storage and exclude it from all future reconciliation runs.
+                  </p>
+                </div>
+
+                {deleteError && (
+                  <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", borderRadius: 8, fontSize: 12 }}>
+                    {deleteError}
+                  </div>
+                )}
+
+                <div style={{ fontSize: 12, color: "var(--muted-text)", background: "#f8fafc", padding: "10px 14px", borderRadius: 8, border: "1px solid var(--border)" }}>
+                  <div>Source of Truth: <strong>{ruleToDelete.source_of_truth}</strong></div>
+                  <div>Category: <strong>{ruleToDelete.category}</strong> · Execution Stage: <strong>{ruleToDelete.stage}</strong></div>
+                </div>
+              </div>
+
+              <footer className="ai-rule-modal__footer" style={{ background: "#f8fafc" }}>
+                <button
+                  className="button-secondary"
+                  disabled={isDeleting}
+                  onClick={() => setRuleToDelete(null)}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="btn-danger"
+                  disabled={isDeleting}
+                  onClick={async () => {
+                    setIsDeleting(true);
+                    setDeleteError(null);
+                    try {
+                      await api.deleteRule(ruleToDelete.rule_id);
+                      setSuccessNotification(`Rule ${ruleToDelete.rule_id} ("${ruleToDelete.name}") was permanently deleted.`);
+                      setRuleToDelete(null);
+                      await fetchCatalog();
+                    } catch (err) {
+                      setDeleteError(err instanceof Error ? err.message : "Failed to delete rule from backend.");
+                    } finally {
+                      setIsDeleting(false);
+                    }
+                  }}
+                >
+                  {isDeleting ? (
+                    <>
+                      <Activity className="spin" size={16} /> Deleting from Backend DB...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 size={16} /> Confirm Permanent Deletion
+                    </>
+                  )}
+                </button>
+              </footer>
+            </div>
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
@@ -849,11 +964,13 @@ function RuleInspectorDrawer({
   isTech,
   onToggleTech,
   onClose,
+  onOpenDelete,
 }: {
   rule: RuleCatalogItem;
   isTech: boolean;
   onToggleTech: () => void;
   onClose: () => void;
+  onOpenDelete?: (rule: RuleCatalogItem) => void;
 }) {
   return (
     <div className="rule-inspector-panel">
@@ -870,6 +987,16 @@ function RuleInspectorDrawer({
             Status: {rule.status}
           </span>
           <span className="version-pill">Version {rule.version}</span>
+          {rule.configurable && onOpenDelete && (
+            <button
+              className="btn-danger-outline"
+              style={{ padding: "5px 12px", fontSize: 12 }}
+              onClick={() => onOpenDelete(rule)}
+              title="Delete this rule permanently"
+            >
+              <Trash2 size={13} /> Delete Rule
+            </button>
+          )}
           <button className="button-secondary close-inspector" onClick={onClose}>
             Done
           </button>

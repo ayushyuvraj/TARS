@@ -216,3 +216,25 @@ def test_15_no_activation_api_available(client):
     res = client.post("/api/rules/R-002/activate", json={"actor": "POC user"})
     assert res.status_code in (403, 404, 405, 501)
     assert "not permitted in Phase 2A" in res.json().get("detail", "")
+
+
+def test_16_delete_configurable_rule_and_locked_guardrail_protection(client):
+    """Verify DELETE /api/rules/{rule_id} deletes configurable rules and blocks deleting locked guardrails."""
+    # 1. Deleting locked system guardrail must return 403 Forbidden
+    locked_res = client.delete("/api/rules/SAFE-D001")
+    assert locked_res.status_code == 403
+    assert "mandatory system guardrail" in locked_res.json()["detail"]
+
+    # 2. Create an AI rule and then delete it
+    compile_res = client.post("/api/rules/compile-ai", json={"prompt": "If tax variance is within ₹150, flag for review"})
+    assert compile_res.status_code == 201
+    created_rule_id = compile_res.json()["rule_id"]
+
+    del_res = client.delete(f"/api/rules/{created_rule_id}")
+    assert del_res.status_code == 200
+    assert del_res.json()["success"] is True
+
+    # 3. Verify rule is removed from catalog
+    cat_res = client.get("/api/rules/catalog")
+    rule_ids = [r["rule_id"] for r in cat_res.json()["rules"]]
+    assert created_rule_id not in rule_ids
