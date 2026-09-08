@@ -2,13 +2,13 @@
 
 ## Dynamic Session State — Rules Wiki Completed Checkpoint (8th September 2026)
 
-- **Checkpoint Name**: `Rules Wiki AI Compiler Completed Checkpoint`
+- **Checkpoint Name**: `Rules Wiki Multi-Select & Bulk Delete Completed Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Current HEAD Commit**: `0ea7767` (`feat(rules-wiki): single-screen AI rule compiler modal with dynamic gpt-5.4-mini integration and health check fix`)
-- **Checkpoint Tag**: `rules-wiki-complete`
+- **Current HEAD Commit**: `7c2f16b` (`feat(rules-wiki): add multi-rule selection checkboxes, conditional top bulk delete, and backend deletion API`)
+- **Checkpoint Tag**: `rules-wiki-bulk-delete-complete`
 - **Pre-Completion Tag**: `rules-wiki-pre-completion` (`de2329e`)
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Rules Wiki Control Plane — AI Rule Creation Single-Screen Modal with dynamic LLM (`gpt-5.4-mini`) verification complete.
+- **Current Objective**: Rules Wiki Control Plane — Multi-rule selection checkboxes, conditional top bulk delete button with locked guardrail protection, backend bulk deletion API, and irreversible confirmation modal complete.
 
 ---
 
