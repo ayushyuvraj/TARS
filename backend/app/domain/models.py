@@ -1362,5 +1362,8 @@ class RuleCatalogResponse(BaseModel):
     rules: list[RuleCatalogItem]
     summary: RuleCatalogSummary
     stages: list[ExecutionStageInfo]
+    llm_connected: bool = True
+    llm_model: str = "gpt-5.4-mini"
+    llm_provider: str = "openai"
 
 

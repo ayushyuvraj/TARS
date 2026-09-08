@@ -341,10 +341,25 @@ def get_rule_catalog(
 
     stages = [ExecutionStageInfo(**stage) for stage in STAGES_DEFINITION]
 
+    from app.config import get_settings
+    from app.providers.factory import create_llm_provider
+    settings = get_settings()
+    llm_model = settings.effective_openai_model
+    llm_provider = settings.llm_provider
+    llm_connected = False
+    try:
+        provider = create_llm_provider(settings)
+        llm_connected = provider.healthcheck()
+    except Exception:
+        llm_connected = False
+
     return RuleCatalogResponse(
         rules=catalog_items,
         summary=summary,
         stages=stages,
+        llm_connected=llm_connected,
+        llm_model=llm_model,
+        llm_provider=llm_provider,
     )
 
 

@@ -613,6 +613,9 @@ export type RuleCatalogResponse = {
   rules: RuleCatalogItem[];
   summary: RuleCatalogSummary;
   stages: ExecutionStageInfo[];
+  llm_connected?: boolean;
+  llm_model?: string;
+  llm_provider?: string;
 };
 
 export type PatternSuggestion = {

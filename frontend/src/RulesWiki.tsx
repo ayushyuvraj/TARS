@@ -85,7 +85,8 @@ Rule Compilation & Authority Constraints:
     };
 
     try {
-      addStep(`> [00.01s] [LLM] Ingesting natural language rule prompt: "${text}"...`);
+      const modelName = data?.llm_model || "gpt-5.4-mini";
+      addStep(`> [00.01s] [LLM] Ingesting prompt via ${modelName}: "${text}"...`);
       await new Promise((r) => setTimeout(r, 450));
 
       addStep(`> [00.35s] [SCHEMA] Cross-referencing canonical columns: [supplier_gstin, document_number, taxable_value, document_date]...`);
@@ -619,89 +620,93 @@ Rule Compilation & Authority Constraints:
                 </button>
               </header>
 
-              <div className="ai-rule-modal__body">
-                <p style={{ margin: 0, fontSize: 13, color: "var(--secondary)", lineHeight: 1.5 }}>
-                  Describe your custom matching rule in human natural language. The TARS LLM Rules Compiler
-                  will interpret your intent, map it to canonical schema fields, and compile an active declarative rule.
-                </p>
+              <div className="ai-rule-modal__grid">
+                {/* Left Column: Prompt Input, Read-Only Context, Sample Prompts */}
+                <div className="ai-rule-modal__col">
+                  <p style={{ margin: 0, fontSize: 13, color: "var(--secondary)", lineHeight: 1.4 }}>
+                    Describe your custom matching rule in human natural language. The TARS LLM Rules Compiler
+                    will interpret your intent using <strong>{data?.llm_model || "gpt-5.4-mini"}</strong>, map it to canonical schema fields, and compile an active declarative rule.
+                  </p>
 
-                {compileError && (
-                  <div style={{ padding: "10px 14px", background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", borderRadius: 8, fontSize: 13 }}>
-                    {compileError}
+                  {!data?.llm_connected && (
+                    <div style={{ padding: "8px 12px", background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", borderRadius: 8, fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                      <AlertCircle size={15} />
+                      <span><strong>No LLM connected in backend.</strong> Please verify OPENAI_API_KEY setting.</span>
+                    </div>
+                  )}
+
+                  {compileError && (
+                    <div style={{ padding: "8px 12px", background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b", borderRadius: 8, fontSize: 12 }}>
+                      {compileError}
+                    </div>
+                  )}
+
+                  {/* 1. Rule Prompt Textarea (Editable) */}
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: "var(--primary)", display: "block", marginBottom: 4 }}>
+                      Rule Natural Language Description:
+                    </label>
+                    <textarea
+                      className="ai-rule-textarea"
+                      placeholder="e.g. If tax difference is within ₹500 and GSTIN matches exactly, flag for review"
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      disabled={isCompiling}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          void handleStartCreateRule();
+                        }
+                      }}
+                    />
                   </div>
-                )}
 
-                {/* 1. Rule Prompt Textarea (Editable) */}
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--primary)", display: "block", marginBottom: 6 }}>
-                    Rule Natural Language Description:
-                  </label>
-                  <textarea
-                    className="ai-rule-textarea"
-                    placeholder="e.g. If tax difference is within ₹500 and GSTIN matches exactly, flag for review"
-                    value={aiPrompt}
-                    onChange={(e) => setAiPrompt(e.target.value)}
-                    disabled={isCompiling}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                        void handleStartCreateRule();
-                      }
-                    }}
-                  />
+                  {/* 2. Read-Only Context Data Text Box */}
+                  <div>
+                    <label style={{ fontSize: 12, fontWeight: 700, color: "var(--secondary)", display: "block", marginBottom: 4 }}>
+                      Actual Ground Truth Data & Reconciliation Schema (Read-Only Context):
+                    </label>
+                    <textarea
+                      readOnly
+                      className="context-textbox"
+                      rows={6}
+                      value={ACTUAL_DATA_CONTEXT}
+                    />
+                  </div>
+
+                  {/* Quick Sample Prompts */}
+                  <div>
+                    <div className="quick-prompts-label">
+                      <Sparkles size={13} color="#7c3aed" /> Quick Sample Prompts:
+                    </div>
+                    <div className="quick-prompts-grid">
+                      <button
+                        disabled={isCompiling}
+                        className="prompt-chip"
+                        onClick={() => setAiPrompt("If tax difference is within ₹500 and GSTIN matches exactly, flag for review")}
+                      >
+                        ⚡ Tax variance within ₹500 → Flag for review
+                      </button>
+                      <button
+                        disabled={isCompiling}
+                        className="prompt-chip"
+                        onClick={() => setAiPrompt("Propose tolerance match when taxable value variance is within ₹100")}
+                      >
+                        ⚡ Taxable value within ₹100 → Tolerance match
+                      </button>
+                      <button
+                        disabled={isCompiling}
+                        className="prompt-chip"
+                        onClick={() => setAiPrompt("Propose near match when document dates drift by up to 7 days and GSTIN is exact")}
+                      >
+                        ⚡ Date drift within 7 days & exact GSTIN → Near match
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
-                {/* 2. Read-Only Context Data Text Box */}
-                <div>
-                  <label style={{ fontSize: 12, fontWeight: 700, color: "var(--secondary)", display: "block", marginBottom: 6 }}>
-                    Actual Ground Truth Data & Reconciliation Schema (Read-Only Context):
-                  </label>
-                  <textarea
-                    readOnly
-                    className="context-textbox"
-                    rows={8}
-                    value={ACTUAL_DATA_CONTEXT}
-                  />
-                </div>
-
-                {/* Quick Sample Prompts */}
-                <div>
-                  <div className="quick-prompts-label">
-                    <Sparkles size={13} color="#7c3aed" /> Quick Sample Prompts:
-                  </div>
-                  <div className="quick-prompts-grid">
-                    <button
-                      disabled={isCompiling}
-                      className="prompt-chip"
-                      onClick={() => setAiPrompt("If tax difference is within ₹500 and GSTIN matches exactly, flag for review")}
-                    >
-                      ⚡ Tax variance within ₹500 → Flag for review
-                    </button>
-                    <button
-                      disabled={isCompiling}
-                      className="prompt-chip"
-                      onClick={() => setAiPrompt("Propose tolerance match when taxable value variance is within ₹100")}
-                    >
-                      ⚡ Taxable value within ₹100 → Tolerance match
-                    </button>
-                    <button
-                      disabled={isCompiling}
-                      className="prompt-chip"
-                      onClick={() => setAiPrompt("Propose near match when document dates drift by up to 7 days and GSTIN is exact")}
-                    >
-                      ⚡ Date drift within 7 days & exact GSTIN → Near match
-                    </button>
-                    <button
-                      disabled={isCompiling}
-                      className="prompt-chip"
-                      onClick={() => setAiPrompt("Propose near match when GSTIN matches and invoice numbers match after removing slashes")}
-                    >
-                      ⚡ Normalized invoice & exact GSTIN → Near match
-                    </button>
-                  </div>
-                </div>
-
-                {/* 3. Claude Code-Style Animated Thinking Terminal */}
-                {(thinkingSteps.length > 0 || isCompiling || compiledRuleResult) && (
+                {/* Right Column: Terminal & Compiled Formula/AST */}
+                <div className="ai-rule-modal__col">
+                  {/* Animated Terminal */}
                   <div className="claude-terminal">
                     <div className="claude-terminal__header">
                       <div className="claude-terminal__dots">
@@ -709,12 +714,17 @@ Rule Compilation & Authority Constraints:
                         <span className="claude-terminal__dot claude-terminal__dot--yellow" />
                         <span className="claude-terminal__dot claude-terminal__dot--green" />
                       </div>
-                      <span>● claude-code — tars-llm-compiler</span>
-                      <span style={{ fontSize: 11, color: "#7ee787" }}>
-                        {isCompiling ? "THINKING..." : "COMPLETED"}
+                      <span>● tars-llm-compiler — {data?.llm_model || "gpt-5.4-mini"}</span>
+                      <span style={{ fontSize: 11, color: isCompiling ? "#eab308" : "#7ee787" }}>
+                        {isCompiling ? "THINKING..." : thinkingSteps.length > 0 ? "COMPLETED" : "READY"}
                       </span>
                     </div>
                     <div className="claude-terminal__body">
+                      {thinkingSteps.length === 0 && !isCompiling && (
+                        <div className="claude-terminal__line" style={{ color: "#8b949e" }}>
+                          <span>▶ Ready to compile custom rule using {data?.llm_model || "gpt-5.4-mini"}...</span>
+                        </div>
+                      )}
                       {thinkingSteps.map((step, idx) => (
                         <div
                           key={idx}
@@ -729,83 +739,101 @@ Rule Compilation & Authority Constraints:
                       ))}
                       {isCompiling && (
                         <div className="claude-terminal__line" style={{ color: "#c084fc" }}>
-                          <span>▶ Claude is thinking...</span>
+                          <span>▶ {data?.llm_model || "gpt-5.4-mini"} is thinking...</span>
                           <span className="claude-terminal__cursor" />
                         </div>
                       )}
                     </div>
                   </div>
-                )}
 
-                {/* 4. Compiled Column Formula & AST JSON Output */}
-                {compiledRuleResult && (
-                  <div>
-                    <label style={{ fontSize: 12, fontWeight: 700, color: "#166534", display: "block", marginTop: 10 }}>
-                      ✓ Compiled Column Formula:
-                    </label>
-                    <div className="output-formula-box">
-                      {compiledRuleResult.formula ||
-                        `IF ${compiledRuleResult.human_friendly_if} THEN ${compiledRuleResult.human_friendly_then}`}
+                  {/* Compiled Column Formula & AST JSON Output */}
+                  {compiledRuleResult ? (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "#166534", display: "block", marginBottom: 4 }}>
+                          ✓ Compiled Column Formula:
+                        </label>
+                        <div className="output-formula-box">
+                          {compiledRuleResult.formula ||
+                            `IF ${compiledRuleResult.human_friendly_if} THEN ${compiledRuleResult.human_friendly_then}`}
+                        </div>
+                      </div>
+
+                      <div>
+                        <label style={{ fontSize: 11, fontWeight: 700, color: "var(--secondary)", display: "block", marginBottom: 4 }}>
+                          Compiled Rule AST (JSON):
+                        </label>
+                        <pre
+                          style={{
+                            background: "#0d1117",
+                            color: "#7ee787",
+                            padding: 10,
+                            borderRadius: 8,
+                            fontSize: 11,
+                            lineHeight: 1.4,
+                            overflowX: "auto",
+                            maxHeight: 130,
+                            margin: 0,
+                            border: "1px solid #30363d",
+                            fontFamily: "'JetBrains Mono', monospace",
+                          }}
+                        >
+                          <code>{JSON.stringify(compiledRuleResult, null, 2)}</code>
+                        </pre>
+                      </div>
                     </div>
-
-                    <label style={{ fontSize: 12, fontWeight: 700, color: "var(--secondary)", display: "block", marginTop: 12, marginBottom: 4 }}>
-                      Compiled Rule AST (JSON):
-                    </label>
-                    <pre
-                      style={{
-                        background: "#0d1117",
-                        color: "#7ee787",
-                        padding: 14,
-                        borderRadius: 10,
-                        fontSize: 12,
-                        lineHeight: 1.5,
-                        overflowX: "auto",
-                        maxHeight: 200,
-                        margin: 0,
-                        border: "1px solid #30363d",
-                        fontFamily: "'JetBrains Mono', monospace",
-                      }}
-                    >
-                      <code>{JSON.stringify(compiledRuleResult, null, 2)}</code>
-                    </pre>
-                  </div>
-                )}
+                  ) : (
+                    <div style={{ background: "#f8fafc", border: "1px dashed var(--border)", borderRadius: 10, padding: 16, textAlign: "center", color: "var(--muted-text)", fontSize: 12, marginTop: "auto", marginBottom: "auto" }}>
+                      <Code2 size={24} style={{ marginBottom: 6, opacity: 0.5 }} />
+                      <div>Compiled Rule Formula & AST JSON will appear here after clicking <strong>Create Rule</strong></div>
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Modal Footer with explicit Cancel and Create Rule buttons */}
               <footer className="ai-rule-modal__footer">
-                <button
-                  className="button-secondary"
-                  disabled={isCompiling}
-                  onClick={handleCancelModal}
-                >
-                  Cancel
-                </button>
+                <div className="llm-connection-badge">
+                  <span className={`llm-connection-dot ${data?.llm_connected ? "llm-connection-dot--online" : "llm-connection-dot--offline"}`} />
+                  <span>
+                    Backend LLM: <strong>{data?.llm_connected ? (data?.llm_model || "gpt-5.4-mini") : "Not Connected"}</strong> {data?.llm_connected ? "(Connected)" : "(Offline)"}
+                  </span>
+                </div>
 
-                {!compiledRuleResult ? (
+                <div className="footer-actions">
                   <button
-                    className="btn-sparkle"
-                    disabled={isCompiling || !aiPrompt.trim()}
-                    onClick={() => void handleStartCreateRule()}
+                    className="button-secondary"
+                    disabled={isCompiling}
+                    onClick={handleCancelModal}
                   >
-                    {isCompiling ? (
-                      <>
-                        <Activity className="spin" size={16} /> Compiling via LLM...
-                      </>
-                    ) : (
-                      <>
-                        <Wand2 size={16} /> Create Rule
-                      </>
-                    )}
+                    Cancel
                   </button>
-                ) : (
-                  <button
-                    className="btn-sparkle"
-                    onClick={() => void handleFinishModal()}
-                  >
-                    <CheckCircle2 size={16} /> Done (Add to Catalog)
-                  </button>
-                )}
+
+                  {!compiledRuleResult ? (
+                    <button
+                      className="btn-sparkle"
+                      disabled={isCompiling || !aiPrompt.trim() || !data?.llm_connected}
+                      onClick={() => void handleStartCreateRule()}
+                    >
+                      {isCompiling ? (
+                        <>
+                          <Activity className="spin" size={16} /> Compiling via {data?.llm_model || "gpt-5.4-mini"}...
+                        </>
+                      ) : (
+                        <>
+                          <Wand2 size={16} /> Create Rule
+                        </>
+                      )}
+                    </button>
+                  ) : (
+                    <button
+                      className="btn-sparkle"
+                      onClick={() => void handleFinishModal()}
+                    >
+                      <CheckCircle2 size={16} /> Done (Add to Catalog)
+                    </button>
+                  )}
+                </div>
               </footer>
             </div>
           </div>,
