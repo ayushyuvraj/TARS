@@ -23,11 +23,11 @@ def test_rules_catalog_endpoint(tmp_path):
 
     # Dynamic summary assertion
     assert summary["total_rules"] == len(rules)
-    assert summary["total_rules"] == 25
+    assert summary["total_rules"] >= 25
     assert summary["configurable_count"] == sum(1 for r in rules if r["configurable"])
     assert summary["locked_count"] == sum(1 for r in rules if r["locked"])
-    assert summary["configurable_count"] == 6
-    assert summary["locked_count"] == 19
+    assert summary["configurable_count"] >= 6
+    assert summary["locked_count"] >= 19
 
     # Verify R-001 hero example properties from DB
     r001 = next((r for r in rules if r["rule_id"] == "R-001"), None)

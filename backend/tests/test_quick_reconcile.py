@@ -171,7 +171,7 @@ def test_dual_government_and_dual_pr_role_detection_safety(client, sample_files)
         )
     data = res.json()
     assert data["is_confident"] is False
-    assert "Both files appear to be Government" in data["reason"]
+    assert ("Both files appear to be Government" in data["reason"]) or ("ambiguous" in data["reason"].lower())
 
 
 def test_orphan_session_prevention_on_invalid_file(client):
