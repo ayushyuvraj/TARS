@@ -4,7 +4,7 @@
 
 - **Checkpoint Name**: `Rules Wiki Multi-Select & Bulk Delete Completed Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Current HEAD Commit**: `7c2f16b` (`feat(rules-wiki): add multi-rule selection checkboxes, conditional top bulk delete, and backend deletion API`)
+- **Current HEAD Commit**: `83ce596` (`docs(handoff): update AI_HANDOFF.md checkpoint hash`)
 - **Checkpoint Tag**: `rules-wiki-bulk-delete-complete`
 - **Pre-Completion Tag**: `rules-wiki-pre-completion` (`de2329e`)
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
