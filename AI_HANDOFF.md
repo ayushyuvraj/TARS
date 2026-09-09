@@ -8,9 +8,21 @@
 - **Checkpoint Tag**: `kpmg-agentic-dashboard-complete`
 - **Pre-Completion Tag**: `rules-wiki-bulk-delete-complete` (`bce346b`)
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: KPMG Zero-Scroll Agentic Dashboard (`/dashboard`) with full-bleed widescreen layout, authentic KPMG brand hierarchy (#00338D, #0091DA, #6D2077, #009A44), interactive company profile filter, Codex/Claude Code CLI prompt bar, and zero hardcodings complete. Overview route (`/overview`) remains 100% intact.
+- **Current Objective**: Reconciliation 2.0 zero-scroll setup workspace, multi-step dynamic chain of thought console, non-technical plain English trust architecture, and measured execution duration with no LangGraph or ChatGPT 5.4 mini branding. Original Reconciliation 1.0 remains 100% intact.
 
 ---
+
+## Reconciliation 2.0 Architecture & State Summary
+
+1. **Reconciliation 2.0 (`/reconciliations-v2`)**:
+   - Built alongside Reconciliation 1.0 without modifying any existing 1.0 flows.
+   - **Zero-Scroll Setup Canvas**: Fits standard laptop/desktop viewports (1440x765) without vertical scrolling.
+   - **Pristine White Background**: Pure clean `#ffffff` canvas background across workspace, root, and stage views.
+   - **Compact Focused Ledger Bays**: Tax Authority Ledger and Client Accounting Ledger boxes are reduced in size and centered (max-width 1040px, 200px height).
+   - **Really Subtle Trust Cards**: Three bottom cards styled with ultra-light borders, transparent icon containers, muted slate typography, and no heavy drop shadows.
+   - **Multi-Step Dynamic Chain of Thought Console**: Live dark-mode HUD (`.v2-cot-console`) displaying Step 1, 2, and 3 simultaneously with millisecond completion badges, live elapsed timer, and status icons so users can see previous steps when at Step 3/3.
+   - **Reasoning Duration Accuracy**: Stage 2 displays actual measured wall-clock elapsed time (e.g. 5.4s / 39.2s) instead of 0.0s.
+   - **Branding & Framework Names**: Strictly zero mention of 'ChatGPT 5.4 mini' (branded as `TARS Agentic AI Core` / `Autonomous AgentAI`) and zero mention of 'LangGraph' (labeled as `Multi-Agent Consensus`).
 
 ## Operational Capabilities & State Summary
 

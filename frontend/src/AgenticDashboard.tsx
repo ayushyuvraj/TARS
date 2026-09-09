@@ -282,7 +282,7 @@ export const AgenticDashboard: React.FC<AgenticDashboardProps> = ({
       nav("/audit");
     } else if (query === "sync" || query === "refresh") {
       void loadDashboardData(true);
-    } else if (query.startsWith("copilot") || onOpenCopilot) {
+    } else if (query.startsWith("copilot")) {
       setCliFeedback("COPILOT_DISPATCHED: Summoning AI financial reasoning sidecar.");
       onOpenCopilot?.();
     } else {

@@ -68,6 +68,7 @@ import { FinalReviewWorkspace } from "./FinalReviewWorkspace";
 import { QuickReconcile } from "./QuickReconcile";
 import { RulesWiki } from "./RulesWiki";
 import { AgenticDashboard } from "./AgenticDashboard";
+import { ReconciliationV2Workspace } from "./ReconciliationV2Workspace";
 
 type BusyState =
   | "idle"
@@ -1471,6 +1472,10 @@ export default function App() {
             <Scale />
             <span>Reconciliations</span>
           </NavLink>
+          <NavLink to="/reconciliations-v2" data-tooltip="Reconciliation 2.0" title={sidebarCollapsed ? "Reconciliation 2.0" : undefined}>
+            <Sparkles className="text-purple-400" />
+            <span>Reconciliation 2.0</span>
+          </NavLink>
           <NavLink to="/client-profiles" data-tooltip="Client Profiles" title={sidebarCollapsed ? "Client Profiles" : undefined}>
             <Building2 />
             <span>Client Profiles</span>
@@ -1504,7 +1509,9 @@ export default function App() {
             <span>Finance operations</span>
             <ChevronRight size={14} />
             <strong>
-              {loc.pathname.includes("reconciliations")
+              {loc.pathname.startsWith("/reconciliations-v2")
+                ? "Reconciliation 2.0"
+                : loc.pathname.includes("reconciliations")
                 ? "Reconciliation workspace"
                 : loc.pathname === "/rules"
                 ? "Rules Wiki"
@@ -1533,7 +1540,16 @@ export default function App() {
             <div className="avatar">PO</div>
           </div>
         </header>
-        <main id="workspace" className={loc.pathname === "/dashboard" ? "workspace workspace--dashboard" : "workspace"}>
+        <main
+          id="workspace"
+          className={
+            loc.pathname === "/dashboard"
+              ? "workspace workspace--dashboard"
+              : loc.pathname.startsWith("/reconciliations-v2")
+              ? "workspace workspace--v2"
+              : "workspace"
+          }
+        >
           <Routes>
             <Route
               path="/"
@@ -1780,6 +1796,8 @@ export default function App() {
               }
             />
             <Route path="/reconciliations/new/setup" element={setup} />
+            <Route path="/reconciliations-v2" element={<ReconciliationV2Workspace />} />
+            <Route path="/reconciliations-v2/:id/:stage" element={<ReconciliationV2Workspace />} />
             <Route
               path="/quick-reconcile"
               element={

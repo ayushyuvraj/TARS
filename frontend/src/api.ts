@@ -196,6 +196,10 @@ export type AuditEvent = {
   output_count: number | null;
   result: string | null;
   metadata: Record<string, unknown>;
+  reconciliation_id?: string;
+  actor?: string;
+  summary?: string;
+  event_id?: string;
 };
 
 export type ReconciliationSession = {
@@ -570,8 +574,6 @@ export type RuleCatalogItem = {
   execution_sequencing: string;
   thinking_steps?: string[];
   formula?: string;
-  conditions?: unknown[];
-  action?: unknown;
   file_function_db_location: string;
   notes: string | null;
   approval?: {
