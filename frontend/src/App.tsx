@@ -1797,6 +1797,7 @@ export default function App() {
             />
             <Route path="/reconciliations/new/setup" element={setup} />
             <Route path="/reconciliations-v2" element={<ReconciliationV2Workspace />} />
+            <Route path="/reconciliations-v2/:id" element={<ReconciliationV2Workspace />} />
             <Route path="/reconciliations-v2/:id/:stage" element={<ReconciliationV2Workspace />} />
             <Route
               path="/quick-reconcile"

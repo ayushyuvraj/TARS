@@ -281,9 +281,12 @@ class GovernanceService:
                 severity="error",
             ))
 
-        allowed_fields = {"gstin", "document_number", "taxable_value", "document_date", "igst", "cgst", "sgst", "cess", "narration"}
-        allowed_operators = {"EXACT", "NORMALIZED_EXACT", "ABSOLUTE_TOLERANCE", "DATE_TOLERANCE", "EQUALS"}
-        allowed_actions = {"PROPOSE_NEAR_MATCH", "TOLERANCE_MATCH", "SUGGEST_CLASSIFICATION", "FLAG_FOR_REVIEW"}
+        allowed_canonical = {"gstin", "document_number", "taxable_value", "document_date", "igst", "cgst", "sgst", "cess", "narration"}
+        allowed_operators = {
+            "EXACT", "NORMALIZED_EXACT", "ABSOLUTE_TOLERANCE", "DATE_TOLERANCE", 
+            "EQUALS", "NOT_NULL", "IS_NOT_NULL", "NOT_EQUALS", "GREATER_THAN", "LESS_THAN", "CONTAINS"
+        }
+        allowed_actions = {"PROPOSE_NEAR_MATCH", "TOLERANCE_MATCH", "SUGGEST_CLASSIFICATION", "FLAG_FOR_REVIEW", "EXACT_MATCH"}
 
         if not conditions:
             issues.append(RuleValidationIssue(
@@ -293,12 +296,14 @@ class GovernanceService:
                 severity="error",
             ))
 
+        import re
         seen_fields = set()
         for idx, cond in enumerate(conditions or []):
-            if cond.field not in allowed_fields:
+            field_name = str(cond.field).strip() if cond.field else ""
+            if not field_name or not re.match(r'^[A-Za-z0-9_\-\s\.]+$', field_name):
                 issues.append(RuleValidationIssue(
                     code="UNSUPPORTED_CANONICAL_FIELD",
-                    message=f"Condition {idx + 1}: Field '{cond.field}' is not a supported canonical field. Allowed: {sorted(allowed_fields)}.",
+                    message=f"Condition {idx + 1}: Field '{cond.field}' must be a valid column identifier.",
                     field=f"conditions[{idx}].field",
                     severity="error",
                 ))
@@ -311,13 +316,19 @@ class GovernanceService:
                     severity="error",
                 ))
 
-            if cond.operator in {"ABSOLUTE_TOLERANCE", "DATE_TOLERANCE", "EQUALS"} and cond.value is None:
+            if cond.operator in {"ABSOLUTE_TOLERANCE", "DATE_TOLERANCE"} and cond.value is None:
                 issues.append(RuleValidationIssue(
                     code="MISSING_THRESHOLD_VALUE",
                     message=f"Condition {idx + 1}: Operator '{cond.operator}' requires a non-null threshold value.",
                     field=f"conditions[{idx}].value",
                     severity="error",
                 ))
+            elif cond.operator in {"NOT_NULL", "IS_NOT_NULL"}:
+                if cond.value is None:
+                    cond.value = "NOT_NULL"
+            elif cond.operator == "EQUALS" and cond.value is None:
+                cond.operator = "NOT_NULL"
+                cond.value = "NOT_NULL"
 
             if cond.operator in {"ABSOLUTE_TOLERANCE", "DATE_TOLERANCE"} and cond.value is not None:
                 try:
@@ -695,6 +706,36 @@ class GovernanceService:
             logger.info(f"LLM provider rule compilation fallback triggered: {exc}")
             compiled_output = self._fallback_ai_rule_compiler(prompt)
 
+        # Sanitize conditions: ensure no invalid null thresholds
+        for cond in compiled_output.conditions:
+            if cond.operator in ("NOT_NULL", "IS_NOT_NULL"):
+                cond.value = "NOT_NULL"
+            elif cond.operator == "EQUALS" and (cond.value is None or str(cond.value).lower() in ("null", "not null", "none", "")):
+                cond.operator = "NOT_NULL"
+                cond.value = "NOT_NULL"
+            elif cond.operator in ("ABSOLUTE_TOLERANCE", "DATE_TOLERANCE") and cond.value is None:
+                cond.value = 10.0
+
+        # Build clean formula if empty or generic "IF THEN"
+        cond_strs = []
+        for c in compiled_output.conditions:
+            if c.operator in ("NOT_NULL", "IS_NOT_NULL"):
+                cond_strs.append(f"{c.field} IS NOT NULL")
+            elif c.operator == "EXACT":
+                cond_strs.append(f"Government.{c.field} == Purchase.{c.field}")
+            elif c.operator == "NORMALIZED_EXACT":
+                cond_strs.append(f"normalize(Government.{c.field}) == normalize(Purchase.{c.field})")
+            elif c.operator == "ABSOLUTE_TOLERANCE":
+                cond_strs.append(f"abs(Government.{c.field} - Purchase.{c.field}) <= ₹{c.value}")
+            elif c.operator == "DATE_TOLERANCE":
+                cond_strs.append(f"abs(Government.{c.field} - Purchase.{c.field}).days <= {c.value} days")
+            else:
+                cond_strs.append(f"{c.field} {c.operator} {c.value or ''}")
+
+        action_name = compiled_output.action.type if compiled_output.action else "PROPOSE_NEAR_MATCH"
+        if not compiled_output.formula or compiled_output.formula.strip() in ("", "IF THEN"):
+            compiled_output.formula = f"IF {' AND '.join(cond_strs)} THEN {action_name}"
+
         rule_id = self._next_rule_id()
         
         draft_req = RuleDraftCreateRequest(
@@ -737,14 +778,25 @@ class GovernanceService:
         action_type = "PROPOSE_NEAR_MATCH"
         rule_type = RuleType.DETERMINISTIC
 
+        # 1. Custom column null checks: e.g. "BillToLegalName should not be null"
+        not_null_match = re.search(r'([A-Za-z0-9_\-\.]+)\s+(?:should\s+not\s+be\s+null|is\s+not\s+null|not\s+null|must\s+not\s+be\s+empty|not\s+empty)', prompt, re.I)
+        if not_null_match:
+            col_name = not_null_match.group(1).strip()
+            conditions.append(RuleCondition(field=col_name, operator="NOT_NULL", value="NOT_NULL"))
+
         if "gstin" in p_lower:
             conditions.append(RuleCondition(field="gstin", operator="EXACT"))
 
         if "document" in p_lower or "invoice" in p_lower or "separator" in p_lower or "slash" in p_lower:
             if "normalized" in p_lower or "separator" in p_lower or "slash" in p_lower or "format" in p_lower:
                 conditions.append(RuleCondition(field="document_number", operator="NORMALIZED_EXACT"))
-            else:
+            elif not any(c.field == "document_number" for c in conditions) and "amount" not in p_lower:
                 conditions.append(RuleCondition(field="document_number", operator="EXACT"))
+
+        # 2. Exact amount match: e.g. "Government Invoice amount must match exactly with PR amount"
+        if ("amount" in p_lower or "taxable" in p_lower or "value" in p_lower) and ("exact" in p_lower or "identical" in p_lower or "same" in p_lower):
+            if not any(c.field == "taxable_value" for c in conditions):
+                conditions.append(RuleCondition(field="taxable_value", operator="EXACT"))
 
         amount_match = re.search(r'(?:₹|inr|rs\.?|amount|taxable|value|variance|within|difference)?\s*(\d+(?:\.\d+)?)\s*(?:₹|inr|rs|rupees)?', p_lower)
         if "day" not in p_lower and ("tolerance" in p_lower or "within" in p_lower or "difference" in p_lower or "variance" in p_lower or "tax" in p_lower or "amount" in p_lower or "taxable" in p_lower):

@@ -7,6 +7,7 @@ import {
   AgentThought
 } from "./api_v2";
 import { DynamicMappingGridV2 } from "./DynamicMappingGridV2";
+import { ReconciliationV2RulesStage } from "./ReconciliationV2RulesStage";
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -25,7 +26,7 @@ import {
   Database
 } from "lucide-react";
 
-type V2Stage = "setup" | "mapping" | "policy" | "results" | "near-matches" | "exceptions" | "audit" | "export";
+type V2Stage = "setup" | "mapping" | "rules" | "policy" | "results" | "near-matches" | "exceptions" | "audit" | "export";
 
 interface V2StageInfo {
   key: V2Stage;
@@ -37,7 +38,7 @@ interface V2StageInfo {
 const V2_STAGES: V2StageInfo[] = [
   { key: "setup", label: "Setup", number: 1, subtitle: "Dual Ingestion" },
   { key: "mapping", label: "Mapping 2.0", number: 2, subtitle: "AI Schema Coupling" },
-  { key: "policy", label: "Policy", number: 3, subtitle: "Tolerance Rules" },
+  { key: "rules", label: "Rules", number: 3, subtitle: "Reconciliation Rules" },
   { key: "results", label: "Results", number: 4, subtitle: "Reconciliation Matrix" },
   { key: "near-matches", label: "Near matches", number: 5, subtitle: "AI Discrepancy Hub" },
   { key: "exceptions", label: "Exceptions", number: 6, subtitle: "Audit Resolution" },
@@ -120,10 +121,13 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
   // Sync route stage with internal stage
   useEffect(() => {
-    if (routeStage && routeStage !== currentStage) {
-      setCurrentStage(routeStage as V2Stage);
+    if (routeStage) {
+      const normalizedStage = routeStage === "policy" ? "rules" : (routeStage as V2Stage);
+      if (normalizedStage !== currentStage) {
+        setCurrentStage(normalizedStage);
+      }
     }
-  }, [routeStage]);
+  }, [routeStage, currentStage]);
 
   // Session hydration on page refresh or direct URL navigation
   useEffect(() => {
@@ -254,8 +258,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
     try {
       await apiV2.confirmMapping(sessionId, correlationResult.correlations);
       setMappingConfirmed(true);
-      setCurrentStage("policy");
-      navigate(`/reconciliations-v2/${sessionId}/policy`);
+      setCurrentStage("rules");
+      navigate(`/reconciliations-v2/${sessionId}/rules`);
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to confirm mappings.");
     }
@@ -347,20 +351,19 @@ export const ReconciliationV2Workspace: React.FC = () => {
             const isCompleted =
               (s.key === "setup" && correlationResult !== null) ||
               (s.key === "mapping" && mappingConfirmed);
-            const isAvailable = s.key === "setup" || correlationResult !== null;
+            const isAvailable = true;
 
             return (
               <React.Fragment key={s.key}>
                 <button
                   type="button"
-                  disabled={!isAvailable}
                   onClick={() => {
-                    if (isAvailable) {
-                      setCurrentStage(s.key);
-                      if (sessionId) navigate(`/reconciliations-v2/${sessionId}/${s.key}`);
-                    }
+                    const targetSessionId = sessionId || "demo-v2-session";
+                    if (!sessionId) setSessionId(targetSessionId);
+                    setCurrentStage(s.key);
+                    navigate(`/reconciliations-v2/${targetSessionId}/${s.key}`);
                   }}
-                  className={`v2-pipeline-node ${isActive ? "is-active" : ""} ${isCompleted ? "is-completed" : ""} ${!isAvailable ? "is-locked" : ""}`}
+                  className={`v2-pipeline-node ${isActive ? "is-active" : ""} ${isCompleted ? "is-completed" : ""}`}
                 >
                   <div className="v2-node-number-ring">
                     {isCompleted ? <Check size={11} strokeWidth={3} /> : s.number}
@@ -380,8 +383,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
         </div>
       </nav>
 
-      {/* 3. CENTER WORKSPACE CANVAS (ZERO-SCROLL FIT ON SETUP) */}
-      <main className="v2-stage-canvas">
+      {/* 3. CENTER WORKSPACE CANVAS (ZERO-SCROLL FIT ON SETUP, SCROLLABLE ON RULES) */}
+      <main className={`v2-stage-canvas ${currentStage === "rules" || currentStage === "policy" ? "v2-stage-canvas--scrollable" : ""}`}>
         {errorMessage && (
           <div className="v2-alert-error">
             <AlertCircle size={16} style={{ flexShrink: 0 }} />
@@ -701,7 +704,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
           correlationResult ? (
             <DynamicMappingGridV2
               correlations={correlationResult.correlations || []}
-              prColumns={correlationResult.all_pr_columns || []}
+              prColumns={correlationResult.pr_columns || []}
               gstrFileName={gstrFile?.name || correlationResult.gstr_filename || "Government GSTR-2B.xlsx"}
               prFileName={prFile?.name || correlationResult.pr_filename || "Purchase Register ERP.xlsx"}
               agentThoughts={agentThoughts.length > 0 ? agentThoughts : (correlationResult.agent_thoughts || [])}
@@ -754,9 +757,28 @@ export const ReconciliationV2Workspace: React.FC = () => {
         )}
 
         {/* ========================================================================= */}
-        {/* STAGES 3-8: WORKSPACE RUNTIME STUBS                                       */}
+        {/* STAGE 3: RULES PIPELINE & GOVERNANCE PLANE                                */}
         {/* ========================================================================= */}
-        {currentStage !== "setup" && currentStage !== "mapping" && (
+        {(currentStage === "rules" || currentStage === "policy") && (
+          <ReconciliationV2RulesStage
+            sessionId={sessionId || ""}
+            correlations={correlationResult?.correlations || []}
+            prColumns={correlationResult?.pr_columns || []}
+            onBackToMapping={() => {
+              setCurrentStage("mapping");
+              if (sessionId) navigate(`/reconciliations-v2/${sessionId}/mapping`);
+            }}
+            onProceedToResults={(selectedRuleIds, executionOrder) => {
+              setCurrentStage("results");
+              if (sessionId) navigate(`/reconciliations-v2/${sessionId}/results`);
+            }}
+          />
+        )}
+
+        {/* ========================================================================= */}
+        {/* STAGES 4-8: WORKSPACE RUNTIME STUBS                                       */}
+        {/* ========================================================================= */}
+        {currentStage !== "setup" && currentStage !== "mapping" && currentStage !== "rules" && currentStage !== "policy" && (
           <div className="v2-stage-placeholder-card">
             <div className="v2-placeholder-icon">
               <Sparkles size={36} />

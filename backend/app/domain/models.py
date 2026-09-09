@@ -1339,6 +1339,7 @@ class RuleCatalogItem(BaseModel):
     effectiveness: dict[str, Any] | None = None
     conditions: list[dict[str, Any]] | None = None
     action: dict[str, Any] | None = None
+    inputs_used: list[str] = Field(default_factory=list)
 
 
 class RuleCatalogSummary(BaseModel):

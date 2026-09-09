@@ -319,6 +319,7 @@ def get_rule_catalog(
             effectiveness=effectiveness_meta,
             conditions=conditions_data,
             action=action_data,
+            inputs_used=item.get("inputs_used", []),
         )
         catalog_items.append(catalog_item)
 
@@ -382,6 +383,7 @@ def get_rule_catalog(
                 effectiveness=db_rule.effectiveness.model_dump() if db_rule.effectiveness else None,
                 conditions=[c.model_dump() for c in db_rule.conditions] if db_rule.conditions else None,
                 action=db_rule.action.model_dump() if db_rule.action else None,
+                inputs_used=[c.field for c in db_rule.conditions if c.field] if db_rule.conditions else [],
             )
             catalog_items.append(db_catalog_item)
 

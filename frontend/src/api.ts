@@ -592,6 +592,7 @@ export type RuleCatalogItem = {
   effectiveness?: Record<string, unknown> | null;
   conditions?: { field: string; operator: string; value: unknown }[] | null;
   action?: { type: string; value: unknown } | null;
+  inputs_used?: string[];
 };
 
 export type RuleCatalogSummary = {
