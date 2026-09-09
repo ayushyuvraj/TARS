@@ -4,6 +4,7 @@
 
 - **Checkpoint Name**: `Rules Engine 2.0 Studio & Waterfall Simulation Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
+- **Current HEAD Commit**: `6872594` (`feat(rules-v2): implement Rules Engine 2.0 waterfall matching and live simulation studio`)
 - **Checkpoint Tag**: `rules-engine-v2-complete`
 - **Previous Checkpoint Tag**: `reconciliation-v2-setup-complete`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
