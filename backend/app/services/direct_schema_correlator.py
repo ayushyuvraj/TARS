@@ -343,6 +343,41 @@ class DirectSchemaCorrelator:
                     is_primary_gst_field=False,
                 )
 
+        # Check high lexical or sub-token similarity match for non-primary columns
+        best_lex_score = 0.0
+        best_lex_pr: FastColumnSummary | None = None
+        lex_alts: list[AlternativeMatch] = []
+
+        for pr_c in pr_cols:
+            if pr_c.name in assigned_pr_cols:
+                continue
+            p_norm = _normalize(pr_c.name)
+            ratio = SequenceMatcher(None, g_norm, p_norm).ratio()
+            if ratio > best_lex_score:
+                if best_lex_pr:
+                    lex_alts.append(
+                        AlternativeMatch(
+                            pr_column=best_lex_pr.name,
+                            confidence=round(best_lex_score, 2),
+                            reason="Alternative token similarity",
+                        )
+                    )
+                best_lex_score = ratio
+                best_lex_pr = pr_c
+
+        if best_lex_pr and best_lex_score >= 0.70:
+            return DirectColumnCorrelation(
+                gstr_column=gstr_col.name,
+                gstr_dtype=gstr_col.inferred_dtype.value,
+                gstr_samples=gstr_col.sample_values,
+                selected_pr_column=best_lex_pr.name,
+                confidence=round(best_lex_score, 2),
+                reason=f"Deterministic token similarity ({best_lex_score:.0%}) between '{gstr_col.name}' and '{best_lex_pr.name}'.",
+                engine="deterministic",
+                alternatives=lex_alts[:2],
+                is_primary_gst_field=False,
+            )
+
         return None
 
     def _invoke_llm_correlation(
@@ -357,81 +392,82 @@ class DirectSchemaCorrelator:
                 for g in unresolved_gstr
             }
 
-        gstr_payload = [
-            {
-                "name": g.name,
-                "dtype": g.inferred_dtype.value,
-                "samples": g.sample_values[:3],
-                "hints": g.pattern_hints,
-            }
-            for g in unresolved_gstr
-        ]
-        pr_payload = [
-            {
-                "name": p.name,
-                "dtype": p.inferred_dtype.value,
-                "samples": p.sample_values[:3],
-                "hints": p.pattern_hints,
-            }
-            for p in pr_cols
-        ]
+        # Chunk unresolved columns into batches of max 15 to ensure fast responses and fit structured output token limits
+        results: dict[str, DirectColumnCorrelation] = {}
+        batch_size = 15
+        pr_names_set = {p.name for p in pr_cols}
 
-        system_msg = (
-            "You are an expert financial and tax data engineer assisting with GST Reconciliation. "
-            "Your task is to correlate GSTR-2B spreadsheet columns with Purchase Register (ERP) columns. "
-            "For each GSTR column, select the most suitable PR column, or null if no appropriate match exists. "
-            "Provide a calibrated confidence score between 0.0 and 1.0, and a clear, plain-English reason explaining your choice. "
-            "Also provide up to 2 alternative candidate PR columns with their confidence and reasoning."
-        )
-        user_msg = (
-            f"GSTR-2B Columns to map:\n{json.dumps(gstr_payload, indent=2)}\n\n"
-            f"Available Purchase Register Columns:\n{json.dumps(pr_payload, indent=2)}"
-        )
+        for i in range(0, len(unresolved_gstr), batch_size):
+            chunk = unresolved_gstr[i : i + batch_size]
+            gstr_payload = [
+                {
+                    "name": g.name,
+                    "dtype": g.inferred_dtype.value,
+                    "samples": g.sample_values[:3],
+                    "hints": g.pattern_hints,
+                }
+                for g in chunk
+            ]
+            pr_payload = [
+                {
+                    "name": p.name,
+                    "dtype": p.inferred_dtype.value,
+                    "samples": p.sample_values[:3],
+                    "hints": p.pattern_hints,
+                }
+                for p in pr_cols
+            ]
 
-        try:
-            res: LLMSchemaCorrelationResponse = self.llm_provider.invoke_structured(
-                [
-                    {"role": "system", "content": system_msg},
-                    {"role": "user", "content": user_msg},
-                ],
-                LLMSchemaCorrelationResponse,
+            system_msg = (
+                "You are an expert financial and tax data engineer assisting with GST Reconciliation. "
+                "Your task is to correlate GSTR-2B spreadsheet columns with Purchase Register (ERP) columns. "
+                "For each GSTR column, select the most suitable PR column, or null if no appropriate match exists. "
+                "Provide a calibrated confidence score between 0.0 and 1.0, and a clear, plain-English reason explaining your choice. "
+                "Also provide up to 2 alternative candidate PR columns with their confidence and reasoning."
+            )
+            user_msg = (
+                f"GSTR-2B Columns to map:\n{json.dumps(gstr_payload, indent=2)}\n\n"
+                f"Available Purchase Register Columns:\n{json.dumps(pr_payload, indent=2)}"
             )
 
-            results: dict[str, DirectColumnCorrelation] = {}
-            llm_item_by_gstr = {item.gstr_column: item for item in res.matches}
-            pr_names_set = {p.name for p in pr_cols}
-
-            for g_col in unresolved_gstr:
-                item = llm_item_by_gstr.get(g_col.name)
-                if item:
-                    # Validate PR column exists
-                    selected = item.best_pr_column if item.best_pr_column in pr_names_set else None
-                    valid_alts = [
-                        a for a in item.alternatives if a.pr_column in pr_names_set and a.pr_column != selected
-                    ]
-                    results[g_col.name] = DirectColumnCorrelation(
-                        gstr_column=g_col.name,
-                        gstr_dtype=g_col.inferred_dtype.value,
-                        gstr_samples=g_col.sample_values,
-                        selected_pr_column=selected,
-                        confidence=round(item.confidence, 2),
-                        reason=item.reason,
-                        engine=f"llm: {self.model_name}",
-                        alternatives=valid_alts[:2],
-                        is_primary_gst_field=False,
-                    )
-                else:
-                    results[g_col.name] = self._lexical_fallback(g_col, pr_cols)
-
-            return results
-        except Exception as exc:
-            logger.error(f"LLM correlation failed: {exc}; using deterministic lexical fallback")
-            return {
-                g.name: self._lexical_fallback(
-                    g, pr_cols, fallback_reason=f"Deterministic fallback (LLM offline: {exc})"
+            try:
+                res: LLMSchemaCorrelationResponse = self.llm_provider.invoke_structured(
+                    [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": user_msg},
+                    ],
+                    LLMSchemaCorrelationResponse,
                 )
-                for g in unresolved_gstr
-            }
+
+                llm_item_by_gstr = {item.gstr_column: item for item in res.matches}
+                for g_col in chunk:
+                    item = llm_item_by_gstr.get(g_col.name)
+                    if item:
+                        selected = item.best_pr_column if item.best_pr_column in pr_names_set else None
+                        valid_alts = [
+                            a for a in item.alternatives if a.pr_column in pr_names_set and a.pr_column != selected
+                        ]
+                        results[g_col.name] = DirectColumnCorrelation(
+                            gstr_column=g_col.name,
+                            gstr_dtype=g_col.inferred_dtype.value,
+                            gstr_samples=g_col.sample_values,
+                            selected_pr_column=selected,
+                            confidence=round(item.confidence, 2),
+                            reason=item.reason,
+                            engine=f"llm: {self.model_name}",
+                            alternatives=valid_alts[:2],
+                            is_primary_gst_field=False,
+                        )
+                    else:
+                        results[g_col.name] = self._lexical_fallback(g_col, pr_cols)
+            except Exception as exc:
+                logger.error(f"LLM correlation chunk failed: {exc}; using deterministic lexical fallback")
+                for g_col in chunk:
+                    results[g_col.name] = self._lexical_fallback(
+                        g_col, pr_cols, fallback_reason=f"Deterministic fallback (LLM chunk failed: {exc})"
+                    )
+
+        return results
 
     def _lexical_fallback(
         self,

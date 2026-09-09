@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   apiV2,
-  DirectColumnCorrelation,
   Rule2Item,
   SimulationResultV2,
   DateToleranceUnit,
@@ -11,31 +10,26 @@ import {
 import {
   Sparkles,
   Play,
-  ArrowRight,
-  ArrowLeft,
+  HelpCircle,
   ChevronUp,
   ChevronDown,
   Info,
   CheckCircle2,
   AlertTriangle,
   FileText,
+  Clock,
   ShieldCheck,
-  X,
+  Percent,
   Sliders,
-  Check,
+  X,
+  Plus,
+  ArrowRight,
+  Database,
   GripVertical,
   StopCircle,
   Activity,
 } from "lucide-react";
 import "./rules_v2.css";
-
-interface Props {
-  sessionId: string;
-  correlations: DirectColumnCorrelation[];
-  prColumns: string[];
-  onBackToMapping: () => void;
-  onProceedToResults: (selectedRuleIds: string[], executionOrder: string[]) => void;
-}
 
 const ALL_NORMALIZERS: { type: NormalizationType; label: string }[] = [
   { type: "TRIM_WHITESPACE", label: "Clean Spaces" },
@@ -45,27 +39,12 @@ const ALL_NORMALIZERS: { type: NormalizationType; label: string }[] = [
   { type: "UPPERCASE", label: "Case Fold (A-Z)" },
 ];
 
-export const ReconciliationV2RulesStage: React.FC<Props> = ({
-  sessionId,
-  correlations,
-  prColumns,
-  onBackToMapping,
-  onProceedToResults,
-}) => {
+export const RulesWikiV2: React.FC = () => {
   const [rules, setRules] = useState<Rule2Item[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [simulationResult, setSimulationResult] = useState<SimulationResultV2 | null>(null);
-  const [isConfirming, setIsConfirming] = useState<boolean>(false);
   const [simulationAborted, setSimulationAborted] = useState<boolean>(false);
-
-  // Modal states
-  const [explainingRule, setExplainingRule] = useState<Rule2Item | null>(null);
-  const [showAiModal, setShowAiModal] = useState<boolean>(false);
-  const [aiPrompt, setAiPrompt] = useState<string>("");
-  const [isAiCompiling, setIsAiCompiling] = useState<boolean>(false);
-  const [compiledPreview, setCompiledPreview] = useState<Rule2Item | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
 
   // Drag and Drop state
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
@@ -76,29 +55,27 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
   const [simElapsedMs, setSimElapsedMs] = useState<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Load session & catalog rules (Without auto-simulation)
+  // Modal states
+  const [explainingRule, setExplainingRule] = useState<Rule2Item | null>(null);
+  const [showAiModal, setShowAiModal] = useState<boolean>(false);
+  const [aiPrompt, setAiPrompt] = useState<string>("");
+  const [isAiCompiling, setIsAiCompiling] = useState<boolean>(false);
+  const [compiledPreview, setCompiledPreview] = useState<Rule2Item | null>(null);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // Load catalog on mount (NO auto-simulation)
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
-
     apiV2
-      .getSession(sessionId)
-      .then((session) => {
-        if (!isMounted) return;
-        if (session.rules_v2 && session.rules_v2.length > 0) {
-          setRules(session.rules_v2);
-        } else {
-          apiV2.getRules2Catalog().then((catalog) => {
-            if (!isMounted) return;
-            setRules(catalog);
-          });
+      .getRules2Catalog()
+      .then((data) => {
+        if (isMounted && data) {
+          setRules(data);
         }
       })
-      .catch(() => {
-        apiV2.getRules2Catalog().then((catalog) => {
-          if (!isMounted) return;
-          setRules(catalog);
-        });
+      .catch((err) => {
+        console.error("Failed to load Rules 2.0 catalog:", err);
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);
@@ -110,7 +87,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         abortControllerRef.current.abort();
       }
     };
-  }, [sessionId]);
+  }, []);
 
   const handleAbortSimulation = () => {
     if (abortControllerRef.current) {
@@ -139,7 +116,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     }, 350);
 
     try {
-      const res = await apiV2.simulateRulesV2(sessionId, rulesToSimulate, controller.signal);
+      const res = await apiV2.simulateRulesV2("master-catalog-preview", rulesToSimulate, controller.signal);
       setSimulationResult(res);
     } catch (err: any) {
       if (err.name === "AbortError" || err.message?.includes("aborted")) {
@@ -201,7 +178,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     setRules(updated);
   };
 
-  // Rule micro-reordering (NO auto-simulation)
+  // Rule reordering (NO auto-simulation)
   const handleMoveRule = (index: number, direction: "up" | "down") => {
     const targetIdx = direction === "up" ? index - 1 : index + 1;
     if (targetIdx < 0 || targetIdx >= rules.length) return;
@@ -262,7 +239,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     setIsAiCompiling(true);
     setAiError(null);
     try {
-      const res = await apiV2.compileAiRule(aiPrompt.trim(), prColumns);
+      const res = await apiV2.compileAiRule(aiPrompt.trim());
       setCompiledPreview(res);
     } catch (err: any) {
       setAiError(err.message || "Failed to compile AI rule.");
@@ -280,34 +257,19 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     setShowAiModal(false);
   };
 
-  // Final Confirmation & Proceed
-  const handleProceed = async () => {
-    setIsConfirming(true);
-    try {
-      await apiV2.confirmRulesV2(sessionId, rules);
-      const activeIds = rules.filter((r) => r.is_enabled).map((r) => r.id);
-      const orderIds = rules.map((r) => r.id);
-      onProceedToResults(activeIds, orderIds);
-    } catch (err) {
-      console.error("Failed to confirm rules:", err);
-    } finally {
-      setIsConfirming(false);
-    }
-  };
-
   return (
-    <div className="v2-rules-container">
+    <div className="v2-rules-container" style={{ maxWidth: 1240, margin: "0 auto", padding: "24px 16px" }}>
       {/* 1. Header Banner */}
       <header className="v2-rules-header">
         <div className="v2-rules-header__info">
           <span className="v2-rules-eyebrow">
-            <Sliders size={13} />
-            Stage 3 of 4: Reconciliation Rules Engine
+            <ShieldCheck size={13} />
+            Enterprise Governance Catalog
           </span>
-          <h1 className="v2-rules-title">Configure Reconciliation Rules</h1>
+          <h1 className="v2-rules-title">Rules Wiki 2.0</h1>
           <p className="v2-rules-subtitle">
-            Select and prioritize the exact matching rules and tolerances to run for this session.
-            Click <strong>"Explain Rule"</strong> on any rule card to review its columns and accounting rationale.
+            Authoritative declarative business rules configured for real-world enterprise GST reconciliation.
+            Click any rule to inspect its plain-English explanation, columns evaluated, and regulatory rationale.
           </p>
         </div>
 
@@ -333,10 +295,12 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
             onClick={() => runSimulation()}
           >
             <Play size={15} fill="currentColor" />
-            <span>{isSimulating ? "Simulating..." : "Simulate Pipeline"}</span>
+            <span>{isSimulating ? "Simulating..." : "Simulate Dataset"}</span>
           </button>
         </div>
-      </header>      {/* Agentic Simulation Deep Dive Console HUD */}
+      </header>
+
+      {/* Agentic Simulation Deep Dive Console HUD */}
       {isSimulating && (
         <div className="v2-agentic-loading-screen" style={{ margin: "16px 0" }}>
           <div className="v2-agentic-loading-hud">
@@ -363,7 +327,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
             </div>
 
             <div className="v2-hud-heading">
-              <h3>Simulating Matching Pipeline Across Datasets...</h3>
+              <h3>Simulating Catalog Rules Across Benchmark Dataset...</h3>
               <p>Real-time execution telemetry of deterministic matching passes, normalizations, and commercial tolerances.</p>
             </div>
 
@@ -372,7 +336,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                 <div className="v2-hud-step-left">
                   <span className="v2-hud-step-num">01</span>
                   <div>
-                    <div className="v2-hud-step-title">Ingesting & Canonicalizing Datasets</div>
+                    <div className="v2-hud-step-title">Ingesting Benchmark Datasets</div>
                     <div className="v2-hud-step-desc">Loading Tax Authority Ledger (GSTR-2B) and Client ERP Purchase Register</div>
                   </div>
                 </div>
@@ -441,7 +405,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
       {simulationAborted && (
         <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 12, padding: "12px 18px", color: "#991b1b", display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600 }}>
           <AlertTriangle size={18} />
-          <span>Simulation run was aborted by user. Click "Simulate Pipeline" to run a new simulation when ready.</span>
+          <span>Simulation run was aborted by user. Click "Simulate Dataset" to run a new simulation when ready.</span>
         </div>
       )}
 
@@ -472,7 +436,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
             <div className="v2-kpi-box">
               <span className="v2-kpi-label">Simultaneous Matches</span>
               <span className="v2-kpi-num green">{simulationResult.total_matched.toLocaleString()}</span>
-              <small style={{ fontSize: 11, color: "#34d399" }}>Across all checked rules concurrently</small>
+              <small style={{ fontSize: 11, color: "#34d399" }}>Across all active rules concurrently</small>
             </div>
             <div className="v2-kpi-box">
               <span className="v2-kpi-label">Overall Match Rate</span>
@@ -539,14 +503,14 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         </section>
       )}
 
-      {/* 3. Rules List */}
+      {/* 3. Rules Catalog List */}
       <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: 0 }}>
-            Reconciliation Pipeline Rules ({rules.filter((r) => r.is_enabled).length} of {rules.length} selected)
+            Active Rules Catalog ({rules.filter((r) => r.is_enabled).length} of {rules.length} enabled)
           </h2>
           <span style={{ fontSize: 12, color: "#64748b" }}>
-            Drag handle <GripVertical size={13} style={{ display: "inline", verticalAlign: "middle" }} /> to reorder execution priority. Uncheck to exclude rules.
+            Drag handle <GripVertical size={13} style={{ display: "inline", verticalAlign: "middle" }} /> or use arrows to reorder execution sequence.
           </span>
         </div>
 
@@ -572,7 +536,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                 transition: "all 0.15s ease",
               }}
             >
-              {/* Top Row: Drag Handle, Checkbox, Order, Title, Individual Value Badge, Explain Button */}
+              {/* Top Row: Drag Handle, Checkbox, Order, Title, Individual Metric Badge, Explain Button */}
               <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
                 <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
                   {/* Drag Handle */}
@@ -585,7 +549,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                     checked={rule.is_enabled}
                     onChange={() => handleToggleRule(rule.id)}
                     style={{ width: 18, height: 18, cursor: "pointer", marginTop: 3 }}
-                    title={rule.is_enabled ? "Click to exclude rule" : "Click to include rule"}
+                    title={rule.is_enabled ? "Click to disable rule" : "Click to enable rule"}
                   />
 
                   <div>
@@ -653,7 +617,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                         cursor: "pointer",
                         marginLeft: 8,
                       }}
-                      title="View plain-English explanation, target columns & accounting rationale"
+                      title="Click to view plain-English explanation, target columns & accounting rationale"
                     >
                       <Info size={14} />
                       <span>Explain Rule</span>
@@ -825,7 +789,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                 {/* 4. Value Guard */}
                 {rule.strategy === "VALUE_GUARD" && (
                   <div style={{ fontSize: 12.5, color: "#475569", background: "#f8fafc", padding: "8px 12px", borderRadius: 6 }}>
-                    Strict Value Equality Guard: Verifies that categorical flags match exactly across both workbooks.
+                    Strict Value Equality Guard: Verifies that categorical classification flags match exactly across both workbooks.
                   </div>
                 )}
               </div>
@@ -833,40 +797,6 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
           );
         })}
       </section>
-
-      {/* 4. Bottom Action Bar */}
-      <footer
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "16px 20px",
-          background: "#ffffff",
-          borderRadius: 12,
-          border: "1px solid #e2e8f0",
-          marginTop: 12,
-        }}
-      >
-        <button
-          type="button"
-          className="btn-secondary-v2"
-          onClick={onBackToMapping}
-        >
-          <ArrowLeft size={16} />
-          <span>Back to Schema Mapping</span>
-        </button>
-
-        <button
-          type="button"
-          className="btn-primary-v2"
-          disabled={isConfirming || rules.filter((r) => r.is_enabled).length === 0}
-          onClick={handleProceed}
-          style={{ padding: "10px 24px", fontSize: 14 }}
-        >
-          <span>{isConfirming ? "Confirming Rules..." : "Confirm & Run Reconciliation"}</span>
-          <ArrowRight size={16} />
-        </button>
-      </footer>
 
       {/* --- PLAIN ENGLISH EXPLANATION MODAL --- */}
       {explainingRule && (
@@ -1089,7 +1019,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                   className="btn-primary-v2"
                   onClick={handleAddCompiledRule}
                 >
-                  Add Rule to Pipeline
+                  Add Rule to Catalog
                 </button>
               )}
             </div>

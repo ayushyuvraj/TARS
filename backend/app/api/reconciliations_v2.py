@@ -20,9 +20,13 @@ from app.services.direct_schema_correlator import (
 )
 from app.services.matching_engine_v2 import (
     MatchingPass,
+    Rule2Item,
     SimulationResult,
+    SimulationResultV2,
     WaterfallMatchingEngine,
+    build_default_rules_wiki_v2,
     build_default_waterfall,
+    compile_rule_from_nl,
 )
 from app.workflows.schema_mapping_v2 import SchemaMappingV2Workflow
 
@@ -61,6 +65,7 @@ class ReconciliationV2Session(BaseModel):
     selected_rule_ids: list[str] = Field(default_factory=list)
     rule_execution_order: list[str] = Field(default_factory=list)
     waterfall_passes: list[MatchingPass] = Field(default_factory=list)
+    rules_v2: list[Rule2Item] = Field(default_factory=list)
 
 
 class UserMappingUpdateRequest(BaseModel):
@@ -78,6 +83,19 @@ class SimulateWaterfallRequest(BaseModel):
 
 class ConfirmWaterfallRequest(BaseModel):
     passes: list[MatchingPass]
+
+
+class SimulateRules2Request(BaseModel):
+    rules: list[Rule2Item]
+
+
+class ConfirmRules2Request(BaseModel):
+    rules: list[Rule2Item]
+
+
+class CompileAiRuleRequest(BaseModel):
+    prompt: str
+    available_columns: list[str] = Field(default_factory=list)
 
 
 @router_v2.post("", response_model=ReconciliationV2Session, status_code=status.HTTP_201_CREATED)
@@ -106,11 +124,35 @@ def create_v2_session() -> ReconciliationV2Session:
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SAMPLE_GOV = PROJECT_ROOT / "sample_data" / "POC_Government_GST_Aug2026.xlsx"
 SAMPLE_PR = PROJECT_ROOT / "sample_data" / "POC_Purchase_Register_Aug2026.xlsx"
+SAMPLE_223_GOV = PROJECT_ROOT / "sample_data" / "TARS_Government_GSTR2B_223cols_1k_rows.xlsx"
+SAMPLE_223_PR = PROJECT_ROOT / "sample_data" / "TARS_Purchase_Register_223cols_1500_rows.xlsx"
+
+
+def _load_df_safely(path: Path) -> pd.DataFrame:
+    try:
+        if path.suffix.lower() == ".csv":
+            return pd.read_csv(path)
+        df = pd.read_excel(path)
+        unnamed = [c for c in df.columns if str(c).startswith("Unnamed")]
+        if len(unnamed) > len(df.columns) / 2:
+            df_h1 = pd.read_excel(path, header=1)
+            unnamed_h1 = [c for c in df_h1.columns if str(c).startswith("Unnamed")]
+            if len(unnamed_h1) < len(unnamed):
+                return df_h1
+        return df
+    except Exception as exc:
+        logger.warning(f"Failed to load DataFrame from {path}: {exc}")
+        return pd.DataFrame()
 
 
 def _ensure_session(session_id: str) -> dict[str, Any]:
     if session_id not in _V2_SESSIONS:
         import datetime
+        default_gov = str(SAMPLE_223_GOV) if SAMPLE_223_GOV.exists() else str(SAMPLE_GOV)
+        default_pr = str(SAMPLE_223_PR) if SAMPLE_223_PR.exists() else str(SAMPLE_PR)
+        gov_name = SAMPLE_223_GOV.name if SAMPLE_223_GOV.exists() else "POC_Government_GST_Aug2026.xlsx"
+        pr_name = SAMPLE_223_PR.name if SAMPLE_223_PR.exists() else "POC_Purchase_Register_Aug2026.xlsx"
+
         _V2_SESSIONS[session_id] = {
             "id": session_id,
             "status": "setup",
@@ -118,10 +160,11 @@ def _ensure_session(session_id: str) -> dict[str, Any]:
             "selected_rule_ids": [],
             "rule_execution_order": [],
             "waterfall_passes": [],
-            "gstr_filename": "POC_Government_GST_Aug2026.xlsx",
-            "pr_filename": "POC_Purchase_Register_Aug2026.xlsx",
-            "gstr_path": str(SAMPLE_GOV),
-            "pr_path": str(SAMPLE_PR),
+            "rules_v2": build_default_rules_wiki_v2(),
+            "gstr_filename": gov_name,
+            "pr_filename": pr_name,
+            "gstr_path": default_gov,
+            "pr_path": default_pr,
         }
     return _V2_SESSIONS[session_id]
 
@@ -139,6 +182,7 @@ def get_v2_session(session_id: str) -> ReconciliationV2Session:
         selected_rule_ids=data.get("selected_rule_ids", []),
         rule_execution_order=data.get("rule_execution_order", []),
         waterfall_passes=data.get("waterfall_passes", []),
+        rules_v2=data.get("rules_v2") or build_default_rules_wiki_v2(),
     )
 
 
@@ -174,7 +218,8 @@ async def fast_upload_and_correlate(
         await purchase_file.close()
 
     try:
-        correlation = workflow.run_initial_correlation(session_id, gov_path, pr_path)
+        import asyncio
+        correlation = await asyncio.to_thread(workflow.run_initial_correlation, session_id, gov_path, pr_path)
         session["gstr_filename"] = government_file.filename
         session["pr_filename"] = purchase_file.filename
         session["gstr_path"] = str(gov_path)
@@ -302,6 +347,7 @@ def confirm_v2_waterfall(
         selected_rule_ids=session.get("selected_rule_ids", []),
         rule_execution_order=session.get("rule_execution_order", []),
         waterfall_passes=session.get("waterfall_passes", []),
+        rules_v2=session.get("rules_v2", []),
     )
 
 
@@ -327,5 +373,79 @@ def confirm_v2_rules(
         selected_rule_ids=session.get("selected_rule_ids", []),
         rule_execution_order=session.get("rule_execution_order", []),
         waterfall_passes=session.get("waterfall_passes", []),
+        rules_v2=session.get("rules_v2", []),
+    )
+
+
+# --- Rules Wiki 2.0 Endpoints ---
+
+@router_v2.get("/rules-v2/catalog", response_model=list[Rule2Item])
+def get_rules_wiki_v2_catalog() -> list[Rule2Item]:
+    """Returns the master Rules Wiki 2.0 catalog tailored for 223-column enterprise reconciliations."""
+    return build_default_rules_wiki_v2()
+
+
+@router_v2.post("/rules-v2/compile-ai", response_model=Rule2Item)
+def compile_ai_rule_endpoint(
+    req: CompileAiRuleRequest,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Rule2Item:
+    """Compiles a user natural language rule specification into an executable declarative Rule2Item."""
+    return compile_rule_from_nl(req.prompt, req.available_columns)
+
+
+@router_v2.post("/{session_id}/rules-v2/simulate", response_model=SimulationResultV2)
+def simulate_rules_v2_endpoint(
+    session_id: str,
+    req: SimulateRules2Request,
+) -> SimulationResultV2:
+    """Simulates simultaneous match rate and individual satisfaction breakdowns for Rules 2.0."""
+    session = _ensure_session(session_id)
+    gov_path_str = session.get("gstr_path")
+    pr_path_str = session.get("pr_path")
+
+    pref_gov = SAMPLE_223_GOV if SAMPLE_223_GOV.exists() else SAMPLE_GOV
+    pref_pr = SAMPLE_223_PR if SAMPLE_223_PR.exists() else SAMPLE_PR
+
+    def _resolve_file(p_str: str | None, fallback: Path) -> Path:
+        if p_str:
+            p = Path(p_str)
+            if p.exists():
+                return p
+            p_rel = PROJECT_ROOT / p_str
+            if p_rel.exists():
+                return p_rel
+        return fallback
+
+    gov_path = _resolve_file(gov_path_str, pref_gov)
+    pr_path = _resolve_file(pr_path_str, pref_pr)
+
+    gstr_df = _load_df_safely(gov_path)
+    pr_df = _load_df_safely(pr_path)
+
+    engine = WaterfallMatchingEngine()
+    return engine.simulate_rules_v2(gstr_df, pr_df, req.rules)
+
+
+@router_v2.post("/{session_id}/rules-v2/confirm", response_model=ReconciliationV2Session)
+def confirm_rules_v2_endpoint(
+    session_id: str,
+    req: ConfirmRules2Request,
+) -> ReconciliationV2Session:
+    """Saves confirmed Rules 2.0 configuration into session state."""
+    session = _ensure_session(session_id)
+    session["rules_v2"] = req.rules
+    session["status"] = "rules_confirmed"
+    return ReconciliationV2Session(
+        id=session["id"],
+        status=session["status"],
+        created_at=session["created_at"],
+        gstr_filename=session.get("gstr_filename"),
+        pr_filename=session.get("pr_filename"),
+        correlation=session.get("correlation"),
+        selected_rule_ids=[r.id for r in req.rules if r.is_enabled],
+        rule_execution_order=[r.id for r in sorted(req.rules, key=lambda x: x.execution_order)],
+        waterfall_passes=session.get("waterfall_passes", []),
+        rules_v2=session.get("rules_v2", []),
     )
 

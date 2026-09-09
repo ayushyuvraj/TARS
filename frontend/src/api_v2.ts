@@ -104,6 +104,49 @@ export interface SimulationResult {
   waterfall: SimulationYield[];
 }
 
+export type DateToleranceUnit = "DAYS" | "MONTHS" | "YEARS";
+export type NumericToleranceMode = "ABSOLUTE_INR" | "PERCENTAGE";
+
+export interface Rule2Item {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  gstr_column: string;
+  pr_column: string;
+  canonical_concept?: string | null;
+  strategy: MatchStrategy;
+  normalizers: NormalizationType[];
+  tolerance_value: number;
+  tolerance_mode: NumericToleranceMode;
+  date_tolerance_value: number;
+  date_tolerance_unit: DateToleranceUnit;
+  is_enabled: boolean;
+  execution_order: number;
+  plain_english_explanation: string;
+  why_it_matters: string;
+}
+
+export interface RuleBreakdownStat {
+  rule_id: string;
+  rule_name: string;
+  category: string;
+  individual_satisfied_count: number;
+  individual_satisfied_percentage: number;
+  is_bottleneck: boolean;
+}
+
+export interface SimulationResultV2 {
+  total_gstr_rows: number;
+  total_pr_rows: number;
+  total_matched: number;
+  overall_match_rate: number;
+  total_unmatched_gstr: number;
+  total_unmatched_pr: number;
+  rule_breakdowns: RuleBreakdownStat[];
+  sample_matches: SampleMatchPair[];
+}
+
 export interface ReconciliationV2Session {
   id: string;
   status: string;
@@ -114,6 +157,7 @@ export interface ReconciliationV2Session {
   selected_rule_ids?: string[];
   rule_execution_order?: string[];
   waterfall_passes?: MatchingPass[];
+  rules_v2?: Rule2Item[];
 }
 
 const API_BASE = "/api/reconciliations-v2";
@@ -209,6 +253,35 @@ export const apiV2 = {
         selected_rule_ids: selectedRuleIds,
         rule_execution_order: ruleExecutionOrder
       })
+    });
+  },
+
+  async getRules2Catalog(): Promise<Rule2Item[]> {
+    return request<Rule2Item[]>(`${API_BASE}/rules-v2/catalog`);
+  },
+
+  async compileAiRule(prompt: string, availableColumns: string[] = []): Promise<Rule2Item> {
+    return request<Rule2Item>(`${API_BASE}/rules-v2/compile-ai`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, available_columns: availableColumns })
+    });
+  },
+
+  async simulateRulesV2(id: string, rules: Rule2Item[], signal?: AbortSignal): Promise<SimulationResultV2> {
+    return request<SimulationResultV2>(`${API_BASE}/${id}/rules-v2/simulate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rules }),
+      signal
+    });
+  },
+
+  async confirmRulesV2(id: string, rules: Rule2Item[]): Promise<ReconciliationV2Session> {
+    return request<ReconciliationV2Session>(`${API_BASE}/${id}/rules-v2/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rules })
     });
   }
 };

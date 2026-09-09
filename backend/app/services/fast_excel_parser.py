@@ -169,8 +169,14 @@ class FastExcelParser:
                     )
                 )
 
-            # Fast estimate row count if max_row available, else None
-            est_rows = ws.max_row if ws.max_row and ws.max_row > header_row else None
+            # Fast estimate row count from worksheet dimensions without triggering openpyxl full XML scan
+            est_rows = None
+            if hasattr(ws, "dimensions") and ws.dimensions:
+                dim_match = re.search(r"\d+$", str(ws.dimensions))
+                if dim_match:
+                    est_rows = int(dim_match.group())
+            if not est_rows and hasattr(ws, "_max_row") and ws._max_row:
+                est_rows = ws._max_row
 
             duration_ms = (time.perf_counter() - t0) * 1000.0
             return FastFileProfile(

@@ -67,6 +67,7 @@ import { AuditTimeline } from "./AuditTimeline";
 import { FinalReviewWorkspace } from "./FinalReviewWorkspace";
 import { QuickReconcile } from "./QuickReconcile";
 import { RulesWiki } from "./RulesWiki";
+import { RulesWikiV2 } from "./RulesWikiV2";
 import { AgenticDashboard } from "./AgenticDashboard";
 import { ReconciliationV2Workspace } from "./ReconciliationV2Workspace";
 
@@ -1484,6 +1485,10 @@ export default function App() {
             <BookOpenCheck />
             <span>Rules Wiki</span>
           </NavLink>
+          <NavLink to="/rules-v2" data-tooltip="Rules Wiki 2.0" title={sidebarCollapsed ? "Rules Wiki 2.0" : undefined}>
+            <SlidersHorizontal className="text-blue-400" />
+            <span>Rules Wiki 2.0</span>
+          </NavLink>
           <NavLink to="/audit" data-tooltip="Audit" title={sidebarCollapsed ? "Audit" : undefined}>
             <History />
             <span>Audit</span>
@@ -1515,6 +1520,8 @@ export default function App() {
                 ? "Reconciliation workspace"
                 : loc.pathname === "/rules"
                 ? "Rules Wiki"
+                : loc.pathname === "/rules-v2"
+                ? "Rules Wiki 2.0"
                 : loc.pathname.split("/")[1]?.replaceAll("-", " ") ||
                   "Overview"}
             </strong>
@@ -1873,6 +1880,10 @@ export default function App() {
             <Route
               path="/rules"
               element={<RulesWiki />}
+            />
+            <Route
+              path="/rules-v2"
+              element={<RulesWikiV2 />}
             />
             <Route
               path="/audit"
