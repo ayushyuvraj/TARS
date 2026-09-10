@@ -27,7 +27,7 @@ import {
   Database
 } from "lucide-react";
 
-type V2Stage = "setup" | "mapping" | "rules" | "policy" | "results" | "near-matches" | "exceptions" | "audit" | "export";
+type V2Stage = "setup" | "mapping" | "rules" | "policy" | "results" | "near-matches" | "exceptions" | "export";
 
 interface V2StageInfo {
   key: V2Stage;
@@ -43,8 +43,7 @@ const V2_STAGES: V2StageInfo[] = [
   { key: "results", label: "Results", number: 4, subtitle: "Reconciliation Matrix" },
   { key: "near-matches", label: "Near matches", number: 5, subtitle: "AI Discrepancy Hub" },
   { key: "exceptions", label: "Exceptions", number: 6, subtitle: "Audit Resolution" },
-  { key: "audit", label: "Audit", number: 7, subtitle: "Lineage & Logs" },
-  { key: "export", label: "Export", number: 8, subtitle: "Ledger Dispatch" }
+  { key: "export", label: "Export", number: 7, subtitle: "Ledger Dispatch" }
 ];
 
 interface ChainStep {
@@ -132,11 +131,13 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
   // Session hydration on page refresh or direct URL navigation
   useEffect(() => {
-    if (routeSessionId && !correlationResult && !isHydrating) {
+    const effectiveId = routeSessionId || localStorage.getItem("tars_v2_active_session_id") || "demo-v2-session";
+    if (effectiveId && !correlationResult && !isHydrating) {
       setIsHydrating(true);
-      apiV2.getSession(routeSessionId)
+      apiV2.getSession(effectiveId)
         .then((sess) => {
           setSessionId(sess.id);
+          localStorage.setItem("tars_v2_active_session_id", sess.id);
           if (sess.correlation) {
             setCorrelationResult(sess.correlation);
             setAgentThoughts(sess.correlation.agent_thoughts || []);
@@ -884,23 +885,6 @@ export const ReconciliationV2Workspace: React.FC = () => {
                 setCurrentStage("near-matches");
                 if (sessionId) navigate(`/reconciliations-v2/${sessionId}/near-matches`);
               },
-              nextLabel: "Inspect Audit Trail",
-              onNext: () => {
-                setCurrentStage("audit");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/audit`);
-              },
-            },
-            audit: {
-              number: 7,
-              label: "Audit",
-              subtitle: "Lineage & Governance",
-              title: "System & Agent Audit Trail",
-              desc: "Full immutable record of ingestion timestamps, prompt executions, and human approval events.",
-              backLabel: "Back to Exceptions",
-              onBack: () => {
-                setCurrentStage("exceptions");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/exceptions`);
-              },
               nextLabel: "Proceed to Ledger Export",
               onNext: () => {
                 setCurrentStage("export");
@@ -908,15 +892,15 @@ export const ReconciliationV2Workspace: React.FC = () => {
               },
             },
             export: {
-              number: 8,
+              number: 7,
               label: "Export",
               subtitle: "Ledger Dispatch",
               title: "Export Reconciled Financial Package",
               desc: "Generate ERP adjustment vouchers, GSTR-2B compliance certificates, and auditable Excel workbooks.",
-              backLabel: "Back to Audit Trail",
+              backLabel: "Back to Exceptions",
               onBack: () => {
-                setCurrentStage("audit");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/audit`);
+                setCurrentStage("exceptions");
+                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/exceptions`);
               },
               nextLabel: "Dispatch & Export Ledger",
               onNext: () => {
@@ -942,7 +926,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
                 <div className="v2-rules-header__info">
                   <span className="v2-rules-eyebrow">
                     <Sparkles size={13} />
-                    Stage {config.number} of 8: {config.subtitle}
+                    Stage {config.number} of 7: {config.subtitle}
                   </span>
                   <h1 className="v2-rules-title">{config.title}</h1>
                   <p className="v2-rules-subtitle">{config.desc}</p>

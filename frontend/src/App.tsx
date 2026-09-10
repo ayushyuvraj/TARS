@@ -70,6 +70,7 @@ import { RulesWiki } from "./RulesWiki";
 import { RulesWikiV2 } from "./RulesWikiV2";
 import { AgenticDashboard } from "./AgenticDashboard";
 import { ReconciliationV2Workspace } from "./ReconciliationV2Workspace";
+import { Audit2Workspace } from "./Audit2Workspace";
 
 type BusyState =
   | "idle"
@@ -1493,6 +1494,10 @@ export default function App() {
             <History />
             <span>Audit</span>
           </NavLink>
+          <NavLink to="/audit-v2" data-tooltip="Audit 2.0" title={sidebarCollapsed ? "Audit 2.0" : undefined}>
+            <History className="text-emerald-400" />
+            <span>Audit 2.0</span>
+          </NavLink>
         </nav>
         <div className="sidebar-foot">
           <ShieldCheck size={16} />
@@ -1906,6 +1911,8 @@ export default function App() {
                 </>
               }
             />
+            <Route path="/audit-v2" element={<Audit2Workspace />} />
+            <Route path="/audit-v2/:runId" element={<Audit2Workspace />} />
             <Route
               path="*"
               element={

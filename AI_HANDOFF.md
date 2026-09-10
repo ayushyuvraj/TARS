@@ -1,14 +1,13 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Dynamic Session State — Rules Engine 2.0 & Governance Checkpoint (10th September 2026)
+## Dynamic Session State — Audit 2.0 & 7-Stage Reconciliation 2.0 Checkpoint (10th September 2026)
 
-- **Checkpoint Name**: `Rules Engine 2.0 Governance, Audit Provenance & Irreversible Delete Checkpoint`
+- **Checkpoint Name**: `Audit 2.0 Mission Control, Zero-Loss Persistence & 7-Stage Reconciliation Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-10-rules-governance-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-10-eod-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-10-audit-v2-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-10-rules-governance-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Rules Wiki 2.0 (`/rules-v2`) enterprise governance with full audit metadata (created_at, created_by, created_in_run, version, last_modified), mandatory irreversible delete caution pop-ups, rule editing, multi-select batch deletion, clean non-draggable catalog layout, AI-suggested Stage 3 rule synthesis, and strict Stage 3 isolation.
-
+- **Current Objective**: Audit 2.0 (`/audit-v2`) mission control with executive telemetry HUD, master-detail historical run journal, 4-tab deep inspector (waterfall micro-durations, error & anomaly captures with AI remediation, terminal logs, control plane with session resume), zero-loss session persistence engine (`audit_v2_service.py`), and 7-stage Reconciliation 2.0 pipeline.
 
 ---
 
@@ -16,12 +15,17 @@
 
 1. **Reconciliation 2.0 (`/reconciliations-v2`)**:
    - Built alongside Reconciliation 1.0 without modifying any existing 1.0 flows.
-   - **Zero-Scroll Setup Canvas**: Fits standard laptop/desktop viewports (1440x765) without vertical scrolling.
-   - **Pristine White Background**: Pure clean `#ffffff` canvas background across workspace, root, and stage views.
-   - **Compact Focused Ledger Bays**: Tax Authority Ledger and Client Accounting Ledger boxes are reduced in size and centered (max-width 1040px, 200px height).
-   - **Really Subtle Trust Cards**: Three bottom cards styled with ultra-light borders, transparent icon containers, muted slate typography, and no heavy drop shadows.
-   - **Multi-Step Dynamic Chain of Thought Console**: Live dark-mode HUD (`.v2-cot-console`) displaying Step 1, 2, and 3 simultaneously with millisecond completion badges, live elapsed timer, and status icons so users can see previous steps when at Step 3/3.
-   - **Stage 3 Rules Engine 2.0 Studio**: Progressive waterfall pipeline (Tier 1: Strict Identity $\to$ Tier 2: Progressive String Normalization $\to$ Tier 3: Commercial Tolerance Window), column-pair inspectors, interactive normalization toggles, tolerance sliders, and live dataset simulation HUD. Original Rules Wiki 1.0 remains 100% intact.
+   - **7 Stages in Total**: Clean sequential progression:
+     1. `Setup` *(Dual Ingestion)*
+     2. `Mapping 2.0` *(AI Schema Coupling)*
+     3. `Rules` *(Reconciliation Rules Studio)*
+     4. `Results` *(Reconciliation Matrix)*
+     5. `Near matches` *(AI Discrepancy Hub)*
+     6. `Exceptions` *(Audit Resolution)*
+     7. `Export` *(Ledger Dispatch & ERP Vouchers)*
+     *(In-workflow Step 7 Audit removed; all audit capabilities elevated into centralized Audit 2.0)*
+   - **Zero Session Loss Guarantee**: Crash-proof disk persistence (`data/audit_v2/` via `AuditV2Service`). State, uploaded workbooks, correlated columns, custom rules, and simulated metrics reload automatically across server reloads and browser refreshes.
+   - **Audit 2.0 Mission Control (`/audit-v2`)**: Integrated into top-level navigation, providing full observability across every session and run, sub-millisecond step telemetry, error diagnostics, and a one-click "Resume in Workspace" control plane.
 
 ## Operational Capabilities & State Summary
 

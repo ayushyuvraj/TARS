@@ -342,6 +342,98 @@ export const apiV2 = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rules })
     });
+  },
+
+  // --- Audit 2.0 Endpoints ---
+  async getAuditStats(): Promise<AuditStats> {
+    return request<AuditStats>(`${API_BASE}/audit/stats`);
+  },
+
+  async listAuditRuns(): Promise<V2RunRecord[]> {
+    return request<V2RunRecord[]>(`${API_BASE}/audit/runs`);
+  },
+
+  async getAuditRun(runId: string): Promise<V2RunRecord> {
+    return request<V2RunRecord>(`${API_BASE}/audit/runs/${encodeURIComponent(runId)}`);
+  },
+
+  async listAuditSessions(): Promise<ReconciliationV2Session[]> {
+    return request<ReconciliationV2Session[]>(`${API_BASE}/audit/sessions`);
+  },
+
+  async resumeSessionFromRun(runId: string): Promise<{ session_id: string; target_stage: string; resume_url: string }> {
+    return request<{ session_id: string; target_stage: string; resume_url: string }>(
+      `${API_BASE}/audit/runs/${encodeURIComponent(runId)}/resume`,
+      { method: "POST" }
+    );
   }
 };
+
+export interface AuditStats {
+  total_runs: number;
+  total_sessions: number;
+  success_rate: number;
+  failed_runs: number;
+  avg_duration_ms: number;
+  total_steps: number;
+  errors_captured: number;
+  reconciled_volume_cr: number;
+}
+
+export interface V2LogEntry {
+  timestamp_ms: number;
+  level: "TRACE" | "DEBUG" | "INFO" | "WARN" | "ERROR";
+  message: string;
+  data?: Record<string, any> | null;
+}
+
+export interface V2StepErrorDetail {
+  error_code: string;
+  severity: "CRITICAL" | "ERROR" | "WARNING" | "INFO";
+  message: string;
+  offending_entities: string[];
+  stack_trace?: string | null;
+  root_cause_category: string;
+  suggested_remediation: string;
+  remediation_action?: Record<string, any> | null;
+}
+
+export interface V2AuditStep {
+  step_id: string;
+  run_id: string;
+  session_id: string;
+  stage_key: string;
+  step_order: number;
+  name: string;
+  description: string;
+  component: string;
+  actor: "SYSTEM" | "AI_AGENT" | "USER" | string;
+  status: "RUNNING" | "COMPLETED" | "FAILED" | "SKIPPED";
+  duration_ms: number;
+  started_at: string;
+  completed_at?: string | null;
+  input_summary: Record<string, any>;
+  output_summary: Record<string, any>;
+  logs: V2LogEntry[];
+  error_capture?: V2StepErrorDetail | null;
+}
+
+export interface V2RunRecord {
+  run_id: string;
+  session_id: string;
+  session_title: string;
+  run_type: string;
+  status: "QUEUED" | "RUNNING" | "COMPLETED" | "COMPLETED_WITH_WARNINGS" | "FAILED" | "ABORTED";
+  started_at: string;
+  completed_at?: string | null;
+  duration_ms: number;
+  triggered_by: string;
+  stages_executed: string[];
+  current_stage: string;
+  kpi_snapshot: Record<string, any>;
+  steps: V2AuditStep[];
+  error_count: number;
+  warning_count: number;
+  error_summary?: string | null;
+}
 
