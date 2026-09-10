@@ -1148,3 +1148,123 @@
   font-weight: 700;
 }
 
+/* --- STAGE 4 PRE-EXECUTION LAUNCHPAD CARD --- */
+.v2-stage4-launchpad-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 32px 36px;
+  box-shadow: 0 4px 20px -4px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  margin: 10px 0;
+}
+
+.v2-launchpad-prep-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 0 32px 0;
+}
+
+.v2-prep-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  transition: all 0.2s ease;
+}
+
+.v2-prep-item:hover {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  transform: translateY(-2px);
+}
+
+.v2-prep-icon.green {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #16a34a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.v2-prep-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v2-prep-label {
+  font-size: 10.5px;
+  font-weight: 750;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.v2-prep-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.v2-prep-desc {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.v2-launchpad-action-deck {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.v2-btn-run-reconciliation-main {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 36px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ffffff;
+  background: linear-gradient(135deg, #00338d 0%, #1d4ed8 100%);
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 51, 141, 0.35);
+  transition: all 0.2s ease;
+}
+
+.v2-btn-run-reconciliation-main:hover:not(:disabled) {
+  background: linear-gradient(135deg, #002266 0%, #1e40af 100%);
+  box-shadow: 0 6px 20px rgba(0, 51, 141, 0.45);
+  transform: translateY(-1px);
+}
+
+.v2-btn-run-reconciliation-main:disabled {
+  opacity: 0.75;
+  cursor: wait;
+}
+
+.v2-launchpad-hint {
+  font-size: 12.5px;
+  color: #64748b;
+  margin: 0;
+}
+
+

@@ -106,6 +106,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
   const [correlationResult, setCorrelationResult] = useState<DirectCorrelationResult | null>(null);
   const [agentThoughts, setAgentThoughts] = useState<AgentThought[]>([]);
   const [mappingConfirmed, setMappingConfirmed] = useState(false);
+  const [rulesConfirmed, setRulesConfirmed] = useState(false);
 
   // Auto-trigger when both files are selected
   const hasAutoTriggered = useRef(false);
@@ -155,6 +156,23 @@ export const ReconciliationV2Workspace: React.FC = () => {
                 setTotalMeasuredDurationMs(sess.correlation.total_duration_ms);
               }
             }
+            if (
+              sess.status === "mapping_confirmed" ||
+              sess.status === "rules_confirmed" ||
+              sess.status === "results" ||
+              (sess.selected_rule_ids && sess.selected_rule_ids.length > 0) ||
+              (routeStage && ["rules", "results", "near-matches", "exceptions", "export"].includes(routeStage))
+            ) {
+              setMappingConfirmed(true);
+            }
+            if (
+              sess.status === "rules_confirmed" ||
+              sess.status === "results" ||
+              (sess.selected_rule_ids && sess.selected_rule_ids.length > 0) ||
+              (routeStage && ["results", "near-matches", "exceptions", "export"].includes(routeStage))
+            ) {
+              setRulesConfirmed(true);
+            }
           })
           .catch((err) => {
             console.warn("Could not hydrate V2 session, creating fresh session:", err);
@@ -175,6 +193,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
       setCorrelationResult(null);
       setAgentThoughts([]);
       setMappingConfirmed(false);
+      setRulesConfirmed(false);
       hasAutoTriggered.current = false;
       apiV2
         .createSession()
@@ -394,7 +413,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
             const isActive = currentStage === s.key;
             const isCompleted =
               (s.key === "setup" && correlationResult !== null) ||
-              (s.key === "mapping" && mappingConfirmed);
+              (s.key === "mapping" && (mappingConfirmed || rulesConfirmed)) ||
+              (s.key === "rules" && rulesConfirmed);
             const isAvailable = true;
 
             return (
@@ -861,6 +881,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/mapping`);
             }}
             onProceedToResults={(selectedRuleIds, executionOrder) => {
+              setRulesConfirmed(true);
               setCurrentStage("results");
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/results`);
             }}

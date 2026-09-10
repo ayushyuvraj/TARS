@@ -21,6 +21,9 @@ import {
   FileSpreadsheet,
   HelpCircle,
   Info,
+  Play,
+  ShieldCheck,
+  Activity,
 } from "lucide-react";
 import {
   apiV2,
@@ -48,6 +51,8 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRerunning, setIsRerunning] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [execPass, setExecPass] = useState<number>(1);
+  const [execElapsedMs, setExecElapsedMs] = useState<number>(0);
 
   // Filter state
   const [activeTab, setActiveTab] = useState<string>("ALL");
@@ -70,14 +75,9 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
       const resp = await apiV2.getStage4Results(sessionId);
       setData(resp);
     } catch (err: any) {
-      console.error("Failed to load Stage 4 results:", err);
-      // If error, try executing waterfall freshly
-      try {
-        const resp = await apiV2.executeStage4Results(sessionId);
-        setData(resp);
-      } catch (execErr: any) {
-        setErrorMessage(execErr.message || "Failed to execute reconciliation waterfall.");
-      }
+      // Results have not been run yet for this session.
+      // Do not auto-run. Show the Launchpad screen!
+      setData(null);
     } finally {
       setIsLoading(false);
     }
@@ -86,12 +86,21 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
   const handleRerunWaterfall = async () => {
     setIsRerunning(true);
     setErrorMessage(null);
+    setExecPass(1);
+    setExecElapsedMs(0);
+    const startTime = Date.now();
+    const timer = setInterval(() => {
+      setExecElapsedMs(Date.now() - startTime);
+      setExecPass((prev) => (prev < 5 ? prev + 1 : prev));
+    }, 1200);
+
     try {
       const resp = await apiV2.executeStage4Results(sessionId);
       setData(resp);
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to rerun reconciliation waterfall.");
     } finally {
+      clearInterval(timer);
       setIsRerunning(false);
     }
   };
@@ -180,6 +189,84 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
     return counts;
   }, [records]);
 
+  const WATERFALL_STEPS = [
+    { tier: 1, name: "Pass 1: Exact Statutory Identity", desc: "Zero-tolerance match across GSTIN, Clean Invoice Number, Date, and Financials" },
+    { tier: 2, name: "Pass 2: Enterprise Tolerances", desc: "Stage 3 configured numerical & date tolerances (± ₹10.00 / 30-day window)" },
+    { tier: 3, name: "Pass 3: Semantic Near-Matching", desc: "Vectorized string edit distance (≥85%) with leading-zero and prefix normalization" },
+    { tier: 4, name: "Pass 4: Ambiguity Clustering", desc: "Quarantining multi-match collisions (1:N and N:1) for accountant consensus" },
+    { tier: 5, name: "Pass 5: Single-Sided Residuals", desc: "Categorizing GSTR-2B Only unclaimed credits vs Books-only DRC-01C risks" },
+  ];
+
+  if (isRerunning && !data) {
+    const activePassInfo = WATERFALL_STEPS[execPass - 1] || WATERFALL_STEPS[0];
+    return (
+      <div className="v2-results-container">
+        <ReconciliationV2ActionBar
+          position="top"
+          stageNumber={4}
+          backLabel="Back to Stage 3 Rules"
+          onBack={onBackToRules}
+        />
+
+        <div className="v2-processing-state-card" style={{ margin: "40px auto", maxWidth: 760 }}>
+          <div className="v2-processing-header">
+            <div className="v2-processing-spinner">
+              <RefreshCw size={26} className="v2-spin text-blue-600" />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <h4 className="v2-processing-title" style={{ margin: 0 }}>
+                  Executing 5-Pass Reconciliation Waterfall
+                </h4>
+                <span style={{ background: "#eff6ff", color: "#1d4ed8", padding: "4px 10px", borderRadius: 6, fontWeight: 700, fontSize: 13, border: "1px solid #bfdbfe" }}>
+                  {(execElapsedMs / 1000).toFixed(1)}s elapsed
+                </span>
+              </div>
+              <p className="v2-processing-step" style={{ marginTop: 6, color: "#1e40af", fontWeight: 600 }}>
+                {activePassInfo.name}: <span style={{ fontWeight: 400, color: "#475569" }}>{activePassInfo.desc}</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="v2-progress-rail" style={{ margin: "16px 0 20px 0" }}>
+            <div className="v2-progress-indeterminate" />
+          </div>
+
+          {/* 5-Pass Telemetry Stepper Visualizer */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, width: "100%" }}>
+            {WATERFALL_STEPS.map((step) => {
+              const isPast = step.tier < execPass;
+              const isCurrent = step.tier === execPass;
+              return (
+                <div
+                  key={step.tier}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    padding: "8px 6px",
+                    borderRadius: 8,
+                    background: isCurrent ? "#eff6ff" : (isPast ? "#f0fdf4" : "#f8fafc"),
+                    border: `1px solid ${isCurrent ? "#93c5fd" : (isPast ? "#bbf7d0" : "#e2e8f0")}`,
+                    textAlign: "center",
+                    gap: 4,
+                  }}
+                >
+                  <span style={{ fontSize: 10, fontWeight: 750, color: isCurrent ? "#1d4ed8" : (isPast ? "#16a34a" : "#94a3b8") }}>
+                    PASS {step.tier}
+                  </span>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: isCurrent ? "#0f172a" : (isPast ? "#15803d" : "#64748b"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%" }}>
+                    {step.name.split(":")[1]?.trim() || step.name}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="v2-results-container">
@@ -189,15 +276,112 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
               <RefreshCw size={24} className="v2-spin text-blue-600" />
             </div>
             <div>
-              <h4 className="v2-processing-title">Running 5-Pass Reconciliation Waterfall</h4>
+              <h4 className="v2-processing-title">Checking Reconciliation State</h4>
               <p className="v2-processing-step">
-                Evaluating exact statutory identities, applying enterprise tolerances, fuzzy normalization, and clustering multi-match collisions...
+                Hydrating session waterfall results, deterministic matches, and ambiguity clusters...
               </p>
             </div>
           </div>
           <div className="v2-progress-rail">
             <div className="v2-progress-indeterminate" />
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!data && !isLoading) {
+    return (
+      <div className="v2-results-container">
+        {/* Top Action Bar */}
+        <ReconciliationV2ActionBar
+          position="top"
+          stageNumber={4}
+          backLabel="Back to Stage 3 Rules"
+          onBack={onBackToRules}
+        />
+
+        {/* Hero Banner */}
+        <div className="v2-results-hero" style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #1e40af 100%)" }}>
+          <div className="v2-results-hero-left">
+            <div className="v2-results-stage-tag" style={{ background: "rgba(59, 130, 246, 0.2)", color: "#93c5fd" }}>
+              <Sparkles size={13} />
+              <span>Stage 4 of 8 • Reconciliation Engine Launchpad</span>
+            </div>
+            <h2 className="v2-results-hero-title">Ready to Run Reconciliation Engine</h2>
+            <p className="v2-results-hero-desc">
+              Your reconciliation rules, numerical tolerances, and schema couplings are frozen and locked. Click <strong>"Run Reconciliation Engine"</strong> to execute vectorized multi-pass matching across both workbooks.
+            </p>
+          </div>
+        </div>
+
+        {/* Launchpad Card */}
+        <div className="v2-stage4-launchpad-card">
+          <div className="v2-launchpad-prep-grid">
+            <div className="v2-prep-item">
+              <div className="v2-prep-icon green">
+                <CheckCircle2 size={22} />
+              </div>
+              <div className="v2-prep-content">
+                <span className="v2-prep-label">Stage 1 Ingestion</span>
+                <span className="v2-prep-title">Dual Workbooks Primed</span>
+                <span className="v2-prep-desc">Government GSTR-2B & Purchase Register active</span>
+              </div>
+            </div>
+
+            <div className="v2-prep-item">
+              <div className="v2-prep-icon green">
+                <CheckCircle2 size={22} />
+              </div>
+              <div className="v2-prep-content">
+                <span className="v2-prep-label">Stage 2 Mapping</span>
+                <span className="v2-prep-title">AI Schema Coupled</span>
+                <span className="v2-prep-desc">Canonical field alignments confirmed</span>
+              </div>
+            </div>
+
+            <div className="v2-prep-item">
+              <div className="v2-prep-icon green">
+                <CheckCircle2 size={22} />
+              </div>
+              <div className="v2-prep-content">
+                <span className="v2-prep-label">Stage 3 Rules</span>
+                <span className="v2-prep-title">Matching Policy Frozen</span>
+                <span className="v2-prep-desc">Tolerances & pass order locked</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="v2-launchpad-action-deck">
+            <button
+              type="button"
+              className="v2-btn-run-reconciliation-main"
+              disabled={isRerunning}
+              onClick={handleRerunWaterfall}
+            >
+              {isRerunning ? (
+                <>
+                  <RefreshCw size={20} className="v2-spin" />
+                  <span>Executing Reconciliation Waterfall Engine…</span>
+                </>
+              ) : (
+                <>
+                  <Play size={20} fill="currentColor" />
+                  <span>Run Reconciliation Engine</span>
+                </>
+              )}
+            </button>
+            <p className="v2-launchpad-hint">
+              Executes 5-pass progressive elimination: exact identity, tolerance matching, near-match candidates, and ambiguity isolation.
+            </p>
+          </div>
+
+          {errorMessage && (
+            <div className="v2-alert-error" style={{ margin: "20px 0 0 0" }}>
+              <AlertCircle size={16} />
+              <span>{errorMessage}</span>
+            </div>
+          )}
         </div>
       </div>
     );

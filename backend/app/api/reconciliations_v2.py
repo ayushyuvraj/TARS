@@ -220,26 +220,68 @@ def add_rule_to_master_catalog(rule: Rule2Item) -> list[Rule2Item]:
 CACHE_DIR_V2 = PROJECT_ROOT / "data" / "cache_v2"
 
 
+def _compute_fast_file_fingerprint(path: Path) -> str:
+    import hashlib
+    try:
+        stat = path.stat()
+        size = stat.st_size
+        h = hashlib.md5()
+        h.update(str(size).encode())
+        with open(path, "rb") as f:
+            head = f.read(65536)
+            h.update(head)
+            if size > 131072:
+                f.seek(max(0, size - 65536))
+                tail = f.read(65536)
+                h.update(tail)
+        return f"fp_{size}_{h.hexdigest()[:12]}.pkl"
+    except Exception:
+        return f"fp_{path.stem}.pkl"
+
+
 def _load_df_safely(path: Path, nrows: int | None = None) -> pd.DataFrame:
     try:
         if not path.exists():
             return pd.DataFrame()
 
-        # Cache key based on file path, size, and mtime
         CACHE_DIR_V2.mkdir(parents=True, exist_ok=True)
         stat = path.stat()
-        cache_key = f"{path.stem}_{stat.st_size}_{int(stat.st_mtime)}.pkl"
-        cache_file = CACHE_DIR_V2 / cache_key
+        fp_key = _compute_fast_file_fingerprint(path)
+        fp_cache = CACHE_DIR_V2 / fp_key
 
-        # 1. Fast path: load pre-parsed pickle cache (~35ms)
-        if cache_file.exists():
+        stem_key = f"{path.stem}_{stat.st_size}_{int(stat.st_mtime)}.pkl"
+        stem_cache = CACHE_DIR_V2 / stem_key
+
+        # 1. Fast path: check fingerprint cache or stem cache (~35ms)
+        target_cache = fp_cache if fp_cache.exists() else (stem_cache if stem_cache.exists() else None)
+        if target_cache and target_cache.exists():
             try:
-                full_df = pd.read_pickle(cache_file)
+                full_df = pd.read_pickle(target_cache)
+                if not fp_cache.exists():
+                    try:
+                        full_df.to_pickle(fp_cache)
+                    except Exception:
+                        pass
                 return full_df.head(nrows) if nrows is not None else full_df
             except Exception as cache_err:
                 logger.warning(f"Pickle cache read failed, falling back to source read: {cache_err}")
 
-        # 2. Source read: CSV or Excel
+        # 2. Fast secondary lookup: check if any cache exists with the exact same file size
+        try:
+            for existing_pkl in CACHE_DIR_V2.glob(f"*_{stat.st_size}_*.pkl"):
+                try:
+                    full_df = pd.read_pickle(existing_pkl)
+                    try:
+                        full_df.to_pickle(fp_cache)
+                    except Exception:
+                        pass
+                    return full_df.head(nrows) if nrows is not None else full_df
+                except Exception:
+                    continue
+        except Exception:
+            pass
+
+        # 3. Source read: CSV or Excel
         if path.suffix.lower() == ".csv":
             df = pd.read_csv(path)
         else:
@@ -255,12 +297,13 @@ def _load_df_safely(path: Path, nrows: int | None = None) -> pd.DataFrame:
                         break
             df = pd.read_excel(path, header=best_header)
 
-        # 3. Ensure tabular headers
+        # 4. Ensure tabular headers
         df = WaterfallMatchingEngine._ensure_tabular_headers(df)
 
-        # 4. Save to pickle cache for subsequent sub-second lookups
+        # 5. Save to both fingerprint and stem pickle caches for subsequent sub-second lookups
         try:
-            df.to_pickle(cache_file)
+            df.to_pickle(fp_cache)
+            df.to_pickle(stem_cache)
         except Exception as cache_err:
             logger.warning(f"Failed to write pickle cache to {cache_file}: {cache_err}")
 
@@ -299,6 +342,17 @@ def _ensure_session(session_id: str) -> dict[str, Any]:
             saved["rules_v2"] = parsed_rules or load_master_rules_v2_catalog()
         else:
             saved["rules_v2"] = load_master_rules_v2_catalog()
+
+        existing = _V2_SESSIONS.get(session_id, {})
+        if isinstance(existing.get("_cached_gstr_df"), pd.DataFrame) and not existing["_cached_gstr_df"].empty:
+            saved["_cached_gstr_df"] = existing["_cached_gstr_df"]
+        elif not isinstance(saved.get("_cached_gstr_df"), pd.DataFrame):
+            saved["_cached_gstr_df"] = None
+
+        if isinstance(existing.get("_cached_pr_df"), pd.DataFrame) and not existing["_cached_pr_df"].empty:
+            saved["_cached_pr_df"] = existing["_cached_pr_df"]
+        elif not isinstance(saved.get("_cached_pr_df"), pd.DataFrame):
+            saved["_cached_pr_df"] = None
 
         _V2_SESSIONS[session_id] = saved
         return saved
@@ -339,6 +393,8 @@ def _ensure_session(session_id: str) -> dict[str, Any]:
 def _persist_session_disk(session: dict[str, Any]) -> None:
     try:
         to_save = dict(session)
+        to_save.pop("_cached_gstr_df", None)
+        to_save.pop("_cached_pr_df", None)
         if "correlation" in to_save and hasattr(to_save["correlation"], "model_dump"):
             to_save["correlation"] = to_save["correlation"].model_dump()
         if "rules_v2" in to_save and isinstance(to_save["rules_v2"], list):
@@ -409,6 +465,21 @@ async def fast_upload_and_correlate(
         session["correlation"] = correlation
         session["status"] = "mapped"
         session["current_stage"] = "mapping"
+
+        # Background pre-caching: pre-load and pickle dataframes while user reviews mapping & rules
+        def _bg_pre_cache(sid: str, gp: Path, pp: Path):
+            try:
+                g_df = _load_df_safely(gp)
+                p_df = _load_df_safely(pp)
+                if sid in _V2_SESSIONS:
+                    _V2_SESSIONS[sid]["_cached_gstr_df"] = g_df
+                    _V2_SESSIONS[sid]["_cached_pr_df"] = p_df
+                logger.info(f"Background pre-caching completed successfully for session {sid}")
+            except Exception as e:
+                logger.warning(f"Background pre-caching failed for {sid}: {e}")
+
+        import threading
+        threading.Thread(target=_bg_pre_cache, args=(session_id, gov_path, pr_path), daemon=True).start()
 
         # 1. Durable session persistence
         try:
@@ -1163,12 +1234,12 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
     pr_path = _resolve_file(pr_path_str, pref_pr)
 
     gstr_df = session.get("_cached_gstr_df")
-    if gstr_df is None or (isinstance(gstr_df, pd.DataFrame) and gstr_df.empty):
+    if not isinstance(gstr_df, pd.DataFrame) or gstr_df.empty:
         gstr_df = _load_df_safely(gov_path)
         session["_cached_gstr_df"] = gstr_df
 
     pr_df = session.get("_cached_pr_df")
-    if pr_df is None or (isinstance(pr_df, pd.DataFrame) and pr_df.empty):
+    if not isinstance(pr_df, pd.DataFrame) or pr_df.empty:
         pr_df = _load_df_safely(pr_path)
         session["_cached_pr_df"] = pr_df
 
@@ -1202,6 +1273,8 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
     # Durable persistence
     try:
         to_save = dict(session)
+        to_save.pop("_cached_gstr_df", None)
+        to_save.pop("_cached_pr_df", None)
         if session.get("correlation") and hasattr(session["correlation"], "model_dump"):
             to_save["correlation"] = session["correlation"].model_dump()
         to_save["rules_v2"] = [r.model_dump() if hasattr(r, "model_dump") else r for r in rules]
@@ -1285,14 +1358,14 @@ def get_stage4_results_endpoint(
 ) -> Stage4ExecutionResponse:
     """Returns the computed Stage 4 results matrix and ambiguity clusters for this session."""
     session = _ensure_session(session_id)
-    cached = session.get("stage4_results")
-    if cached and isinstance(cached, dict) and cached.get("summary"):
+    cached = audit_v2_service.get_stage4_results(session_id) or session.get("stage4_results")
+    if cached and isinstance(cached, dict) and cached.get("summary") and (cached.get("records") or cached.get("summary", {}).get("total_gstr_rows") == 0):
         try:
             return Stage4ExecutionResponse(**cached)
         except Exception:
             pass
-    # If not cached yet, compute it dynamically
-    return _run_stage4_waterfall_internal(session_id, settings)
+    # Do not auto-execute reconciliation waterfall on GET if not run yet
+    raise HTTPException(status_code=404, detail="Reconciliation engine has not been executed yet for this session.")
 
 
 @router_v2.post("/{session_id}/results/resolve-ambiguity", response_model=Stage4ExecutionResponse)
@@ -1302,7 +1375,7 @@ def resolve_ambiguity_endpoint(
 ) -> Stage4ExecutionResponse:
     """Human-in-the-loop resolution: binds user-chosen PR candidate to the GSTR anchor or marks as rejected."""
     session = _ensure_session(session_id)
-    cached = session.get("stage4_results")
+    cached = audit_v2_service.get_stage4_results(session_id) or session.get("stage4_results")
     if not cached or not isinstance(cached, dict):
         raise HTTPException(status_code=404, detail="No reconciliation results found for this session.")
 
@@ -1380,6 +1453,7 @@ def resolve_ambiguity_endpoint(
     try:
         to_save = dict(session)
         audit_v2_service.save_session(to_save)
+        audit_v2_service.save_stage4_results(session_id, cached)
     except Exception as exc:
         logger.warning(f"Error persisting ambiguity resolution: {exc}")
 

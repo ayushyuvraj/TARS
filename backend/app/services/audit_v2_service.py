@@ -23,6 +23,7 @@ AUDIT_V2_DIR = PROJECT_ROOT / "data" / "audit_v2"
 SESSIONS_FILE = AUDIT_V2_DIR / "sessions_v2.json"
 RUNS_FILE = AUDIT_V2_DIR / "runs_v2.json"
 STEPS_FILE = AUDIT_V2_DIR / "steps_v2.json"
+RESULTS_DIR = AUDIT_V2_DIR / "results"
 
 
 class V2LogEntry(BaseModel):
@@ -133,11 +134,18 @@ class AuditV2Service:
             logger.error(f"Failed to write JSON to {path}: {exc}")
 
     # =========================================================================
-    # SESSIONS
+    # SESSIONS & STAGE 4 RESULTS STORAGE
     # =========================================================================
     def get_session(self, session_id: str) -> dict[str, Any] | None:
         sessions = self._read_json(SESSIONS_FILE)
-        return sessions.get(session_id)
+        sess = sessions.get(session_id)
+        if sess:
+            res_file = RESULTS_DIR / f"{session_id}.json"
+            if res_file.exists():
+                s4 = self._read_json(res_file)
+                if s4:
+                    sess["stage4_results"] = s4
+        return sess
 
     def save_session(self, session_dict: dict[str, Any]) -> dict[str, Any]:
         sessions = self._read_json(SESSIONS_FILE)
@@ -146,9 +154,36 @@ class AuditV2Service:
         if session_id not in sessions:
             session_dict.setdefault("created_at", now)
         session_dict["updated_at"] = now
-        sessions[session_id] = session_dict
+
+        to_store = dict(session_dict)
+        s4 = session_dict.get("stage4_results")
+        if s4 and isinstance(s4, dict) and s4.get("records"):
+            self.save_stage4_results(session_id, s4)
+            to_store["has_stage4_results"] = True
+            to_store["stage4_results"] = {
+                "session_id": s4.get("session_id", session_id),
+                "summary": s4.get("summary"),
+                "records": [],
+                "ambiguities": s4.get("ambiguities", [])[:10],
+            }
+
+        sessions[session_id] = to_store
         self._write_json(SESSIONS_FILE, sessions)
         return session_dict
+
+    def save_stage4_results(self, session_id: str, results_dict: dict[str, Any]) -> None:
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        res_file = RESULTS_DIR / f"{session_id}.json"
+        self._write_json(res_file, results_dict)
+
+    def get_stage4_results(self, session_id: str) -> dict[str, Any] | None:
+        res_file = RESULTS_DIR / f"{session_id}.json"
+        if res_file.exists():
+            return self._read_json(res_file)
+        sess = self.get_session(session_id)
+        if sess and sess.get("stage4_results") and sess["stage4_results"].get("records"):
+            return sess["stage4_results"]
+        return None
 
     def list_sessions(self) -> list[dict[str, Any]]:
         sessions = self._read_json(SESSIONS_FILE)

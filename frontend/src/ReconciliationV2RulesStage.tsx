@@ -7,6 +7,7 @@ import {
   DateToleranceUnit,
   NumericToleranceMode,
   NormalizationType,
+  MatchStrategy,
 } from "./api_v2";
 import {
   Sparkles,
@@ -496,7 +497,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                 return {
                   ...r,
                   is_enabled: r.is_enabled !== undefined ? r.is_enabled : true,
-                  column_status: "AVAILABLE",
+                  column_status: "AVAILABLE" as const,
                   missing_reason: null,
                 };
               }
@@ -808,7 +809,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
             date_tolerance_value: r.date_tolerance_value > 0 ? r.date_tolerance_value : 30,
             tolerance_mode: r.tolerance_mode || "ABSOLUTE_INR",
             date_tolerance_unit: r.date_tolerance_unit || "DAYS",
-            strategy: isDateRule ? "DATE_PROXIMITY" : (r.strategy === "VALUE_GUARD" ? "VALUE_GUARD" : "NUMERIC_TOLERANCE"),
+            strategy: (isDateRule ? "DATE_PROXIMITY" : (r.strategy === "VALUE_GUARD" ? "VALUE_GUARD" : "NUMERIC_TOLERANCE")) as MatchStrategy,
           };
         }
       }
@@ -960,11 +961,11 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         stageNumber={3}
         backLabel="Back to Schema Mapping"
         onBack={onBackToMapping}
-        nextLabel={isConfirming ? "Confirming Rules…" : "Confirm & Run Reconciliation"}
+        nextLabel={isConfirming ? "Freezing Rules…" : "Confirm & Freeze Rules"}
         onNext={handleProceed}
         nextDisabled={isConfirming || rules.filter((r) => r.is_enabled).length === 0}
         isNextLoading={isConfirming}
-        nextLoadingText="Confirming & Running…"
+        nextLoadingText="Freezing Rules…"
       />
 
       {/* Agentic Simulation Deep Dive Console HUD */}
@@ -1854,11 +1855,11 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         stageNumber={3}
         backLabel="Back to Schema Mapping"
         onBack={onBackToMapping}
-        nextLabel={isConfirming ? "Confirming Rules…" : "Confirm & Run Reconciliation"}
+        nextLabel={isConfirming ? "Freezing Rules…" : "Confirm & Freeze Rules"}
         onNext={handleProceed}
         nextDisabled={isConfirming || rules.filter((r) => r.is_enabled).length === 0}
         isNextLoading={isConfirming}
-        nextLoadingText="Confirming & Running…"
+        nextLoadingText="Freezing Rules…"
       />
 
       {/* --- PLAIN ENGLISH EXPLANATION MODAL --- */}

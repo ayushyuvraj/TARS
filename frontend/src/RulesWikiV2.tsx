@@ -6,6 +6,7 @@ import {
   DateToleranceUnit,
   NumericToleranceMode,
   NormalizationType,
+  MatchStrategy,
 } from "./api_v2";
 import {
   Play,
@@ -322,7 +323,7 @@ export const RulesWikiV2: React.FC = () => {
             date_tolerance_value: r.date_tolerance_value > 0 ? r.date_tolerance_value : 30,
             tolerance_mode: r.tolerance_mode || "ABSOLUTE_INR",
             date_tolerance_unit: r.date_tolerance_unit || "DAYS",
-            strategy: isDateRule ? "DATE_PROXIMITY" : (r.strategy === "VALUE_GUARD" ? "VALUE_GUARD" : "NUMERIC_TOLERANCE"),
+            strategy: (isDateRule ? "DATE_PROXIMITY" : (r.strategy === "VALUE_GUARD" ? "VALUE_GUARD" : "NUMERIC_TOLERANCE")) as MatchStrategy,
           };
         }
       }
