@@ -217,21 +217,58 @@ def add_rule_to_master_catalog(rule: Rule2Item) -> list[Rule2Item]:
     return catalog
 
 
+CACHE_DIR_V2 = PROJECT_ROOT / "data" / "cache_v2"
+
+
 def _load_df_safely(path: Path, nrows: int | None = None) -> pd.DataFrame:
     try:
+        if not path.exists():
+            return pd.DataFrame()
+
+        # Cache key based on file path, size, and mtime
+        CACHE_DIR_V2.mkdir(parents=True, exist_ok=True)
+        stat = path.stat()
+        cache_key = f"{path.stem}_{stat.st_size}_{int(stat.st_mtime)}.pkl"
+        cache_file = CACHE_DIR_V2 / cache_key
+
+        # 1. Fast path: load pre-parsed pickle cache (~35ms)
+        if cache_file.exists():
+            try:
+                full_df = pd.read_pickle(cache_file)
+                return full_df.head(nrows) if nrows is not None else full_df
+            except Exception as cache_err:
+                logger.warning(f"Pickle cache read failed, falling back to source read: {cache_err}")
+
+        # 2. Source read: CSV or Excel
         if path.suffix.lower() == ".csv":
-            return pd.read_csv(path, nrows=nrows)
-        df = pd.read_excel(path, nrows=nrows)
-        unnamed = [c for c in df.columns if str(c).startswith("Unnamed")]
-        if len(unnamed) > len(df.columns) / 2:
-            df_h1 = pd.read_excel(path, header=1, nrows=nrows)
-            unnamed_h1 = [c for c in df_h1.columns if str(c).startswith("Unnamed")]
-            if len(unnamed_h1) < len(unnamed):
-                return df_h1
-        return df
+            df = pd.read_csv(path)
+        else:
+            # Fast header check using first 10 rows to avoid full double parsing
+            sample = pd.read_excel(path, nrows=10)
+            unnamed = [c for c in sample.columns if str(c).startswith("Unnamed")]
+            best_header = 0
+            if len(unnamed) > len(sample.columns) / 2:
+                for row_idx in range(len(sample)):
+                    row_vals = [str(v).strip() for v in sample.iloc[row_idx] if pd.notna(v) and str(v).strip()]
+                    if len(row_vals) >= len(sample.columns) / 2 and len(set(row_vals)) == len(row_vals):
+                        best_header = row_idx + 1
+                        break
+            df = pd.read_excel(path, header=best_header)
+
+        # 3. Ensure tabular headers
+        df = WaterfallMatchingEngine._ensure_tabular_headers(df)
+
+        # 4. Save to pickle cache for subsequent sub-second lookups
+        try:
+            df.to_pickle(cache_file)
+        except Exception as cache_err:
+            logger.warning(f"Failed to write pickle cache to {cache_file}: {cache_err}")
+
+        return df.head(nrows) if nrows is not None else df
     except Exception as exc:
         logger.warning(f"Failed to load DataFrame from {path}: {exc}")
         return pd.DataFrame()
+
 
 
 def _ensure_session(session_id: str) -> dict[str, Any]:
@@ -529,20 +566,8 @@ def simulate_v2_rules(
     gov_path = _resolve_file(gov_path_str, SAMPLE_GOV)
     pr_path = _resolve_file(pr_path_str, SAMPLE_PR)
 
-    try:
-        if gov_path.suffix.lower() == ".csv":
-            gstr_df = pd.read_csv(gov_path)
-        else:
-            gstr_df = pd.read_excel(gov_path)
-
-        if pr_path.suffix.lower() == ".csv":
-            pr_df = pd.read_csv(pr_path)
-        else:
-            pr_df = pd.read_excel(pr_path)
-    except Exception as exc:
-        logger.warning(f"Failed to read session data files for simulation: {exc}")
-        gstr_df = pd.DataFrame()
-        pr_df = pd.DataFrame()
+    gstr_df = _load_df_safely(gov_path)
+    pr_df = _load_df_safely(pr_path)
 
     engine = WaterfallMatchingEngine()
     return engine.simulate(gstr_df, pr_df, req.passes)

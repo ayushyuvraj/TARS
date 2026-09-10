@@ -7,6 +7,13 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+try:
+    import orjson
+    _HAS_ORJSON = True
+except ImportError:
+    orjson = None  # type: ignore
+    _HAS_ORJSON = False
+
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
@@ -103,6 +110,9 @@ class AuditV2Service:
         if not path.exists():
             return {}
         try:
+            if _HAS_ORJSON:
+                with open(path, "rb") as f:
+                    return orjson.loads(f.read())
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception as exc:
@@ -112,8 +122,13 @@ class AuditV2Service:
     def _write_json(self, path: Path, data: dict[str, Any]) -> None:
         try:
             path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=2, default=str)
+            if _HAS_ORJSON:
+                raw_bytes = orjson.dumps(data, default=str, option=orjson.OPT_INDENT_2)
+                with open(path, "wb") as f:
+                    f.write(raw_bytes)
+            else:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=2, default=str)
         except Exception as exc:
             logger.error(f"Failed to write JSON to {path}: {exc}")
 

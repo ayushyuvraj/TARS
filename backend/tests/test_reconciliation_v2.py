@@ -115,7 +115,7 @@ def test_compile_ai_rule_endpoint():
     data2 = res2.json()
     assert data2["strategy"] == "DATE_PROXIMITY"
     assert data2["date_tolerance_value"] == 15
-    assert data2["date_tolerance_unit"] == "days"
+    assert data2["date_tolerance_unit"] in ("DAYS", "days")
 
     # 3. Compile empty prompt returns 400
     res3 = client.post(

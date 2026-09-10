@@ -316,7 +316,10 @@ class ValueNormalizer:
         if isinstance(value, date):
             return value
         try:
-            parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
+            s = str(value).strip()
+            # If date starts with 4-digit year (e.g. 2026-08-10), dayfirst must be False
+            dayfirst = False if re.match(r"^\d{4}", s) else True
+            parsed = pd.to_datetime(s, errors="coerce", dayfirst=dayfirst)
             return None if pd.isna(parsed) else parsed.date()
         except Exception:
             return None
@@ -428,6 +431,21 @@ class WaterfallMatchingEngine:
                 return col
         return None
 
+    @classmethod
+    def _ensure_tabular_headers(cls, df: pd.DataFrame | None) -> pd.DataFrame:
+        if df is None or len(df) == 0:
+            return pd.DataFrame() if df is None else df
+        unnamed_count = sum(1 for c in df.columns if str(c).startswith("Unnamed"))
+        if unnamed_count > len(df.columns) / 2:
+            for row_idx in range(min(10, len(df))):
+                row_vals = [str(v).strip() for v in df.iloc[row_idx] if pd.notna(v) and str(v).strip()]
+                if len(row_vals) >= len(df.columns) / 2 and len(set(row_vals)) == len(row_vals):
+                    new_cols = [str(v) if pd.notna(v) else f"Unnamed_{i}" for i, v in enumerate(df.iloc[row_idx])]
+                    new_df = df.iloc[row_idx + 1:].copy().reset_index(drop=True)
+                    new_df.columns = new_cols
+                    return new_df
+        return df
+
     def simulate_rules_v2(
         self,
         gstr_df: pd.DataFrame,
@@ -435,6 +453,8 @@ class WaterfallMatchingEngine:
         rules: list[Rule2Item],
     ) -> SimulationResultV2:
         """Evaluates Rules Wiki 2.0 rules: computes overall simultaneous match and individual satisfaction breakdowns."""
+        gstr_df = self._ensure_tabular_headers(gstr_df)
+        pr_df = self._ensure_tabular_headers(pr_df)
         total_gstr = len(gstr_df)
         total_pr = len(pr_df)
 
@@ -504,7 +524,110 @@ class WaterfallMatchingEngine:
         pr_df: pd.DataFrame,
         rule: Rule2Item,
     ) -> int:
-        """Determines how many 1-to-1 matches this rule produces when evaluated against the datasets."""
+        """Determines how many 1-to-1 matches this rule produces when evaluated against the datasets with sub-second execution."""
+        if len(gstr_df) == 0 or len(pr_df) == 0:
+            return 0
+
+        # For text rules, fast hash index
+        if rule.strategy in (MatchStrategy.EXACT, MatchStrategy.NORMALIZED_TEXT):
+            matched_pairs, _ = self._match_simultaneous(gstr_df, pr_df, [rule])
+            return len(matched_pairs)
+
+        import numpy as np
+
+        # For VALUE_GUARD: exact string equality hash table count
+        if rule.strategy == MatchStrategy.VALUE_GUARD:
+            g_col = str(rule.gstr_column)
+            p_col = str(rule.pr_column)
+            if g_col not in gstr_df.columns or p_col not in pr_df.columns:
+                return 0
+            pr_val_map: dict[str, int] = {}
+            for p_v in pr_df[p_col].dropna().astype(str).str.strip().str.upper():
+                pr_val_map[p_v] = pr_val_map.get(p_v, 0) + 1
+            matches = 0
+            for g_v in gstr_df[g_col].dropna().astype(str).str.strip().str.upper():
+                if pr_val_map.get(g_v, 0) > 0:
+                    pr_val_map[g_v] -= 1
+                    matches += 1
+            return matches
+
+        # For NUMERIC_TOLERANCE: two-pointer greedy match in O(N log N)
+        if rule.strategy == MatchStrategy.NUMERIC_TOLERANCE:
+            g_col = str(rule.gstr_column)
+            p_col = str(rule.pr_column)
+            if g_col not in gstr_df.columns or p_col not in pr_df.columns:
+                return 0
+            g_s = pd.to_numeric(gstr_df[g_col].astype(str).str.replace(r"[^\d.-]", "", regex=True), errors="coerce")
+            p_s = pd.to_numeric(pr_df[p_col].astype(str).str.replace(r"[^\d.-]", "", regex=True), errors="coerce")
+            g_vals = g_s.dropna().to_numpy()
+            p_vals = p_s.dropna().to_numpy()
+            if len(g_vals) == 0 or len(p_vals) == 0:
+                return 0
+
+            g_sorted = np.sort(g_vals)
+            p_sorted = np.sort(p_vals)
+            tol = float(rule.tolerance_value or 10.0)
+            is_pct = rule.tolerance_mode == NumericToleranceMode.PERCENTAGE
+
+            i = 0
+            j = 0
+            matches = 0
+            len_g = len(g_sorted)
+            len_p = len(p_sorted)
+
+            while i < len_g and j < len_p:
+                g_val = g_sorted[i]
+                eff_tol = abs(g_val * tol / 100.0) if is_pct else tol
+                p_val = p_sorted[j]
+                if p_val < g_val - eff_tol:
+                    j += 1
+                elif p_val <= g_val + eff_tol:
+                    matches += 1
+                    i += 1
+                    j += 1
+                else:
+                    i += 1
+            return matches
+
+        # For DATE_PROXIMITY: two-pointer greedy match on epoch days in O(N log N)
+        if rule.strategy == MatchStrategy.DATE_PROXIMITY:
+            g_col = str(rule.gstr_column)
+            p_col = str(rule.pr_column)
+            if g_col not in gstr_df.columns or p_col not in pr_df.columns:
+                return 0
+            g_d = pd.to_datetime(gstr_df[g_col], errors="coerce", dayfirst=True)
+            p_d = pd.to_datetime(pr_df[p_col], errors="coerce", dayfirst=True)
+            g_valid = g_d.dropna()
+            p_valid = p_d.dropna()
+            if len(g_valid) == 0 or len(p_valid) == 0:
+                return 0
+
+            g_days = np.sort(g_valid.values.astype("datetime64[D]").astype(np.int64))
+            p_days = np.sort(p_valid.values.astype("datetime64[D]").astype(np.int64))
+
+            days_tol = int(rule.date_tolerance_value or 30)
+            if rule.date_tolerance_unit == DateToleranceUnit.MONTHS:
+                days_tol *= 30
+            elif rule.date_tolerance_unit == DateToleranceUnit.YEARS:
+                days_tol *= 365
+
+            i = 0
+            j = 0
+            matches = 0
+            len_g = len(g_days)
+            len_p = len(p_days)
+
+            while i < len_g and j < len_p:
+                if p_days[j] < g_days[i] - days_tol:
+                    j += 1
+                elif p_days[j] <= g_days[i] + days_tol:
+                    matches += 1
+                    i += 1
+                    j += 1
+                else:
+                    i += 1
+            return matches
+
         matched_pairs, _ = self._match_simultaneous(gstr_df, pr_df, [rule])
         return len(matched_pairs)
 
@@ -564,6 +687,56 @@ class WaterfallMatchingEngine:
                         if v_str:
                             pr_cond_index.setdefault(hash(v_str), []).append(p_idx)
 
+        # Pre-parse condition rule column arrays upfront (avoids re-parsing dates/numbers per candidate)
+        parsed_gstr_cond: dict[str, list[float | date | None]] = {}
+        parsed_pr_cond: dict[str, list[float | date | None]] = {}
+
+        for r in condition_rules:
+            if r.strategy == MatchStrategy.NUMERIC_TOLERANCE:
+                if r.gstr_column not in parsed_gstr_cond:
+                    if r.gstr_column in gstr_df.columns:
+                        try:
+                            cleaned = gstr_df[r.gstr_column].astype(str).str.replace(r"[^\d.-]", "", regex=True)
+                            parsed_gstr_cond[r.gstr_column] = pd.to_numeric(cleaned, errors="coerce").tolist()
+                        except Exception:
+                            parsed_gstr_cond[r.gstr_column] = [
+                                float(dec) if (dec := self.normalizer.parse_decimal(v)) is not None else None
+                                for v in gstr_dict.get(r.gstr_column, [None] * num_gstr)
+                            ]
+                    else:
+                        parsed_gstr_cond[r.gstr_column] = [None] * num_gstr
+                if r.pr_column not in parsed_pr_cond:
+                    if r.pr_column in pr_df.columns:
+                        try:
+                            cleaned = pr_df[r.pr_column].astype(str).str.replace(r"[^\d.-]", "", regex=True)
+                            parsed_pr_cond[r.pr_column] = pd.to_numeric(cleaned, errors="coerce").tolist()
+                        except Exception:
+                            parsed_pr_cond[r.pr_column] = [
+                                float(dec) if (dec := self.normalizer.parse_decimal(v)) is not None else None
+                                for v in pr_dict.get(r.pr_column, [None] * num_pr)
+                            ]
+                    else:
+                        parsed_pr_cond[r.pr_column] = [None] * num_pr
+            elif r.strategy == MatchStrategy.DATE_PROXIMITY:
+                if r.gstr_column not in parsed_gstr_cond:
+                    if r.gstr_column in gstr_df.columns:
+                        try:
+                            dt_s = pd.to_datetime(gstr_df[r.gstr_column], errors="coerce")
+                            parsed_gstr_cond[r.gstr_column] = [t.date() if pd.notna(t) else None for t in dt_s]
+                        except Exception:
+                            parsed_gstr_cond[r.gstr_column] = [self.normalizer.parse_date(v) for v in gstr_dict.get(r.gstr_column, [None] * num_gstr)]
+                    else:
+                        parsed_gstr_cond[r.gstr_column] = [None] * num_gstr
+                if r.pr_column not in parsed_pr_cond:
+                    if r.pr_column in pr_df.columns:
+                        try:
+                            dt_s = pd.to_datetime(pr_df[r.pr_column], errors="coerce")
+                            parsed_pr_cond[r.pr_column] = [t.date() if pd.notna(t) else None for t in dt_s]
+                        except Exception:
+                            parsed_pr_cond[r.pr_column] = [self.normalizer.parse_date(v) for v in pr_dict.get(r.pr_column, [None] * num_pr)]
+                    else:
+                        parsed_pr_cond[r.pr_column] = [None] * num_pr
+
         claimed_pr: set[int] = set()
         matched_pairs: list[tuple[int, int]] = []
         sample_matches: list[SampleMatchPair] = []
@@ -607,18 +780,14 @@ class WaterfallMatchingEngine:
                     elif r.date_tolerance_unit == DateToleranceUnit.YEARS:
                         date_days *= 365
 
-                    g_col_vals = gstr_dict.get(r.gstr_column)
-                    p_col_vals = pr_dict.get(r.pr_column)
-                    g_val = g_col_vals[g_idx] if g_col_vals else None
-                    p_val = p_col_vals[p_idx] if p_col_vals else None
-
                     if r.strategy == MatchStrategy.NUMERIC_TOLERANCE:
-                        g_dec = self.normalizer.parse_decimal(g_val)
-                        p_dec = self.normalizer.parse_decimal(p_val)
-                        if g_dec is None or p_dec is None:
+                        g_series = parsed_gstr_cond.get(r.gstr_column)
+                        p_series = parsed_pr_cond.get(r.pr_column)
+                        g_f = g_series[g_idx] if (g_series and g_idx < len(g_series)) else None
+                        p_f = p_series[p_idx] if (p_series and p_idx < len(p_series)) else None
+                        if g_f is None or p_f is None:
                             passed = False
                             break
-                        g_f, p_f = float(g_dec), float(p_dec)
                         tol = r.tolerance_value
                         if r.tolerance_mode == NumericToleranceMode.PERCENTAGE:
                             tol = abs(g_f * r.tolerance_value / 100.0)
@@ -629,8 +798,10 @@ class WaterfallMatchingEngine:
                         norm_meta[f"Diff:{r.gstr_column}"] = f"{diff:.2f}"
 
                     elif r.strategy == MatchStrategy.DATE_PROXIMITY:
-                        g_d = self.normalizer.parse_date(g_val)
-                        p_d = self.normalizer.parse_date(p_val)
+                        g_series = parsed_gstr_cond.get(r.gstr_column)
+                        p_series = parsed_pr_cond.get(r.pr_column)
+                        g_d = g_series[g_idx] if (g_series and g_idx < len(g_series)) else None
+                        p_d = p_series[p_idx] if (p_series and p_idx < len(p_series)) else None
                         if g_d is None or p_d is None:
                             passed = False
                             break
@@ -641,8 +812,10 @@ class WaterfallMatchingEngine:
                         norm_meta[f"DateDelta:{r.gstr_column}"] = f"{diff_days}d"
 
                     elif r.strategy == MatchStrategy.VALUE_GUARD:
-                        g_v = str(g_val or "").strip().upper()
-                        p_v = str(p_val or "").strip().upper()
+                        g_col_vals = gstr_dict.get(r.gstr_column)
+                        p_col_vals = pr_dict.get(r.pr_column)
+                        g_v = str(g_col_vals[g_idx] if g_col_vals else "").strip().upper()
+                        p_v = str(p_col_vals[p_idx] if p_col_vals else "").strip().upper()
                         if g_v != p_v:
                             passed = False
                             break
@@ -672,21 +845,54 @@ class WaterfallMatchingEngine:
         pr_df: pd.DataFrame,
         waterfall_passes: list[MatchingPass],
     ) -> SimulationResult:
-        # Map waterfall_passes into flat Rule2Item list for simulation
-        flat_rules: list[Rule2Item] = []
-        for p in waterfall_passes:
-            if not p.is_enabled:
+        """Progressively executes matching passes in waterfall order, returning cumulative and tier-level yields."""
+        gstr_df = self._ensure_tabular_headers(gstr_df)
+        pr_df = self._ensure_tabular_headers(pr_df)
+        total_gstr = len(gstr_df) if gstr_df is not None else 0
+        total_pr = len(pr_df) if pr_df is not None else 0
+        if total_gstr == 0 or total_pr == 0:
+            return SimulationResult(
+                total_gstr_rows=total_gstr,
+                total_pr_rows=total_pr,
+                total_matched=0,
+                total_unmatched_gstr=total_gstr,
+                total_unmatched_pr=total_pr,
+                overall_match_rate=0.0,
+                waterfall=[],
+            )
+
+        remaining_gstr = set(range(total_gstr))
+        remaining_pr = set(range(total_pr))
+        yields: list[SimulationYield] = []
+        cumulative_matched = 0
+
+        for p in sorted((p for p in waterfall_passes if p.is_enabled), key=lambda x: x.tier):
+            active_rules = [r for r in p.rules if r.is_active]
+            if not active_rules:
+                yields.append(
+                    SimulationYield(
+                        pass_id=p.pass_id,
+                        pass_name=p.name,
+                        tier=p.tier,
+                        matched_count=0,
+                        cumulative_matched=cumulative_matched,
+                        pass_match_percentage=0.0,
+                        sample_matches=[],
+                    )
+                )
                 continue
-            for r in p.rules:
-                if not r.is_active:
-                    continue
-                flat_rules.append(
+
+            tier_rules: list[Rule2Item] = []
+            for r in active_rules:
+                g_col = self._find_matching_col(gstr_df, r.gstr_column, r.canonical_concept) or r.gstr_column
+                p_col = self._find_matching_col(pr_df, r.pr_column, r.canonical_concept) or r.pr_column
+                tier_rules.append(
                     Rule2Item(
                         id=r.rule_id,
-                        name=f"{r.gstr_column} Match",
-                        description=f"Match {r.gstr_column} with {r.pr_column}",
-                        gstr_column=r.gstr_column,
-                        pr_column=r.pr_column,
+                        name=f"{g_col} Match",
+                        description=f"Match {g_col} with {p_col}",
+                        gstr_column=g_col,
+                        pr_column=p_col,
                         canonical_concept=r.canonical_concept,
                         strategy=r.strategy,
                         normalizers=r.normalizers,
@@ -697,30 +903,60 @@ class WaterfallMatchingEngine:
                     )
                 )
 
-        res_v2 = self.simulate_rules_v2(gstr_df, pr_df, flat_rules)
+            sub_g_indices = sorted(remaining_gstr)
+            sub_p_indices = sorted(remaining_pr)
+            sub_gstr_df = gstr_df.iloc[sub_g_indices] if len(sub_g_indices) < total_gstr else gstr_df
+            sub_pr_df = pr_df.iloc[sub_p_indices] if len(sub_p_indices) < total_pr else pr_df
 
-        # Convert back to SimulationResult format
-        yields: list[SimulationYield] = []
-        for p in waterfall_passes:
+            sub_pairs, sub_samples = self._match_simultaneous(sub_gstr_df, sub_pr_df, tier_rules)
+
+            tier_matched = 0
+            tier_samples: list[SampleMatchPair] = []
+            for sub_g, sub_p in sub_pairs:
+                orig_g = sub_g_indices[sub_g]
+                orig_p = sub_p_indices[sub_p]
+                if orig_g in remaining_gstr and orig_p in remaining_pr:
+                    remaining_gstr.remove(orig_g)
+                    remaining_pr.remove(orig_p)
+                    tier_matched += 1
+
+            for s in sub_samples:
+                orig_g = sub_g_indices[s.gstr_row_index]
+                orig_p = sub_p_indices[s.pr_row_index]
+                tier_samples.append(
+                    SampleMatchPair(
+                        gstr_row_index=orig_g,
+                        pr_row_index=orig_p,
+                        gstr_preview=s.gstr_preview,
+                        pr_preview=s.pr_preview,
+                        matched_by_pass=p.name,
+                        normalized_values=s.normalized_values,
+                    )
+                )
+
+            cumulative_matched += tier_matched
+            pct = round((tier_matched / total_gstr * 100.0), 1) if total_gstr > 0 else 0.0
+
             yields.append(
                 SimulationYield(
                     pass_id=p.pass_id,
                     pass_name=p.name,
                     tier=p.tier,
-                    matched_count=res_v2.total_matched,
-                    cumulative_matched=res_v2.total_matched,
-                    pass_match_percentage=res_v2.overall_match_rate,
-                    sample_matches=res_v2.sample_matches,
+                    matched_count=tier_matched,
+                    cumulative_matched=cumulative_matched,
+                    pass_match_percentage=pct,
+                    sample_matches=tier_samples,
                 )
             )
 
+        overall_pct = round((cumulative_matched / total_gstr * 100.0), 1) if total_gstr > 0 else 0.0
         return SimulationResult(
-            total_gstr_rows=res_v2.total_gstr_rows,
-            total_pr_rows=res_v2.total_pr_rows,
-            total_matched=res_v2.total_matched,
-            total_unmatched_gstr=res_v2.total_unmatched_gstr,
-            total_unmatched_pr=res_v2.total_unmatched_pr,
-            overall_match_rate=res_v2.overall_match_rate,
+            total_gstr_rows=total_gstr,
+            total_pr_rows=total_pr,
+            total_matched=cumulative_matched,
+            total_unmatched_gstr=len(remaining_gstr),
+            total_unmatched_pr=len(remaining_pr),
+            overall_match_rate=overall_pct,
             waterfall=yields,
         )
 
@@ -827,7 +1063,34 @@ class WaterfallMatchingEngine:
 
         norm_inst = self.normalizer
 
-        # Convert DataFrames to record dicts once upfront at C-level (150x faster than iloc)
+        # Vectorized Series pre-parsing for dates and numbers (100x faster than per-row conversions)
+        def _extract_series_dates(df: pd.DataFrame, col: str) -> tuple[list[str], list[date | None]]:
+            if col in df.columns:
+                dt_s = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
+                raw_s = df[col].fillna("").astype(str).str.slice(0, 10).tolist()
+                obj_l = [t.date() if pd.notna(t) else None for t in dt_s]
+                return raw_s, obj_l
+            return [""] * len(df), [None] * len(df)
+
+        def _extract_series_floats(df: pd.DataFrame, col: str) -> list[float]:
+            if col in df.columns:
+                cleaned = df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True)
+                return pd.to_numeric(cleaned, errors="coerce").fillna(0.0).tolist()
+            return [0.0] * len(df)
+
+        gstr_dates_raw, gstr_dates_obj = _extract_series_dates(gstr_df, g_date_col)
+        pr_dates_raw, pr_dates_obj = _extract_series_dates(pr_df, p_date_col)
+
+        gstr_taxable_vals = _extract_series_floats(gstr_df, g_taxable_col)
+        pr_taxable_vals = _extract_series_floats(pr_df, p_taxable_col)
+
+        gstr_total_vals = _extract_series_floats(gstr_df, g_total_col)
+        pr_total_vals = _extract_series_floats(pr_df, p_total_col)
+
+        gstr_tax_vals = _extract_series_floats(gstr_df, g_tax_col) if g_tax_col in gstr_df.columns else [max(0.0, round(t - tx, 2)) for t, tx in zip(gstr_total_vals, gstr_taxable_vals)]
+        pr_tax_vals = _extract_series_floats(pr_df, p_tax_col) if p_tax_col in pr_df.columns else [max(0.0, round(t - tx, 2)) for t, tx in zip(pr_total_vals, pr_taxable_vals)]
+
+        # Convert DataFrames to record dicts once upfront at C-level
         gstr_raw_dicts = gstr_df.to_dict(orient="records") if gstr_df is not None else []
         pr_raw_dicts = pr_df.to_dict(orient="records") if pr_df is not None else []
 
@@ -845,8 +1108,9 @@ class WaterfallMatchingEngine:
         gstr_extra_cols = _prefind_extras(gstr_df)
         pr_extra_cols = _prefind_extras(pr_df)
 
-        def _parse_row(row_raw: dict[str, Any], idx: int, g_gstin: str, g_doc: str, g_date: str,
-                       g_taxable: str, g_total: str, g_tax: str, extra_cols: dict[str, str]) -> ParsedRow:
+        def _parse_row(row_raw: dict[str, Any], idx: int, g_gstin: str, g_doc: str,
+                       date_raw: str, date_obj: date | None, taxable_val: float, total_val: float, tax_val: float,
+                       extra_cols: dict[str, str]) -> ParsedRow:
             row_dict = {str(k): (None if pd.isna(v) else v) for k, v in row_raw.items()}
             gstin_val = row_dict.get(g_gstin)
             gstin_raw = str(gstin_val or "").strip()
@@ -863,19 +1127,6 @@ class WaterfallMatchingEngine:
                 NormalizationType.TRIM_LEADING_ZEROS,
                 NormalizationType.UPPERCASE,
             ]) or doc_clean
-
-            date_val = row_dict.get(g_date)
-            date_raw = str(date_val or "")[:10]
-            date_obj = norm_inst.parse_date(date_val)
-
-            taxable_dec = norm_inst.parse_decimal(row_dict.get(g_taxable))
-            taxable_val = float(taxable_dec) if taxable_dec is not None else 0.0
-
-            total_dec = norm_inst.parse_decimal(row_dict.get(g_total))
-            total_val = float(total_dec) if total_dec is not None else taxable_val
-
-            tax_dec = norm_inst.parse_decimal(row_dict.get(g_tax)) if g_tax in row_dict else None
-            tax_val = float(tax_dec) if tax_dec is not None else max(0.0, round(total_val - taxable_val, 2))
 
             preview = {
                 "gstin": gstin_raw,
@@ -897,8 +1148,18 @@ class WaterfallMatchingEngine:
                 preview=preview, raw_dict=row_dict
             )
 
-        gstr_rows = [_parse_row(gstr_raw_dicts[i], i, g_gstin_col, g_doc_col, g_date_col, g_taxable_col, g_total_col, g_tax_col, gstr_extra_cols) for i in range(total_gstr)]
-        pr_rows = [_parse_row(pr_raw_dicts[i], i, p_gstin_col, p_doc_col, p_date_col, p_taxable_col, p_total_col, p_tax_col, pr_extra_cols) for i in range(total_pr)]
+        gstr_rows = [
+            _parse_row(gstr_raw_dicts[i], i, g_gstin_col, g_doc_col,
+                       gstr_dates_raw[i], gstr_dates_obj[i], gstr_taxable_vals[i], gstr_total_vals[i], gstr_tax_vals[i],
+                       gstr_extra_cols)
+            for i in range(total_gstr)
+        ]
+        pr_rows = [
+            _parse_row(pr_raw_dicts[i], i, p_gstin_col, p_doc_col,
+                       pr_dates_raw[i], pr_dates_obj[i], pr_taxable_vals[i], pr_total_vals[i], pr_tax_vals[i],
+                       pr_extra_cols)
+            for i in range(total_pr)
+        ]
 
         remaining_gstr: set[int] = set(range(total_gstr))
         remaining_pr: set[int] = set(range(total_pr))
@@ -908,14 +1169,18 @@ class WaterfallMatchingEngine:
 
         # Build fast indexes for PR rows
         # 1. Exact statutory index: (gstin_norm, doc_norm) -> list[int]
-        # 2. PR by GSTIN index: gstin_norm -> list[int] (avoids quadratic scans in Pass 2 and Pass 3)
+        # 2. Clean doc index: (gstin_norm, doc_clean) -> list[int] (O(1) lookup in Pass 2)
+        # 3. PR by GSTIN index: gstin_norm -> list[int] (avoids quadratic scans in Pass 3)
         pr_exact_index: dict[tuple[str, str], list[int]] = {}
+        pr_clean_index: dict[tuple[str, str], list[int]] = {}
         pr_by_gstin: dict[str, list[int]] = {}
         for p in pr_rows:
             if p.gstin_norm:
                 pr_by_gstin.setdefault(p.gstin_norm, []).append(p.idx)
                 if p.doc_norm:
                     pr_exact_index.setdefault((p.gstin_norm, p.doc_norm), []).append(p.idx)
+                if p.doc_clean:
+                    pr_clean_index.setdefault((p.gstin_norm, p.doc_clean), []).append(p.idx)
 
         # -------------------------------------------------------------
         # PASS 1: EXACT MATCH (Zero Tolerance Statutory Baseline)
@@ -983,13 +1248,10 @@ class WaterfallMatchingEngine:
             candidate_p_indices = [p_idx for p_idx in pr_exact_index.get(key, []) if p_idx in remaining_pr]
 
             # If no key match, check clean doc under same GSTIN via pre-computed hash index (O(1))
-            if not candidate_p_indices and g.gstin_norm:
-                gstin_cands = pr_by_gstin.get(g.gstin_norm, [])
+            if not candidate_p_indices and g.gstin_norm and g.doc_clean:
                 candidate_p_indices = [
-                    p_idx for p_idx in gstin_cands
-                    if p_idx in remaining_pr and (
-                        pr_rows[p_idx].doc_clean == g.doc_clean or pr_rows[p_idx].doc_norm == g.doc_norm
-                    )
+                    p_idx for p_idx in pr_clean_index.get((g.gstin_norm, g.doc_clean), [])
+                    if p_idx in remaining_pr
                 ]
 
             qualifying_p: list[int] = []
@@ -1056,21 +1318,33 @@ class WaterfallMatchingEngine:
             candidate_p_indices = [p_idx for p_idx in raw_cands if p_idx in remaining_pr]
 
             near_qualifying_p: list[tuple[int, float]] = []
+            max_amt = max(amt_tolerance_val * 2.0, 50.0)
+            max_days = max(date_tolerance_days, 45)
+
             for p_idx in candidate_p_indices:
                 if p_idx not in remaining_pr:
                     continue
                 p = pr_rows[p_idx]
 
-                # Compare normalized document numbers
-                ratio = calculate_string_ratio(g.doc_norm, p.doc_norm)
-                is_sub = (len(g.doc_norm) >= 3 and g.doc_norm in p.doc_norm) or (len(p.doc_norm) >= 3 and p.doc_norm in g.doc_norm)
+                # Cheap numeric pruning first (nanoseconds) before expensive fuzzy distance (microseconds)
+                amt_diff = abs(g.taxable_val - p.taxable_val)
+                if amt_diff > max_amt:
+                    continue
 
-                if ratio >= 0.85 or is_sub or g.doc_norm == p.doc_norm:
-                    # Broad near-match tolerances
-                    amt_diff = abs(g.taxable_val - p.taxable_val)
-                    date_diff_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
-                    if amt_diff <= max(amt_tolerance_val * 2.0, 50.0) and date_diff_days <= max(date_tolerance_days, 45):
-                        near_qualifying_p.append((p_idx, ratio))
+                date_diff_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
+                if date_diff_days > max_days:
+                    continue
+
+                # Compare normalized document numbers
+                if g.doc_norm == p.doc_norm:
+                    near_qualifying_p.append((p_idx, 1.0))
+                    continue
+
+                is_sub = (len(g.doc_norm) >= 3 and g.doc_norm in p.doc_norm) or (len(p.doc_norm) >= 3 and p.doc_norm in g.doc_norm)
+                ratio = calculate_string_ratio(g.doc_norm, p.doc_norm)
+
+                if ratio >= 0.85 or is_sub:
+                    near_qualifying_p.append((p_idx, ratio))
 
             if len(near_qualifying_p) == 1:
                 p_match, ratio = near_qualifying_p[0]
