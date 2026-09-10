@@ -144,6 +144,22 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
     });
   }, [records, activeTab, searchQuery]);
 
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<number>(50);
+
+  // Reset page when tab, search, or page size changes
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchQuery, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
+
+  const paginatedRecords = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredRecords.slice(start, start + pageSize);
+  }, [filteredRecords, currentPage, pageSize]);
+
   // Tab counts
   const tabCounts = useMemo(() => {
     const counts = {
@@ -583,7 +599,15 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
               )}
             </div>
             <span className="v2-ledger-meta-info">
-              Showing {filteredRecords.length.toLocaleString()} of {records.length.toLocaleString()} records
+              Showing{" "}
+              {filteredRecords.length === 0
+                ? "0"
+                : `${((currentPage - 1) * pageSize + 1).toLocaleString()}–${Math.min(
+                    currentPage * pageSize,
+                    filteredRecords.length
+                  ).toLocaleString()}`}{" "}
+              of {filteredRecords.length.toLocaleString()} records
+              {totalPages > 1 && ` • Page ${currentPage} of ${totalPages}`}
             </span>
           </div>
         </div>
@@ -613,7 +637,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((rec) => {
+                paginatedRecords.map((rec) => {
                   const isExpanded = expandedRowId === rec.id;
                   return (
                     <React.Fragment key={rec.id}>
@@ -886,6 +910,82 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
             </tbody>
           </table>
         </div>
+
+        {/* Pagination Toolbar */}
+        {filteredRecords.length > 0 && (
+          <div className="v2-pagination-bar">
+            <div className="v2-pagination-left">
+              <span className="v2-pagination-info">
+                Showing <strong>{((currentPage - 1) * pageSize + 1).toLocaleString()}</strong> to{" "}
+                <strong>{Math.min(currentPage * pageSize, filteredRecords.length).toLocaleString()}</strong> of{" "}
+                <strong>{filteredRecords.length.toLocaleString()}</strong> records
+              </span>
+              <div className="v2-page-size-selector">
+                <label htmlFor="pageSizeSelect">Rows per page:</label>
+                <select
+                  id="pageSizeSelect"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="v2-page-select"
+                >
+                  <option value={25}>25</option>
+                  <option value={50}>50</option>
+                  <option value={100}>100</option>
+                  <option value={200}>200</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="v2-pagination-right">
+              <button
+                type="button"
+                className="v2-page-nav-btn"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                title="First Page"
+              >
+                «
+              </button>
+              <button
+                type="button"
+                className="v2-page-nav-btn"
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={currentPage === 1}
+                title="Previous Page"
+              >
+                ‹ Prev
+              </button>
+
+              <div className="v2-page-numbers">
+                <span className="v2-page-indicator">
+                  Page <strong>{currentPage}</strong> of <strong>{totalPages}</strong>
+                </span>
+              </div>
+
+              <button
+                type="button"
+                className="v2-page-nav-btn"
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={currentPage >= totalPages}
+                title="Next Page"
+              >
+                Next ›
+              </button>
+              <button
+                type="button"
+                className="v2-page-nav-btn"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage >= totalPages}
+                title="Last Page"
+              >
+                »
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 5. AMBIGUITY RESOLUTION MODAL / DRAWER */}

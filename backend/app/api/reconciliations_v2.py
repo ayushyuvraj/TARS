@@ -299,6 +299,21 @@ def _ensure_session(session_id: str) -> dict[str, Any]:
     return _V2_SESSIONS[session_id]
 
 
+def _persist_session_disk(session: dict[str, Any]) -> None:
+    try:
+        to_save = dict(session)
+        if "correlation" in to_save and hasattr(to_save["correlation"], "model_dump"):
+            to_save["correlation"] = to_save["correlation"].model_dump()
+        if "rules_v2" in to_save and isinstance(to_save["rules_v2"], list):
+            to_save["rules_v2"] = [r.model_dump() if hasattr(r, "model_dump") else r for r in to_save["rules_v2"]]
+        if "waterfall_passes" in to_save and isinstance(to_save["waterfall_passes"], list):
+            to_save["waterfall_passes"] = [p.model_dump() if hasattr(p, "model_dump") else p for p in to_save["waterfall_passes"]]
+        audit_v2_service.save_session(to_save)
+    except Exception as exc:
+        logger.warning(f"Could not persist session {session.get('id')}: {exc}")
+
+
+
 @router_v2.get("/{session_id}", response_model=ReconciliationV2Session)
 def get_v2_session(session_id: str) -> ReconciliationV2Session:
     data = _ensure_session(session_id)
@@ -544,6 +559,7 @@ def confirm_v2_waterfall(
     session = _V2_SESSIONS[session_id]
     session["waterfall_passes"] = req.passes
     session["status"] = "rules_confirmed"
+    _persist_session_disk(session)
     return ReconciliationV2Session(
         id=session["id"],
         status=session["status"],
@@ -570,6 +586,7 @@ def confirm_v2_rules(
     session["selected_rule_ids"] = update_req.selected_rule_ids
     session["rule_execution_order"] = update_req.rule_execution_order
     session["status"] = "rules_confirmed"
+    _persist_session_disk(session)
     return ReconciliationV2Session(
         id=session["id"],
         status=session["status"],
@@ -1120,8 +1137,15 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
     gov_path = _resolve_file(gov_path_str, pref_gov)
     pr_path = _resolve_file(pr_path_str, pref_pr)
 
-    gstr_df = _load_df_safely(gov_path)
-    pr_df = _load_df_safely(pr_path)
+    gstr_df = session.get("_cached_gstr_df")
+    if gstr_df is None or (isinstance(gstr_df, pd.DataFrame) and gstr_df.empty):
+        gstr_df = _load_df_safely(gov_path)
+        session["_cached_gstr_df"] = gstr_df
+
+    pr_df = session.get("_cached_pr_df")
+    if pr_df is None or (isinstance(pr_df, pd.DataFrame) and pr_df.empty):
+        pr_df = _load_df_safely(pr_path)
+        session["_cached_pr_df"] = pr_df
 
     raw_rules = session.get("rules_v2")
     rules: list[Rule2Item] = []

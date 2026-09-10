@@ -132,31 +132,65 @@ export const ReconciliationV2Workspace: React.FC = () => {
     }
   }, [routeStage, currentStage]);
 
-  // Session hydration on page refresh or direct URL navigation
+  // Session hydration / creation logic:
+  // 1. If routeSessionId is present in URL (e.g. /reconciliations-v2/:id or /reconciliations-v2/:id/:stage),
+  //    hydrate that specific session.
+  // 2. If routeSessionId is NOT present (e.g. landing on /reconciliations-v2 directly or clicking sidebar link),
+  //    automatically create a BRAND NEW session via apiV2.createSession() and redirect to /reconciliations-v2/<new-id>/setup.
   useEffect(() => {
-    const effectiveId = routeSessionId || localStorage.getItem("tars_v2_active_session_id") || "demo-v2-session";
-    if (effectiveId && !correlationResult && !isHydrating) {
-      setIsHydrating(true);
-      apiV2.getSession(effectiveId)
-        .then((sess) => {
-          setSessionId(sess.id);
-          localStorage.setItem("tars_v2_active_session_id", sess.id);
-          if (sess.correlation) {
-            setCorrelationResult(sess.correlation);
-            setAgentThoughts(sess.correlation.agent_thoughts || []);
-            if (sess.correlation.total_duration_ms) {
-              setTotalMeasuredDurationMs(sess.correlation.total_duration_ms);
+    if (isHydrating) return;
+
+    if (routeSessionId) {
+      if (sessionId !== routeSessionId || !correlationResult) {
+        setIsHydrating(true);
+        apiV2
+          .getSession(routeSessionId)
+          .then((sess) => {
+            setSessionId(sess.id);
+            localStorage.setItem("tars_v2_active_session_id", sess.id);
+            if (sess.correlation) {
+              setCorrelationResult(sess.correlation);
+              setAgentThoughts(sess.correlation.agent_thoughts || []);
+              if (sess.correlation.total_duration_ms) {
+                setTotalMeasuredDurationMs(sess.correlation.total_duration_ms);
+              }
             }
-          }
+          })
+          .catch((err) => {
+            console.warn("Could not hydrate V2 session, creating fresh session:", err);
+            apiV2.createSession().then((newSess) => {
+              setSessionId(newSess.id);
+              localStorage.setItem("tars_v2_active_session_id", newSess.id);
+              navigate(`/reconciliations-v2/${newSess.id}/setup`, { replace: true });
+            });
+          })
+          .finally(() => {
+            setIsHydrating(false);
+          });
+      }
+    } else {
+      setIsHydrating(true);
+      setGstrFile(null);
+      setPrFile(null);
+      setCorrelationResult(null);
+      setAgentThoughts([]);
+      setMappingConfirmed(false);
+      hasAutoTriggered.current = false;
+      apiV2
+        .createSession()
+        .then((newSess) => {
+          setSessionId(newSess.id);
+          localStorage.setItem("tars_v2_active_session_id", newSess.id);
+          navigate(`/reconciliations-v2/${newSess.id}/setup`, { replace: true });
         })
         .catch((err) => {
-          console.warn("Could not hydrate V2 session:", err);
+          console.error("Could not create new V2 session:", err);
         })
         .finally(() => {
           setIsHydrating(false);
         });
     }
-  }, [routeSessionId, correlationResult, isHydrating]);
+  }, [routeSessionId]);
 
   useEffect(() => {
     if (gstrFile && prFile && !hasAutoTriggered.current && currentStage === "setup") {
@@ -275,7 +309,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  const resetAll = () => {
+  const resetAll = async () => {
     setGstrFile(null);
     setPrFile(null);
     setCorrelationResult(null);
@@ -283,9 +317,14 @@ export const ReconciliationV2Workspace: React.FC = () => {
     setMappingConfirmed(false);
     hasAutoTriggered.current = false;
     setCurrentStage("setup");
-    if (sessionId) {
-      navigate(`/reconciliations-v2`);
+    try {
+      const sess = await apiV2.createSession();
+      setSessionId(sess.id);
+      localStorage.setItem("tars_v2_active_session_id", sess.id);
+      navigate(`/reconciliations-v2/${sess.id}/setup`, { replace: true });
+    } catch (err) {
       setSessionId(null);
+      navigate(`/reconciliations-v2`);
     }
   };
 
@@ -363,10 +402,10 @@ export const ReconciliationV2Workspace: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    const targetSessionId = sessionId || "demo-v2-session";
-                    if (!sessionId) setSessionId(targetSessionId);
-                    setCurrentStage(s.key);
-                    navigate(`/reconciliations-v2/${targetSessionId}/${s.key}`);
+                    if (sessionId) {
+                      setCurrentStage(s.key);
+                      navigate(`/reconciliations-v2/${sessionId}/${s.key}`);
+                    }
                   }}
                   className={`v2-pipeline-node ${isActive ? "is-active" : ""} ${isCompleted ? "is-completed" : ""}`}
                 >

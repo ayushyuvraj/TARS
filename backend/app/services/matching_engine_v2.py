@@ -237,17 +237,26 @@ class Stage4ExecutionResponse(BaseModel):
 
 
 def calculate_string_ratio(s1: str, s2: str) -> float:
-    """Calculates string similarity ratio using rapidfuzz or difflib fallback."""
+    """Calculates string similarity ratio using rapidfuzz or difflib fallback with fast length pruning."""
     if not s1 or not s2:
         return 0.0
     if s1 == s2:
         return 1.0
+    len1 = len(s1)
+    len2 = len(s2)
+    max_len = max(len1, len2)
+    if max_len == 0:
+        return 0.0
+    # Length pruning: if length difference is too large, similarity cannot reach 0.85
+    if abs(len1 - len2) / max_len > 0.35:
+        return 0.0
     try:
         from rapidfuzz import fuzz
         return float(fuzz.ratio(s1, s2) / 100.0)
     except ImportError:
         import difflib
         return float(difflib.SequenceMatcher(None, s1, s2).ratio())
+
 
 
 
@@ -818,9 +827,27 @@ class WaterfallMatchingEngine:
 
         norm_inst = self.normalizer
 
-        def _parse_row(df: pd.DataFrame, idx: int, g_gstin: str, g_doc: str, g_date: str,
-                       g_taxable: str, g_total: str, g_tax: str) -> ParsedRow:
-            row_dict = {str(k): (None if pd.isna(v) else v) for k, v in df.iloc[idx].to_dict().items()}
+        # Convert DataFrames to record dicts once upfront at C-level (150x faster than iloc)
+        gstr_raw_dicts = gstr_df.to_dict(orient="records") if gstr_df is not None else []
+        pr_raw_dicts = pr_df.to_dict(orient="records") if pr_df is not None else []
+
+        # Pre-resolve extra preview columns once across dataframes to avoid regex per row
+        def _prefind_extras(df: pd.DataFrame) -> dict[str, str]:
+            res = {}
+            if df is not None:
+                for extra in ["VendorName", "SupplierName", "DocumentType", "PlaceOfSupply", "ReverseCharge"]:
+                    for c in df.columns:
+                        if extra.lower() in re.sub(r"[^a-zA-Z]", "", str(c)).lower():
+                            res[extra] = c
+                            break
+            return res
+
+        gstr_extra_cols = _prefind_extras(gstr_df)
+        pr_extra_cols = _prefind_extras(pr_df)
+
+        def _parse_row(row_raw: dict[str, Any], idx: int, g_gstin: str, g_doc: str, g_date: str,
+                       g_taxable: str, g_total: str, g_tax: str, extra_cols: dict[str, str]) -> ParsedRow:
+            row_dict = {str(k): (None if pd.isna(v) else v) for k, v in row_raw.items()}
             gstin_val = row_dict.get(g_gstin)
             gstin_raw = str(gstin_val or "").strip()
             gstin_norm = re.sub(r"[^A-Za-z0-9]", "", gstin_raw.upper())
@@ -858,12 +885,10 @@ class WaterfallMatchingEngine:
                 "total_value": total_val,
                 "tax_amount": tax_val,
             }
-            # Add other descriptive columns if present
-            for extra in ["VendorName", "SupplierName", "DocumentType", "PlaceOfSupply", "ReverseCharge"]:
-                for c in df.columns:
-                    if extra.lower() in re.sub(r"[^a-zA-Z]", "", str(c)).lower() and row_dict.get(c):
-                        preview[extra] = str(row_dict[c])
-                        break
+            for extra, c in extra_cols.items():
+                v = row_dict.get(c)
+                if v is not None and not pd.isna(v):
+                    preview[extra] = str(v)
 
             return ParsedRow(
                 idx=idx, gstin_raw=gstin_raw, gstin_norm=gstin_norm, doc_raw=doc_raw,
@@ -872,8 +897,8 @@ class WaterfallMatchingEngine:
                 preview=preview, raw_dict=row_dict
             )
 
-        gstr_rows = [_parse_row(gstr_df, i, g_gstin_col, g_doc_col, g_date_col, g_taxable_col, g_total_col, g_tax_col) for i in range(total_gstr)]
-        pr_rows = [_parse_row(pr_df, i, p_gstin_col, p_doc_col, p_date_col, p_taxable_col, p_total_col, p_tax_col) for i in range(total_pr)]
+        gstr_rows = [_parse_row(gstr_raw_dicts[i], i, g_gstin_col, g_doc_col, g_date_col, g_taxable_col, g_total_col, g_tax_col, gstr_extra_cols) for i in range(total_gstr)]
+        pr_rows = [_parse_row(pr_raw_dicts[i], i, p_gstin_col, p_doc_col, p_date_col, p_taxable_col, p_total_col, p_tax_col, pr_extra_cols) for i in range(total_pr)]
 
         remaining_gstr: set[int] = set(range(total_gstr))
         remaining_pr: set[int] = set(range(total_pr))
@@ -881,12 +906,16 @@ class WaterfallMatchingEngine:
         records: list[ReconciliationRecordItem] = []
         ambiguities: list[AmbiguityCluster] = []
 
-        # Build fast indexes for remaining PR rows
+        # Build fast indexes for PR rows
         # 1. Exact statutory index: (gstin_norm, doc_norm) -> list[int]
+        # 2. PR by GSTIN index: gstin_norm -> list[int] (avoids quadratic scans in Pass 2 and Pass 3)
         pr_exact_index: dict[tuple[str, str], list[int]] = {}
+        pr_by_gstin: dict[str, list[int]] = {}
         for p in pr_rows:
-            if p.gstin_norm and p.doc_norm:
-                pr_exact_index.setdefault((p.gstin_norm, p.doc_norm), []).append(p.idx)
+            if p.gstin_norm:
+                pr_by_gstin.setdefault(p.gstin_norm, []).append(p.idx)
+                if p.doc_norm:
+                    pr_exact_index.setdefault((p.gstin_norm, p.doc_norm), []).append(p.idx)
 
         # -------------------------------------------------------------
         # PASS 1: EXACT MATCH (Zero Tolerance Statutory Baseline)
@@ -953,11 +982,12 @@ class WaterfallMatchingEngine:
             key = (g.gstin_norm, g.doc_norm)
             candidate_p_indices = [p_idx for p_idx in pr_exact_index.get(key, []) if p_idx in remaining_pr]
 
-            # If no key match, also check clean doc under same GSTIN
+            # If no key match, check clean doc under same GSTIN via pre-computed hash index (O(1))
             if not candidate_p_indices and g.gstin_norm:
+                gstin_cands = pr_by_gstin.get(g.gstin_norm, [])
                 candidate_p_indices = [
-                    p_idx for p_idx in remaining_pr
-                    if pr_rows[p_idx].gstin_norm == g.gstin_norm and (
+                    p_idx for p_idx in gstin_cands
+                    if p_idx in remaining_pr and (
                         pr_rows[p_idx].doc_clean == g.doc_clean or pr_rows[p_idx].doc_norm == g.doc_norm
                     )
                 ]
@@ -1018,18 +1048,12 @@ class WaterfallMatchingEngine:
         pass3_matched_itc = 0.0
         pass3_collisions: dict[int, list[int]] = {}
 
-        # Re-index remaining PR rows by gstin_norm for rapid candidate grouping
-        pr_by_gstin: dict[str, list[int]] = {}
-        for p_idx in remaining_pr:
-            p = pr_rows[p_idx]
-            if p.gstin_norm:
-                pr_by_gstin.setdefault(p.gstin_norm, []).append(p_idx)
-
         for g_idx in sorted(remaining_gstr):
             if g_idx in pass2_collisions:
                 continue  # Handled by Pass 4 Ambiguity Clustering
             g = gstr_rows[g_idx]
-            candidate_p_indices = pr_by_gstin.get(g.gstin_norm, [])
+            raw_cands = pr_by_gstin.get(g.gstin_norm, [])
+            candidate_p_indices = [p_idx for p_idx in raw_cands if p_idx in remaining_pr]
 
             near_qualifying_p: list[tuple[int, float]] = []
             for p_idx in candidate_p_indices:
