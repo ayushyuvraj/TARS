@@ -1,13 +1,17 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Dynamic Multi-Column Reconciliation & Explicit Plain-English Audit Reasons Checkpoint (11th September 2026)
+## Stage 4 Compact Layout & Collapsible Waterfall Flow Checkpoint (11th September 2026)
 
-- **Checkpoint Name**: `Dynamic Multi-Column Reconciliation & Explicit Plain-English Audit Reasons Checkpoint`
+- **Checkpoint Name**: `Stage 4 Compact Layout & Collapsible Waterfall Flow Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-dynamic-multicolumn-reconciliation-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-stage4-fast-trigger-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-11-collapsible-waterfall-flow-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-dynamic-multicolumn-reconciliation-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Achieved zero-hardcoding dynamic multi-column matching in the 5-pass progressive waterfall (dynamically evaluating any $N$ active rules across both datasets), full user sovereignty with statutory caution guardrails (honoring user omission of core statutory columns), dynamic multi-column inspection drawer in Stage 4 rendering side-by-side consensus and auxiliary comparisons, and synthesized plain-English classification audit rationales on every reconciled/unreconciled record. Tested and benchmarked at 8.66s for 10k rows x 17 rules.
+- **Current Objective**: Stage 4 Results UI compressed and optimized for zero-waste vertical layout:
+  1. *Collapsible Waterfall Flow*: "Progressive Elimination Waterfall Flow" card now defaults to collapsed mode with a single slim bar, animated dropdown button ("View Flow" / "Hide Flow"), rotating chevron, and click-anywhere header toggle.
+  2. *Streamlined KPI Row*: Replaced bulky multi-row KPI grid with a dedicated highlighted Overall Accuracy unit and a single compact 6-box status strip (Exact, Tolerance, Near, Ambiguous, 2B Only, PR Only).
+  3. *Compressed Hero Banner*: Compacted deterministic matrix hero banner height by >50% with inline badge alignment.
+  4. *Dynamic Multi-Column Engine & Audit Explanations*: Zero-hardcoding multi-column matching engine, user sovereignty guardrails, and plain-English classification rationales.
 
 ---
 
