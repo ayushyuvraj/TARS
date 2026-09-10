@@ -447,133 +447,114 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
         </div>
       </div>
 
-      {/* 2. EXECUTIVE 6-CARD KPI HUD */}
+      {/* 2. OVERALL RECONCILIATION ACCURACY UNIT (SEPARATE HIGHLIGHTED BOX) */}
       {summary && (
-        <div className="v2-kpi-hud-grid">
-          {/* Card 1: Overall Reconciliation Rate */}
-          <div
-            className={`v2-kpi-card hero ${activeTab === "ALL" ? "is-active" : ""}`}
-            onClick={() => setActiveTab("ALL")}
-          >
-            <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Reconciliation Rate</span>
-              <div className="v2-kpi-glyph">
-                <TrendingUp size={16} />
-              </div>
+        <div
+          className={`v2-accuracy-hero-banner ${activeTab === "ALL" ? "is-active" : ""}`}
+          onClick={() => setActiveTab("ALL")}
+          title="Click to view all records"
+        >
+          <div className="v2-accuracy-left">
+            <div className="v2-accuracy-icon-wrap">
+              <TrendingUp size={18} color="#ffffff" />
             </div>
-            <div className="v2-kpi-value-row">
-              <span className="v2-kpi-value">{summary.overall_reconciliation_rate}%</span>
-              <span className="v2-kpi-unit">matched</span>
-            </div>
-            <div className="v2-kpi-subtext">
-              <span>Total Reconciled:</span>
-              <strong>{(summary.total_reconciled_count || 0).toLocaleString()} rows</strong>
-            </div>
-            <div className="v2-kpi-subtext">
-              <span>Matched ITC:</span>
-              <strong>₹{summary.total_reconciled_itc.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</strong>
+            <div className="v2-accuracy-title-group">
+              <span className="v2-accuracy-title">Reconciliation Accuracy &amp; Health</span>
+              <span className="v2-accuracy-sub">Overall progressive waterfall consensus across active statutory rules</span>
             </div>
           </div>
+          <div className="v2-accuracy-right">
+            <div className="v2-accuracy-stat-pill">
+              <span className="v2-accuracy-rate-val">{summary.overall_reconciliation_rate}%</span>
+              <span className="v2-accuracy-rate-lbl">Accuracy</span>
+            </div>
+            <div className="v2-accuracy-count-tag">
+              Total Reconciled: <strong>{(summary.total_reconciled_count || 0).toLocaleString()}</strong> of {(summary.total_gstr_rows || 0).toLocaleString()} portal rows
+            </div>
+            <button
+              type="button"
+              className="v2-accuracy-view-all-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                setActiveTab("ALL");
+              }}
+            >
+              View All ({records.length.toLocaleString()})
+            </button>
+          </div>
+        </div>
+      )}
 
-          {/* Card 2: Pass 1 Exact Matches */}
+      {/* 3. EXECUTIVE 6-CATEGORY SUMMARY (IN ONE COMPACT LINE) */}
+      {summary && (
+        <div className="v2-kpi-hud-grid">
+          {/* Box 1: Exact Matches */}
           <div
             className={`v2-kpi-card exact ${activeTab === "EXACT_MATCH" ? "is-active" : ""}`}
             onClick={() => setActiveTab("EXACT_MATCH")}
+            title="Filter by Exact Matches"
           >
             <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Exact Matches</span>
+              <span className="v2-kpi-label">Exact Match</span>
               <div className="v2-kpi-glyph">
-                <CheckCircle2 size={16} />
+                <CheckCircle2 size={15} />
               </div>
             </div>
             <div className="v2-kpi-value-row">
               <span className="v2-kpi-value">{(summary.exact_match_count || 0).toLocaleString()}</span>
               <span className="v2-kpi-unit">rows</span>
             </div>
-            <div className="v2-kpi-subtext">
-              <span>Pass 1 (0 Tol):</span>
-              <strong>
-                {summary.total_gstr_rows > 0
-                  ? ((summary.exact_match_count / summary.total_gstr_rows) * 100).toFixed(1)
-                  : 0}
-                %
-              </strong>
-            </div>
-            <div className="v2-kpi-subtext">
-              <span>ITC Value:</span>
-              <strong>₹{summary.exact_match_itc.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</strong>
-            </div>
+            <div className="v2-kpi-caption">Pass 1 • Zero Variance</div>
           </div>
 
-          {/* Card 3: Pass 2 Tolerance Matched */}
+          {/* Box 2: Tolerance Matched */}
           <div
             className={`v2-kpi-card tolerance ${activeTab === "TOLERANCE_MATCH" ? "is-active" : ""}`}
             onClick={() => setActiveTab("TOLERANCE_MATCH")}
+            title="Filter by Tolerance Matches"
           >
             <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Tolerance Matched</span>
+              <span className="v2-kpi-label">Tolerance Match</span>
               <div className="v2-kpi-glyph">
-                <Zap size={16} />
+                <Zap size={15} />
               </div>
             </div>
             <div className="v2-kpi-value-row">
               <span className="v2-kpi-value">{(summary.tolerance_match_count || 0).toLocaleString()}</span>
               <span className="v2-kpi-unit">rows</span>
             </div>
-            <div className="v2-kpi-subtext">
-              <span>Pass 2 (Stage 3):</span>
-              <strong>
-                {summary.total_gstr_rows > 0
-                  ? ((summary.tolerance_match_count / summary.total_gstr_rows) * 100).toFixed(1)
-                  : 0}
-                %
-              </strong>
-            </div>
-            <div className="v2-kpi-subtext">
-              <span>ITC Value:</span>
-              <strong>₹{summary.tolerance_match_itc.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</strong>
-            </div>
+            <div className="v2-kpi-caption">Pass 2 • Margin Bounds</div>
           </div>
 
-          {/* Card 4: Pass 3 Near Match */}
+          {/* Box 3: Near Matches */}
           <div
             className={`v2-kpi-card near ${activeTab === "NEAR_MATCH" ? "is-active" : ""}`}
             onClick={() => setActiveTab("NEAR_MATCH")}
+            title="Filter by Near Matches"
           >
             <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Near Matches</span>
+              <span className="v2-kpi-label">Near Match</span>
               <div className="v2-kpi-glyph">
-                <Layers size={16} />
+                <Layers size={15} />
               </div>
             </div>
             <div className="v2-kpi-value-row">
               <span className="v2-kpi-value">{(summary.near_match_count || 0).toLocaleString()}</span>
               <span className="v2-kpi-unit">rows</span>
             </div>
-            <div className="v2-kpi-subtext">
-              <span>Pass 3 (Fuzzy):</span>
-              <strong>
-                {summary.total_gstr_rows > 0
-                  ? ((summary.near_match_count / summary.total_gstr_rows) * 100).toFixed(1)
-                  : 0}
-                %
-              </strong>
-            </div>
-            <div className="v2-kpi-subtext">
-              <span>ITC Value:</span>
-              <strong>₹{summary.near_match_itc.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</strong>
-            </div>
+            <div className="v2-kpi-caption">Pass 3 • Normalized Ref</div>
           </div>
 
-          {/* Card 5: Pass 4 Ambiguous (Quarantined) */}
+          {/* Box 4: Ambiguous Multi */}
           <div
             className={`v2-kpi-card ambiguous ${activeTab === "AMBIGUOUS" ? "is-active" : ""}`}
             onClick={() => setActiveTab("AMBIGUOUS")}
+            title="Filter by Ambiguous Cases"
           >
             <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Ambiguous Multi</span>
+              <span className="v2-kpi-label">Ambiguous</span>
               <div className="v2-kpi-glyph">
-                <Split size={16} />
+                <Split size={15} />
               </div>
             </div>
             <div className="v2-kpi-value-row">
@@ -582,41 +563,49 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
               </span>
               <span className="v2-kpi-unit">cases</span>
             </div>
-            <div className="v2-kpi-subtext">
-              <span>Pass 4 (Collision):</span>
-              <strong>Requires Review</strong>
-            </div>
-            <div className="v2-kpi-subtext">
-              <span>At-Stake ITC:</span>
-              <strong>₹{summary.ambiguous_itc.toLocaleString("en-IN", { maximumFractionDigits: 0 })}</strong>
-            </div>
+            <div className="v2-kpi-caption">Pass 4 • Multi-Candidate</div>
           </div>
 
-          {/* Card 6: Pass 5 Single-Sided Residuals */}
+          {/* Box 5: GSTR 2B Only */}
           <div
-            className={`v2-kpi-card residual ${activeTab === "GSTR_ONLY" || activeTab === "PR_ONLY" ? "is-active" : ""}`}
+            className={`v2-kpi-card gstr-only ${activeTab === "GSTR_ONLY" ? "is-active" : ""}`}
             onClick={() => setActiveTab("GSTR_ONLY")}
+            title="Filter by GSTR-2B Only"
           >
             <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Single-Sided</span>
+              <span className="v2-kpi-label">GSTR 2B Only</span>
               <div className="v2-kpi-glyph">
-                <AlertTriangle size={16} />
+                <AlertTriangle size={15} />
               </div>
             </div>
             <div className="v2-kpi-value-row">
-              <span className="v2-kpi-value" style={{ color: "#dc2626" }}>
-                {((summary.gstr_only_count || 0) + (summary.pr_only_count || 0)).toLocaleString()}
+              <span className="v2-kpi-value" style={{ color: "#0284c7" }}>
+                {(summary.gstr_only_count || 0).toLocaleString()}
               </span>
-              <span className="v2-kpi-unit">unmatched</span>
+              <span className="v2-kpi-unit">rows</span>
             </div>
-            <div className="v2-kpi-subtext">
-              <span>In 2B Only:</span>
-              <strong>{(summary.gstr_only_count || 0).toLocaleString()}</strong>
+            <div className="v2-kpi-caption">Pass 5 • Unclaimed Credit</div>
+          </div>
+
+          {/* Box 6: PR Only */}
+          <div
+            className={`v2-kpi-card pr-only ${activeTab === "PR_ONLY" ? "is-active" : ""}`}
+            onClick={() => setActiveTab("PR_ONLY")}
+            title="Filter by PR Only (In Books Only)"
+          >
+            <div className="v2-kpi-top">
+              <span className="v2-kpi-label">PR Only</span>
+              <div className="v2-kpi-glyph">
+                <AlertCircle size={15} />
+              </div>
             </div>
-            <div className="v2-kpi-subtext">
-              <span>In Books Only:</span>
-              <strong>{(summary.pr_only_count || 0).toLocaleString()}</strong>
+            <div className="v2-kpi-value-row">
+              <span className="v2-kpi-value" style={{ color: "#e11d48" }}>
+                {(summary.pr_only_count || 0).toLocaleString()}
+              </span>
+              <span className="v2-kpi-unit">rows</span>
             </div>
+            <div className="v2-kpi-caption">Pass 5 • Missing in 2B</div>
           </div>
         </div>
       )}

@@ -150,45 +150,162 @@
   transform: translateY(-1px);
 }
 
-/* --- Executive 6-Card KPI HUD --- */
+/* --- Separate Reconciliation Accuracy Banner --- */
+.v2-accuracy-hero-banner {
+  background: linear-gradient(135deg, #0f2b5c 0%, #00338d 55%, #0284c7 100%);
+  border-radius: 12px;
+  padding: 12px 18px;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  box-shadow: 0 4px 12px rgba(0, 51, 141, 0.12);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.v2-accuracy-hero-banner:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(0, 51, 141, 0.18);
+}
+
+.v2-accuracy-hero-banner.is-active {
+  box-shadow: 0 0 0 2.5px #38bdf8, 0 6px 16px rgba(0, 51, 141, 0.2);
+}
+
+.v2-accuracy-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.v2-accuracy-icon-wrap {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.18);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  backdrop-filter: blur(4px);
+}
+
+.v2-accuracy-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.v2-accuracy-title {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: #ffffff;
+}
+
+.v2-accuracy-sub {
+  font-size: 11.5px;
+  color: #bae6fd;
+}
+
+.v2-accuracy-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.v2-accuracy-stat-pill {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.14);
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.v2-accuracy-rate-val {
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.4px;
+}
+
+.v2-accuracy-rate-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: #e0f2fe;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.v2-accuracy-count-tag {
+  font-size: 12px;
+  color: #e0f2fe;
+}
+
+.v2-accuracy-count-tag strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.v2-accuracy-view-all-btn {
+  padding: 5px 12px;
+  background: #ffffff;
+  color: #00338d;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.v2-accuracy-view-all-btn:hover {
+  background: #f0f9ff;
+  color: #0284c7;
+}
+
+/* --- Executive 6-Category Summary (In One Line) --- */
 .v2-kpi-hud-grid {
   display: grid;
   grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
 }
 
-@media (max-width: 1560px) {
+@media (max-width: 1120px) {
   .v2-kpi-hud-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
+    gap: 10px;
   }
 }
 
-@media (max-width: 860px) {
+@media (max-width: 640px) {
   .v2-kpi-hud-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 580px) {
-  .v2-kpi-hud-grid {
-    grid-template-columns: 1fr;
+    gap: 8px;
   }
 }
 
 .v2-kpi-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
-  border-radius: 14px;
-  padding: 14px 16px;
+  border-radius: 10px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.03);
-  transition: all 0.2s ease;
+  gap: 4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+  transition: all 0.18s ease;
   position: relative;
   overflow: hidden;
   cursor: pointer;
@@ -198,12 +315,12 @@
 
 .v2-kpi-card:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px -4px rgba(0, 0, 0, 0.08);
+  box-shadow: 0 6px 14px -3px rgba(0, 0, 0, 0.07);
 }
 
 .v2-kpi-card.is-active {
   border-color: #0284c7;
-  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.22);
 }
 
 .v2-kpi-card::before {
@@ -212,15 +329,15 @@
   top: 0;
   left: 0;
   right: 0;
-  height: 3.5px;
+  height: 3px;
 }
 
-.v2-kpi-card.hero::before { background: linear-gradient(90deg, #00338d, #0284c7); }
 .v2-kpi-card.exact::before { background: #10b981; }
 .v2-kpi-card.tolerance::before { background: #3b82f6; }
 .v2-kpi-card.near::before { background: #8b5cf6; }
 .v2-kpi-card.ambiguous::before { background: #f59e0b; }
-.v2-kpi-card.residual::before { background: #ef4444; }
+.v2-kpi-card.gstr-only::before { background: #0284c7; }
+.v2-kpi-card.pr-only::before { background: #e11d48; }
 
 .v2-kpi-top {
   display: flex;
@@ -229,29 +346,42 @@
 }
 
 .v2-kpi-label {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   color: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .v2-kpi-glyph {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
 }
 
-.v2-kpi-card.hero .v2-kpi-glyph { background: #e0f2fe; color: #0369a1; }
 .v2-kpi-card.exact .v2-kpi-glyph { background: #ecfdf5; color: #059669; }
 .v2-kpi-card.tolerance .v2-kpi-glyph { background: #eff6ff; color: #2563eb; }
 .v2-kpi-card.near .v2-kpi-glyph { background: #f5f3ff; color: #7c3aed; }
 .v2-kpi-card.ambiguous .v2-kpi-glyph { background: #fffbeb; color: #d97706; }
-.v2-kpi-card.residual .v2-kpi-glyph { background: #fef2f2; color: #dc2626; }
+.v2-kpi-card.gstr-only .v2-kpi-glyph { background: #e0f2fe; color: #0284c7; }
+.v2-kpi-card.pr-only .v2-kpi-glyph { background: #ffe4e6; color: #e11d48; }
+
+.v2-kpi-caption {
+  font-size: 10.5px;
+  color: #64748b;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
 
 .v2-kpi-value-row {
   display: flex;
