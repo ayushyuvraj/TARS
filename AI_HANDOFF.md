@@ -1,13 +1,13 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Dynamic Session State — Audit 2.0 & 7-Stage Reconciliation 2.0 Checkpoint (10th September 2026)
+## Dynamic Session State — Stage 4 Results Matrix, Ambiguity Hub & Responsive Layout Checkpoint (10th September 2026)
 
-- **Checkpoint Name**: `Audit 2.0 Mission Control, Zero-Loss Persistence & 7-Stage Reconciliation Checkpoint`
+- **Checkpoint Name**: `Stage 4 Multi-Pass Waterfall Results Matrix, Ambiguity Disambiguation Hub & Responsive Layout Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-10-audit-v2-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-10-rules-governance-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-10-stage4-results-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-10-audit-v2-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Audit 2.0 (`/audit-v2`) mission control with executive telemetry HUD, master-detail historical run journal, 4-tab deep inspector (waterfall micro-durations, error & anomaly captures with AI remediation, terminal logs, control plane with session resume), zero-loss session persistence engine (`audit_v2_service.py`), and 7-stage Reconciliation 2.0 pipeline.
+- **Current Objective**: 5-tier progressive elimination waterfall matching engine (`matching_engine_v2.py`), Stage 4 Results Matrix & Human-in-the-Loop Ambiguity Disambiguation Hub, Rules 2.0 core statutory guardrails under Section 16 & Rule 46, and full-bleed responsive layout with smooth scroll architecture.
 
 ---
 
@@ -18,14 +18,19 @@
    - **7 Stages in Total**: Clean sequential progression:
      1. `Setup` *(Dual Ingestion)*
      2. `Mapping 2.0` *(AI Schema Coupling)*
-     3. `Rules` *(Reconciliation Rules Studio)*
-     4. `Results` *(Reconciliation Matrix)*
+     3. `Rules` *(Reconciliation Rules Studio & Statutory Core Advisory Guardrails)*
+     4. `Results` *(Multi-Pass Waterfall Match Matrix & Ambiguity Disambiguation Hub)*
      5. `Near matches` *(AI Discrepancy Hub)*
      6. `Exceptions` *(Audit Resolution)*
      7. `Export` *(Ledger Dispatch & ERP Vouchers)*
-     *(In-workflow Step 7 Audit removed; all audit capabilities elevated into centralized Audit 2.0)*
-   - **Zero Session Loss Guarantee**: Crash-proof disk persistence (`data/audit_v2/` via `AuditV2Service`). State, uploaded workbooks, correlated columns, custom rules, and simulated metrics reload automatically across server reloads and browser refreshes.
-   - **Audit 2.0 Mission Control (`/audit-v2`)**: Integrated into top-level navigation, providing full observability across every session and run, sub-millisecond step telemetry, error diagnostics, and a one-click "Resume in Workspace" control plane.
+   - **Stage 4 Results Engine**:
+     - *Pass 1 (Exact Match)*: Zero-tolerance match on statutory identity fields.
+     - *Pass 2 (Tolerance Matched)*: Evaluates Stage 3 configured tolerances ($\pm ₹10$, $1\%$, $\pm 30$ days) with strict 1:1 collision safety.
+     - *Pass 3 (Near Match)*: Punctuation, prefix (`INV/BILL`), and zero-stripping with fuzzy ratio $\ge 85\%$.
+     - *Pass 4 (Ambiguity Clustering)*: Quarantines 1:N / N:1 collisions into clusters with confidence scoring and side-by-side HITL disambiguation.
+     - *Pass 5 (Single-Sided Residuals)*: Classifies unclaimed credit (`GSTR_ONLY`) and DRC-01C risk (`PR_ONLY`).
+   - **Zero Session Loss Guarantee**: Crash-proof disk persistence (`data/audit_v2/` via `AuditV2Service`).
+   - **Responsive Screen Fit & Scroll**: Enforces `minmax(0, 1fr)` grid tracks, 3-column KPI card layout, and `overflow: auto` scrollable stage canvas across all workspace steps.
 
 ## Operational Capabilities & State Summary
 

@@ -65,6 +65,9 @@ class Rule2Item(BaseModel):
     ai_rationale: str | None = None
     is_ai_suggested: bool = False
     is_custom: bool = False
+    rule_tier: str = "COMMERCIAL_POLICY"  # "CORE_STATUTORY", "COMMERCIAL_POLICY", "AUXILIARY_METADATA"
+    statutory_reference: str | None = None
+    advisory_caution: str | None = None
     created_at: str | None = None
     created_by: str | None = None
     created_in_run: str | None = None
@@ -142,6 +145,110 @@ class SimulationResult(BaseModel):
     total_unmatched_pr: int
     overall_match_rate: float
     waterfall: list[SimulationYield] = Field(default_factory=list)
+
+
+# --- Stage 4 Results Models ---
+
+class ScoreBreakdown(BaseModel):
+    invoice_similarity: float = 0.0
+    amount_score: float = 0.0
+    date_score: float = 0.0
+    tax_score: float = 0.0
+
+
+class AmbiguityCandidate(BaseModel):
+    candidate_id: str
+    pr_row_index: int
+    pr_record_id: str
+    confidence_score: float
+    score_breakdown: ScoreBreakdown
+    detected_differences: list[str] = Field(default_factory=list)
+    ai_reason: str
+    pr_preview: dict[str, Any] = Field(default_factory=dict)
+
+
+class AmbiguityCluster(BaseModel):
+    cluster_id: str
+    gstr_row_index: int
+    gstr_record_id: str
+    anchor_preview: dict[str, Any] = Field(default_factory=dict)
+    candidates: list[AmbiguityCandidate] = Field(default_factory=list)
+    ai_justification: str
+    status: str = "PENDING_REVIEW"  # PENDING_REVIEW, RESOLVED
+    resolved_pr_record_id: str | None = None
+    resolved_pr_row_index: int | None = None
+    resolved_at: str | None = None
+
+
+class ReconciliationRecordItem(BaseModel):
+    id: str
+    bucket: str  # EXACT_MATCH, TOLERANCE_MATCH, NEAR_MATCH, AMBIGUOUS, GSTR_ONLY, PR_ONLY, RESOLVED_MANUALLY
+    gstr_row_index: int | None = None
+    pr_row_index: int | None = None
+    gstr_record_id: str | None = None
+    pr_record_id: str | None = None
+    gstin: str = ""
+    document_number: str = ""
+    document_date: str | None = None
+    taxable_value: float = 0.0
+    tax_amount: float = 0.0
+    total_value: float = 0.0
+    gstr_preview: dict[str, Any] = Field(default_factory=dict)
+    pr_preview: dict[str, Any] = Field(default_factory=dict)
+    variances: dict[str, Any] = Field(default_factory=dict)
+    matched_by_pass: str = ""
+    ambiguity_cluster_id: str | None = None
+
+
+class WaterfallPassYield(BaseModel):
+    tier: int
+    name: str
+    matched_count: int
+    matched_itc: float
+    retention_percentage: float
+
+
+class Stage4ResultsSummary(BaseModel):
+    total_gstr_rows: int
+    total_pr_rows: int
+    exact_match_count: int
+    exact_match_itc: float
+    tolerance_match_count: int
+    tolerance_match_itc: float
+    near_match_count: int
+    near_match_itc: float
+    ambiguous_count: int
+    ambiguous_itc: float
+    gstr_only_count: int
+    gstr_only_itc: float
+    pr_only_count: int
+    pr_only_itc: float
+    total_reconciled_count: int
+    total_reconciled_itc: float
+    overall_reconciliation_rate: float
+    waterfall_passes: list[WaterfallPassYield] = Field(default_factory=list)
+
+
+class Stage4ExecutionResponse(BaseModel):
+    session_id: str
+    summary: Stage4ResultsSummary
+    records: list[ReconciliationRecordItem] = Field(default_factory=list)
+    ambiguities: list[AmbiguityCluster] = Field(default_factory=list)
+
+
+def calculate_string_ratio(s1: str, s2: str) -> float:
+    """Calculates string similarity ratio using rapidfuzz or difflib fallback."""
+    if not s1 or not s2:
+        return 0.0
+    if s1 == s2:
+        return 1.0
+    try:
+        from rapidfuzz import fuzz
+        return float(fuzz.ratio(s1, s2) / 100.0)
+    except ImportError:
+        import difflib
+        return float(difflib.SequenceMatcher(None, s1, s2).ratio())
+
 
 
 class ValueNormalizer:
@@ -608,6 +715,636 @@ class WaterfallMatchingEngine:
             waterfall=yields,
         )
 
+    def execute_stage4_waterfall(
+        self,
+        gstr_df: pd.DataFrame,
+        pr_df: pd.DataFrame,
+        rules: list[Rule2Item],
+        session_id: str = "",
+        llm_provider: Any = None,
+    ) -> Stage4ExecutionResponse:
+        """
+        Executes the 5-tier progressive elimination reconciliation waterfall for Stage 4:
+        Pass 1: Exact Match (zero-tolerance match across GSTIN, clean Doc #, Date, Values)
+        Pass 2: Tolerance Matched (Stage 3 configured tolerances for remaining rows)
+        Pass 3: Near Match (Advanced prefix stripping, leading zero trimming, fuzzy edit distance >= 85%)
+        Pass 4: Ambiguity Clustering (Quarantines multi-matches 1:N and N:1 with deterministic confidence vector)
+        Pass 5: Single-Sided Residuals (GSTR Only / Missing in Books vs PR Only / DRC-01C Ineligibility Risk)
+        """
+        total_gstr = len(gstr_df) if gstr_df is not None else 0
+        total_pr = len(pr_df) if pr_df is not None else 0
+
+        if total_gstr == 0 or total_pr == 0:
+            summary = Stage4ResultsSummary(
+                total_gstr_rows=total_gstr,
+                total_pr_rows=total_pr,
+                exact_match_count=0,
+                exact_match_itc=0.0,
+                tolerance_match_count=0,
+                tolerance_match_itc=0.0,
+                near_match_count=0,
+                near_match_itc=0.0,
+                ambiguous_count=0,
+                ambiguous_itc=0.0,
+                gstr_only_count=total_gstr,
+                gstr_only_itc=0.0,
+                pr_only_count=total_pr,
+                pr_only_itc=0.0,
+                total_reconciled_count=0,
+                total_reconciled_itc=0.0,
+                overall_reconciliation_rate=0.0,
+                waterfall_passes=[],
+            )
+            return Stage4ExecutionResponse(session_id=session_id, summary=summary, records=[], ambiguities=[])
+
+        # 1. Resolve column names across both dataframes
+        g_gstin_col = self._find_matching_col(gstr_df, "BillFromGstin", "gstin") or "BillFromGstin"
+        p_gstin_col = self._find_matching_col(pr_df, "BillFromGstin", "gstin") or "BillFromGstin"
+        g_doc_col = self._find_matching_col(gstr_df, "DocumentNumber", "document_number") or "DocumentNumber"
+        p_doc_col = self._find_matching_col(pr_df, "DocumentNumber", "document_number") or "DocumentNumber"
+        g_date_col = self._find_matching_col(gstr_df, "DocumentDate", "document_date") or "DocumentDate"
+        p_date_col = self._find_matching_col(pr_df, "DocumentDate", "document_date") or "DocumentDate"
+        g_taxable_col = self._find_matching_col(gstr_df, "TaxableValue", "taxable_value") or "TaxableValue"
+        p_taxable_col = self._find_matching_col(pr_df, "TaxableValue", "taxable_value") or "TaxableValue"
+        g_total_col = self._find_matching_col(gstr_df, "TotalValue", "total_value") or "TotalValue"
+        p_total_col = self._find_matching_col(pr_df, "TotalValue", "total_value") or "TotalValue"
+        g_tax_col = self._find_matching_col(gstr_df, "TotalTaxAmount", "total_tax_amount") or self._find_matching_col(gstr_df, "TaxAmount", "tax_amount") or g_total_col
+        p_tax_col = self._find_matching_col(pr_df, "TotalTaxAmount", "total_tax_amount") or self._find_matching_col(pr_df, "TaxAmount", "tax_amount") or p_total_col
+
+        # Extract tolerances from active rules
+        amt_tolerance_val = 10.0
+        amt_tolerance_is_pct = False
+        date_tolerance_days = 30
+        tax_tolerance_val = 10.0
+
+        for r in rules:
+            if not r.is_enabled:
+                continue
+            if r.canonical_concept == "taxable_value" or "taxable" in r.name.lower():
+                amt_tolerance_val = float(r.tolerance_value or 10.0)
+                amt_tolerance_is_pct = r.tolerance_mode == NumericToleranceMode.PERCENTAGE
+            elif r.canonical_concept == "document_date" or "date" in r.name.lower():
+                days = int(r.date_tolerance_value or 30)
+                if r.date_tolerance_unit == DateToleranceUnit.MONTHS:
+                    days *= 30
+                elif r.date_tolerance_unit == DateToleranceUnit.YEARS:
+                    days *= 365
+                date_tolerance_days = max(1, days)
+            elif r.canonical_concept in ("total_tax_amount", "tax_amount") or "tax amount" in r.name.lower():
+                tax_tolerance_val = float(r.tolerance_value or 10.0)
+
+        # 2. Fast pre-parsing of rows into Python dicts for maximum throughput
+        class ParsedRow:
+            __slots__ = (
+                "idx", "gstin_raw", "gstin_norm", "doc_raw", "doc_clean", "doc_norm",
+                "date_raw", "date_obj", "taxable_val", "total_val", "tax_val", "preview", "raw_dict"
+            )
+            def __init__(self, idx: int, gstin_raw: str, gstin_norm: str, doc_raw: str, doc_clean: str,
+                         doc_norm: str, date_raw: str, date_obj: date | None, taxable_val: float,
+                         total_val: float, tax_val: float, preview: dict[str, Any], raw_dict: dict[str, Any]):
+                self.idx = idx
+                self.gstin_raw = gstin_raw
+                self.gstin_norm = gstin_norm
+                self.doc_raw = doc_raw
+                self.doc_clean = doc_clean
+                self.doc_norm = doc_norm
+                self.date_raw = date_raw
+                self.date_obj = date_obj
+                self.taxable_val = taxable_val
+                self.total_val = total_val
+                self.tax_val = tax_val
+                self.preview = preview
+                self.raw_dict = raw_dict
+
+        norm_inst = self.normalizer
+
+        def _parse_row(df: pd.DataFrame, idx: int, g_gstin: str, g_doc: str, g_date: str,
+                       g_taxable: str, g_total: str, g_tax: str) -> ParsedRow:
+            row_dict = {str(k): (None if pd.isna(v) else v) for k, v in df.iloc[idx].to_dict().items()}
+            gstin_val = row_dict.get(g_gstin)
+            gstin_raw = str(gstin_val or "").strip()
+            gstin_norm = re.sub(r"[^A-Za-z0-9]", "", gstin_raw.upper())
+
+            doc_val = row_dict.get(g_doc)
+            doc_raw = str(doc_val or "").strip()
+            doc_clean = " ".join(doc_raw.upper().split())
+            # Normalization: strip common prefixes, special chars, leading zeros
+            doc_norm = norm_inst.normalize_text(doc_val, [
+                NormalizationType.TRIM_WHITESPACE,
+                NormalizationType.REMOVE_PREFIXES,
+                NormalizationType.STRIP_SPECIAL_CHARS,
+                NormalizationType.TRIM_LEADING_ZEROS,
+                NormalizationType.UPPERCASE,
+            ]) or doc_clean
+
+            date_val = row_dict.get(g_date)
+            date_raw = str(date_val or "")[:10]
+            date_obj = norm_inst.parse_date(date_val)
+
+            taxable_dec = norm_inst.parse_decimal(row_dict.get(g_taxable))
+            taxable_val = float(taxable_dec) if taxable_dec is not None else 0.0
+
+            total_dec = norm_inst.parse_decimal(row_dict.get(g_total))
+            total_val = float(total_dec) if total_dec is not None else taxable_val
+
+            tax_dec = norm_inst.parse_decimal(row_dict.get(g_tax)) if g_tax in row_dict else None
+            tax_val = float(tax_dec) if tax_dec is not None else max(0.0, round(total_val - taxable_val, 2))
+
+            preview = {
+                "gstin": gstin_raw,
+                "document_number": doc_raw,
+                "document_date": date_raw,
+                "taxable_value": taxable_val,
+                "total_value": total_val,
+                "tax_amount": tax_val,
+            }
+            # Add other descriptive columns if present
+            for extra in ["VendorName", "SupplierName", "DocumentType", "PlaceOfSupply", "ReverseCharge"]:
+                for c in df.columns:
+                    if extra.lower() in re.sub(r"[^a-zA-Z]", "", str(c)).lower() and row_dict.get(c):
+                        preview[extra] = str(row_dict[c])
+                        break
+
+            return ParsedRow(
+                idx=idx, gstin_raw=gstin_raw, gstin_norm=gstin_norm, doc_raw=doc_raw,
+                doc_clean=doc_clean, doc_norm=doc_norm, date_raw=date_raw, date_obj=date_obj,
+                taxable_val=taxable_val, total_val=total_val, tax_val=tax_val,
+                preview=preview, raw_dict=row_dict
+            )
+
+        gstr_rows = [_parse_row(gstr_df, i, g_gstin_col, g_doc_col, g_date_col, g_taxable_col, g_total_col, g_tax_col) for i in range(total_gstr)]
+        pr_rows = [_parse_row(pr_df, i, p_gstin_col, p_doc_col, p_date_col, p_taxable_col, p_total_col, p_tax_col) for i in range(total_pr)]
+
+        remaining_gstr: set[int] = set(range(total_gstr))
+        remaining_pr: set[int] = set(range(total_pr))
+
+        records: list[ReconciliationRecordItem] = []
+        ambiguities: list[AmbiguityCluster] = []
+
+        # Build fast indexes for remaining PR rows
+        # 1. Exact statutory index: (gstin_norm, doc_norm) -> list[int]
+        pr_exact_index: dict[tuple[str, str], list[int]] = {}
+        for p in pr_rows:
+            if p.gstin_norm and p.doc_norm:
+                pr_exact_index.setdefault((p.gstin_norm, p.doc_norm), []).append(p.idx)
+
+        # -------------------------------------------------------------
+        # PASS 1: EXACT MATCH (Zero Tolerance Statutory Baseline)
+        # -------------------------------------------------------------
+        pass1_matched_count = 0
+        pass1_matched_itc = 0.0
+
+        for g in gstr_rows:
+            if g.idx not in remaining_gstr:
+                continue
+            key = (g.gstin_norm, g.doc_norm)
+            candidate_p_indices = pr_exact_index.get(key, [])
+            valid_p_candidates = [p_idx for p_idx in candidate_p_indices if p_idx in remaining_pr]
+
+            exact_match_idx: int | None = None
+            for p_idx in valid_p_candidates:
+                p = pr_rows[p_idx]
+                # Zero tolerance: Date identical, Taxable Value diff <= 0.05, Total Value diff <= 0.05
+                date_matches = (g.date_obj is not None and p.date_obj is not None and g.date_obj == p.date_obj) or (g.date_raw == p.date_raw)
+                taxable_matches = abs(g.taxable_val - p.taxable_val) <= 0.05
+                total_matches = abs(g.total_val - p.total_val) <= 0.05
+
+                if date_matches and taxable_matches and total_matches:
+                    exact_match_idx = p_idx
+                    break
+
+            if exact_match_idx is not None:
+                p = pr_rows[exact_match_idx]
+                remaining_gstr.remove(g.idx)
+                remaining_pr.remove(exact_match_idx)
+                pass1_matched_count += 1
+                pass1_matched_itc += g.tax_val
+
+                records.append(
+                    ReconciliationRecordItem(
+                        id=f"REC-{uuid4().hex[:8].upper()}",
+                        bucket="EXACT_MATCH",
+                        gstr_row_index=g.idx,
+                        pr_row_index=p.idx,
+                        gstr_record_id=f"GSTR-{g.idx+1:05d}",
+                        pr_record_id=f"PR-{p.idx+1:05d}",
+                        gstin=g.gstin_raw or p.gstin_raw,
+                        document_number=g.doc_raw,
+                        document_date=g.date_raw,
+                        taxable_value=g.taxable_val,
+                        tax_amount=g.tax_val,
+                        total_value=g.total_val,
+                        gstr_preview=g.preview,
+                        pr_preview=p.preview,
+                        variances={"taxable_diff": 0.0, "total_diff": 0.0, "tax_diff": 0.0, "date_diff_days": 0},
+                        matched_by_pass="Pass 1: Exact Statutory Identity",
+                    )
+                )
+
+        # -------------------------------------------------------------
+        # PASS 2: TOLERANCE MATCHED (Stage 3 Configured Tolerances)
+        # -------------------------------------------------------------
+        pass2_matched_count = 0
+        pass2_matched_itc = 0.0
+        pass2_collisions: dict[int, list[int]] = {}
+
+        for g_idx in sorted(remaining_gstr):
+            g = gstr_rows[g_idx]
+            key = (g.gstin_norm, g.doc_norm)
+            candidate_p_indices = [p_idx for p_idx in pr_exact_index.get(key, []) if p_idx in remaining_pr]
+
+            # If no key match, also check clean doc under same GSTIN
+            if not candidate_p_indices and g.gstin_norm:
+                candidate_p_indices = [
+                    p_idx for p_idx in remaining_pr
+                    if pr_rows[p_idx].gstin_norm == g.gstin_norm and (
+                        pr_rows[p_idx].doc_clean == g.doc_clean or pr_rows[p_idx].doc_norm == g.doc_norm
+                    )
+                ]
+
+            qualifying_p: list[int] = []
+            for p_idx in candidate_p_indices:
+                p = pr_rows[p_idx]
+                effective_amt_tol = amt_tolerance_val
+                if amt_tolerance_is_pct:
+                    effective_amt_tol = abs(g.taxable_val * amt_tolerance_val / 100.0)
+
+                amt_diff = abs(g.taxable_val - p.taxable_val)
+                tax_diff = abs(g.tax_val - p.tax_val)
+                date_diff_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
+
+                if amt_diff <= (effective_amt_tol + 1e-3) and date_diff_days <= date_tolerance_days and tax_diff <= (tax_tolerance_val + 1e-3):
+                    qualifying_p.append(p_idx)
+
+            if len(qualifying_p) == 1:
+                p_match = qualifying_p[0]
+                p = pr_rows[p_match]
+                remaining_gstr.remove(g.idx)
+                remaining_pr.remove(p_match)
+                pass2_matched_count += 1
+                pass2_matched_itc += g.tax_val
+
+                amt_diff = round(abs(g.taxable_val - p.taxable_val), 2)
+                tax_diff = round(abs(g.tax_val - p.tax_val), 2)
+                d_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
+
+                records.append(
+                    ReconciliationRecordItem(
+                        id=f"REC-{uuid4().hex[:8].upper()}",
+                        bucket="TOLERANCE_MATCH",
+                        gstr_row_index=g.idx,
+                        pr_row_index=p.idx,
+                        gstr_record_id=f"GSTR-{g.idx+1:05d}",
+                        pr_record_id=f"PR-{p.idx+1:05d}",
+                        gstin=g.gstin_raw or p.gstin_raw,
+                        document_number=g.doc_raw,
+                        document_date=g.date_raw,
+                        taxable_value=g.taxable_val,
+                        tax_amount=g.tax_val,
+                        total_value=g.total_val,
+                        gstr_preview=g.preview,
+                        pr_preview=p.preview,
+                        variances={"taxable_diff": amt_diff, "tax_diff": tax_diff, "date_diff_days": d_days},
+                        matched_by_pass="Pass 2: Enterprise Tolerance",
+                    )
+                )
+            elif len(qualifying_p) > 1:
+                pass2_collisions[g.idx] = qualifying_p
+
+        # -------------------------------------------------------------
+        # PASS 3: NEAR MATCH (Prefix Strip, Leading Zero Trim, Fuzzy >= 85%)
+        # -------------------------------------------------------------
+        pass3_matched_count = 0
+        pass3_matched_itc = 0.0
+        pass3_collisions: dict[int, list[int]] = {}
+
+        # Re-index remaining PR rows by gstin_norm for rapid candidate grouping
+        pr_by_gstin: dict[str, list[int]] = {}
+        for p_idx in remaining_pr:
+            p = pr_rows[p_idx]
+            if p.gstin_norm:
+                pr_by_gstin.setdefault(p.gstin_norm, []).append(p_idx)
+
+        for g_idx in sorted(remaining_gstr):
+            if g_idx in pass2_collisions:
+                continue  # Handled by Pass 4 Ambiguity Clustering
+            g = gstr_rows[g_idx]
+            candidate_p_indices = pr_by_gstin.get(g.gstin_norm, [])
+
+            near_qualifying_p: list[tuple[int, float]] = []
+            for p_idx in candidate_p_indices:
+                if p_idx not in remaining_pr:
+                    continue
+                p = pr_rows[p_idx]
+
+                # Compare normalized document numbers
+                ratio = calculate_string_ratio(g.doc_norm, p.doc_norm)
+                is_sub = (len(g.doc_norm) >= 3 and g.doc_norm in p.doc_norm) or (len(p.doc_norm) >= 3 and p.doc_norm in g.doc_norm)
+
+                if ratio >= 0.85 or is_sub or g.doc_norm == p.doc_norm:
+                    # Broad near-match tolerances
+                    amt_diff = abs(g.taxable_val - p.taxable_val)
+                    date_diff_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
+                    if amt_diff <= max(amt_tolerance_val * 2.0, 50.0) and date_diff_days <= max(date_tolerance_days, 45):
+                        near_qualifying_p.append((p_idx, ratio))
+
+            if len(near_qualifying_p) == 1:
+                p_match, ratio = near_qualifying_p[0]
+                p = pr_rows[p_match]
+                remaining_gstr.remove(g.idx)
+                remaining_pr.remove(p_match)
+                pass3_matched_count += 1
+                pass3_matched_itc += g.tax_val
+
+                amt_diff = round(abs(g.taxable_val - p.taxable_val), 2)
+                tax_diff = round(abs(g.tax_val - p.tax_val), 2)
+                d_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
+
+                records.append(
+                    ReconciliationRecordItem(
+                        id=f"REC-{uuid4().hex[:8].upper()}",
+                        bucket="NEAR_MATCH",
+                        gstr_row_index=g.idx,
+                        pr_row_index=p.idx,
+                        gstr_record_id=f"GSTR-{g.idx+1:05d}",
+                        pr_record_id=f"PR-{p.idx+1:05d}",
+                        gstin=g.gstin_raw or p.gstin_raw,
+                        document_number=g.doc_raw,
+                        document_date=g.date_raw,
+                        taxable_value=g.taxable_val,
+                        tax_amount=g.tax_val,
+                        total_value=g.total_val,
+                        gstr_preview=g.preview,
+                        pr_preview=p.preview,
+                        variances={
+                            "taxable_diff": amt_diff,
+                            "tax_diff": tax_diff,
+                            "date_diff_days": d_days,
+                            "invoice_similarity_ratio": round(ratio, 2),
+                        },
+                        matched_by_pass="Pass 3: Semantic Near Match",
+                    )
+                )
+            elif len(near_qualifying_p) > 1:
+                pass3_collisions[g.idx] = [item[0] for item in near_qualifying_p]
+
+        # -------------------------------------------------------------
+        # PASS 4: AMBIGUITY CLUSTERING & CONFIDENCE CALCULATION
+        # -------------------------------------------------------------
+        # Gather all multi-match collision cases from Pass 2 and Pass 3
+        all_collisions: dict[int, list[int]] = {**pass2_collisions, **pass3_collisions}
+
+        # Also identify any remaining GSTR rows with potential candidates in remaining PR under same GSTIN
+        for g_idx in sorted(remaining_gstr):
+            if g_idx in all_collisions:
+                continue
+            g = gstr_rows[g_idx]
+            cand = pr_by_gstin.get(g.gstin_norm, [])
+            potential_p = [p_idx for p_idx in cand if p_idx in remaining_pr]
+            if len(potential_p) >= 2:
+                # Rank potential by amount closeness
+                sorted_potential = sorted(potential_p, key=lambda p_idx: abs(g.taxable_val - pr_rows[p_idx].taxable_val))[:3]
+                all_collisions[g_idx] = sorted_potential
+
+        pass4_ambiguous_count = 0
+        pass4_ambiguous_itc = 0.0
+
+        for g_idx, cand_p_indices in all_collisions.items():
+            if g_idx not in remaining_gstr:
+                continue
+            g = gstr_rows[g_idx]
+            valid_candidates = [p_idx for p_idx in cand_p_indices if p_idx in remaining_pr]
+            if len(valid_candidates) < 2:
+                continue
+
+            cluster_id = f"CLUST-{uuid4().hex[:6].upper()}"
+            candidates_list: list[AmbiguityCandidate] = []
+
+            for p_idx in valid_candidates:
+                p = pr_rows[p_idx]
+                inv_sim = calculate_string_ratio(g.doc_norm, p.doc_norm)
+                amt_denom = max(g.taxable_val, 1.0)
+                amt_score = max(0.0, 1.0 - (abs(g.taxable_val - p.taxable_val) / amt_denom))
+                date_diff_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
+                date_score = max(0.0, 1.0 - (date_diff_days / 60.0))
+                tax_denom = max(g.tax_val, 1.0)
+                tax_score = max(0.0, 1.0 - (abs(g.tax_val - p.tax_val) / tax_denom))
+
+                conf = round((0.40 * inv_sim + 0.30 * amt_score + 0.15 * date_score + 0.15 * tax_score) * 100.0, 1)
+
+                diffs = []
+                if g.doc_raw != p.doc_raw:
+                    diffs.append(f"Invoice No: '{g.doc_raw}' vs '{p.doc_raw}'")
+                if abs(g.taxable_val - p.taxable_val) > 0.05:
+                    diffs.append(f"Taxable Diff: ₹{abs(g.taxable_val - p.taxable_val):.2f}")
+                if date_diff_days > 0:
+                    diffs.append(f"Date Displacement: {date_diff_days} days")
+                if abs(g.tax_val - p.tax_val) > 0.05:
+                    diffs.append(f"Tax Variance: ₹{abs(g.tax_val - p.tax_val):.2f}")
+
+                cand_reason = (
+                    f"Candidate #{p.idx+1} shares Supplier GSTIN {g.gstin_raw} with {conf}% confidence. "
+                    f"Doc similarity: {round(inv_sim*100)}%, amount closeness: {round(amt_score*100)}%."
+                )
+
+                candidates_list.append(
+                    AmbiguityCandidate(
+                        candidate_id=f"CAND-{uuid4().hex[:6].upper()}",
+                        pr_row_index=p.idx,
+                        pr_record_id=f"PR-{p.idx+1:05d}",
+                        confidence_score=conf,
+                        score_breakdown=ScoreBreakdown(
+                            invoice_similarity=round(inv_sim * 100.0, 1),
+                            amount_score=round(amt_score * 100.0, 1),
+                            date_score=round(date_score * 100.0, 1),
+                            tax_score=round(tax_score * 100.0, 1),
+                        ),
+                        detected_differences=diffs,
+                        ai_reason=cand_reason,
+                        pr_preview=p.preview,
+                    )
+                )
+
+            candidates_list.sort(key=lambda c: c.confidence_score, reverse=True)
+            top_cand = candidates_list[0]
+            sec_cand = candidates_list[1]
+            ai_cluster_justification = (
+                f"Multi-match collision: {len(candidates_list)} ERP purchase register invoices qualify for Portal Document #{g.doc_raw}. "
+                f"Candidate {top_cand.pr_record_id} exhibits highest alignment ({top_cand.confidence_score}%), while "
+                f"Candidate {sec_cand.pr_record_id} matches with {sec_cand.confidence_score}% confidence. "
+                "Requires senior accountant confirmation before binding ledger credit."
+            )
+
+            cluster = AmbiguityCluster(
+                cluster_id=cluster_id,
+                gstr_row_index=g.idx,
+                gstr_record_id=f"GSTR-{g.idx+1:05d}",
+                anchor_preview=g.preview,
+                candidates=candidates_list,
+                ai_justification=ai_cluster_justification,
+                status="PENDING_REVIEW",
+            )
+            ambiguities.append(cluster)
+
+            remaining_gstr.remove(g.idx)
+            pass4_ambiguous_count += 1
+            pass4_ambiguous_itc += g.tax_val
+
+            records.append(
+                ReconciliationRecordItem(
+                    id=f"REC-{uuid4().hex[:8].upper()}",
+                    bucket="AMBIGUOUS",
+                    gstr_row_index=g.idx,
+                    pr_row_index=None,
+                    gstr_record_id=f"GSTR-{g.idx+1:05d}",
+                    pr_record_id=None,
+                    gstin=g.gstin_raw,
+                    document_number=g.doc_raw,
+                    document_date=g.date_raw,
+                    taxable_value=g.taxable_val,
+                    tax_amount=g.tax_val,
+                    total_value=g.total_val,
+                    gstr_preview=g.preview,
+                    pr_preview={},
+                    variances={"candidate_count": len(candidates_list), "top_confidence": top_cand.confidence_score},
+                    matched_by_pass="Pass 4: Ambiguity Quarantined",
+                    ambiguity_cluster_id=cluster_id,
+                )
+            )
+
+        # -------------------------------------------------------------
+        # PASS 5: SINGLE-SIDED RESIDUALS (GSTR Only vs PR Only)
+        # -------------------------------------------------------------
+        gstr_only_count = 0
+        gstr_only_itc = 0.0
+        for g_idx in sorted(remaining_gstr):
+            g = gstr_rows[g_idx]
+            gstr_only_count += 1
+            gstr_only_itc += g.tax_val
+
+            records.append(
+                ReconciliationRecordItem(
+                    id=f"REC-{uuid4().hex[:8].upper()}",
+                    bucket="GSTR_ONLY",
+                    gstr_row_index=g.idx,
+                    pr_row_index=None,
+                    gstr_record_id=f"GSTR-{g.idx+1:05d}",
+                    pr_record_id=None,
+                    gstin=g.gstin_raw,
+                    document_number=g.doc_raw,
+                    document_date=g.date_raw,
+                    taxable_value=g.taxable_val,
+                    tax_amount=g.tax_val,
+                    total_value=g.total_val,
+                    gstr_preview=g.preview,
+                    pr_preview={},
+                    variances={"status": "Missing in ERP Purchase Register"},
+                    matched_by_pass="Pass 5: In 2B Only (Unclaimed ITC Risk)",
+                )
+            )
+
+        pr_only_count = 0
+        pr_only_itc = 0.0
+        for p_idx in sorted(remaining_pr):
+            p = pr_rows[p_idx]
+            pr_only_count += 1
+            pr_only_itc += p.tax_val
+
+            records.append(
+                ReconciliationRecordItem(
+                    id=f"REC-{uuid4().hex[:8].upper()}",
+                    bucket="PR_ONLY",
+                    gstr_row_index=None,
+                    pr_row_index=p.idx,
+                    gstr_record_id=None,
+                    pr_record_id=f"PR-{p.idx+1:05d}",
+                    gstin=p.gstin_raw,
+                    document_number=p.doc_raw,
+                    document_date=p.date_raw,
+                    taxable_value=p.taxable_val,
+                    tax_amount=p.tax_val,
+                    total_value=p.total_val,
+                    gstr_preview={},
+                    pr_preview=p.preview,
+                    variances={"status": "Missing in Official Portal GSTR-2B"},
+                    matched_by_pass="Pass 5: In Books Only (DRC-01C Risk)",
+                )
+            )
+
+        # -------------------------------------------------------------
+        # COMPILE EXECUTIVE SUMMARY & PASS YIELDS
+        # -------------------------------------------------------------
+        total_reconciled = pass1_matched_count + pass2_matched_count + pass3_matched_count
+        total_reconciled_itc = pass1_matched_itc + pass2_matched_itc + pass3_matched_itc
+        overall_match_rate = round((total_reconciled / total_gstr * 100.0), 1) if total_gstr > 0 else 0.0
+
+        waterfall_passes = [
+            WaterfallPassYield(
+                tier=1,
+                name="Pass 1: Exact Match (Zero Tolerance)",
+                matched_count=pass1_matched_count,
+                matched_itc=round(pass1_matched_itc, 2),
+                retention_percentage=round((pass1_matched_count / total_gstr * 100.0), 1) if total_gstr > 0 else 0.0,
+            ),
+            WaterfallPassYield(
+                tier=2,
+                name="Pass 2: Tolerance Matched (Stage 3 Rules)",
+                matched_count=pass2_matched_count,
+                matched_itc=round(pass2_matched_itc, 2),
+                retention_percentage=round((pass2_matched_count / total_gstr * 100.0), 1) if total_gstr > 0 else 0.0,
+            ),
+            WaterfallPassYield(
+                tier=3,
+                name="Pass 3: Semantic Near Match (Fuzzy & Prefixes)",
+                matched_count=pass3_matched_count,
+                matched_itc=round(pass3_matched_itc, 2),
+                retention_percentage=round((pass3_matched_count / total_gstr * 100.0), 1) if total_gstr > 0 else 0.0,
+            ),
+            WaterfallPassYield(
+                tier=4,
+                name="Pass 4: Ambiguity Quarantined (HITL Review)",
+                matched_count=pass4_ambiguous_count,
+                matched_itc=round(pass4_ambiguous_itc, 2),
+                retention_percentage=round((pass4_ambiguous_count / total_gstr * 100.0), 1) if total_gstr > 0 else 0.0,
+            ),
+            WaterfallPassYield(
+                tier=5,
+                name="Pass 5: Single-Sided Residuals (Unmatched)",
+                matched_count=gstr_only_count + pr_only_count,
+                matched_itc=round(gstr_only_itc + pr_only_itc, 2),
+                retention_percentage=round(((gstr_only_count + pr_only_count) / (total_gstr + total_pr) * 100.0), 1) if (total_gstr + total_pr) > 0 else 0.0,
+            ),
+        ]
+
+        summary = Stage4ResultsSummary(
+            total_gstr_rows=total_gstr,
+            total_pr_rows=total_pr,
+            exact_match_count=pass1_matched_count,
+            exact_match_itc=round(pass1_matched_itc, 2),
+            tolerance_match_count=pass2_matched_count,
+            tolerance_match_itc=round(pass2_matched_itc, 2),
+            near_match_count=pass3_matched_count,
+            near_match_itc=round(pass3_matched_itc, 2),
+            ambiguous_count=pass4_ambiguous_count,
+            ambiguous_itc=round(pass4_ambiguous_itc, 2),
+            gstr_only_count=gstr_only_count,
+            gstr_only_itc=round(gstr_only_itc, 2),
+            pr_only_count=pr_only_count,
+            pr_only_itc=round(pr_only_itc, 2),
+            total_reconciled_count=total_reconciled,
+            total_reconciled_itc=round(total_reconciled_itc, 2),
+            overall_reconciliation_rate=overall_match_rate,
+            waterfall_passes=waterfall_passes,
+        )
+
+        return Stage4ExecutionResponse(
+            session_id=session_id,
+            summary=summary,
+            records=records,
+            ambiguities=ambiguities,
+        )
+
+
 
 def build_default_rules_wiki_v2(
     correlations: list[dict[str, Any]] | None = None,
@@ -619,6 +1356,9 @@ def build_default_rules_wiki_v2(
             name="Supplier GSTIN Identity Match",
             description="Matches vendor GST identification numbers between Government portal and Client Purchase Register.",
             category="CORE_IDENTITY",
+            rule_tier="CORE_STATUTORY",
+            statutory_reference="CGST Act Sec 16(2)(a) • Rule 46(a)",
+            advisory_caution="Word of Caution: Primary statutory anchor. Disabling this allows cross-vendor matches and invalidates ITC claims under Section 16(2)(aa).",
             gstr_column="BillFromGstin",
             pr_column="BillFromGstin",
             canonical_concept="gstin",
@@ -634,6 +1374,9 @@ def build_default_rules_wiki_v2(
             name="Invoice / Document Number Canonical Match",
             description="Matches invoice, debit note, and credit note numbers across ledgers with smart prefix stripping.",
             category="DOCUMENT_REFERENCE",
+            rule_tier="CORE_STATUTORY",
+            statutory_reference="CGST Act Sec 16(2)(a) • Rule 46(b)",
+            advisory_caution="Word of Caution: Primary document identifier. Disabling this will cause arbitrary matching across different transactions from the same supplier.",
             gstr_column="DocumentNumber",
             pr_column="DocumentNumber",
             canonical_concept="document_number",
@@ -655,6 +1398,9 @@ def build_default_rules_wiki_v2(
             name="Invoice Date Proximity Window",
             description="Allows a flexible calendar window between the invoice issue date and accounting booking date.",
             category="TEMPORAL_WINDOW",
+            rule_tier="COMMERCIAL_POLICY",
+            statutory_reference="CGST Act Sec 16(2)(aa) • Rule 46(c)",
+            advisory_caution="Advisory: Accommodates transit and monthly accounting delays. Expanding beyond 60 days increases risk of claiming credit outside the fiscal year window.",
             gstr_column="DocumentDate",
             pr_column="DocumentDate",
             canonical_concept="document_date",
@@ -672,6 +1418,9 @@ def build_default_rules_wiki_v2(
             name="Taxable Value Commercial Tolerance",
             description="Absorbs rounding fractions and commercial differences in base taxable supply amounts.",
             category="FINANCIAL_VALUE",
+            rule_tier="CORE_STATUTORY",
+            statutory_reference="CGST Act Sec 16(2)(aa) • Rule 46(i)",
+            advisory_caution="Word of Caution: Primary financial quantum. Disabling this defaults to strict ₹0.00 exact equality. Ensure commercial rounding differences are absorbed.",
             gstr_column="TaxableValue",
             pr_column="TaxableValue",
             canonical_concept="taxable_value",
@@ -689,6 +1438,9 @@ def build_default_rules_wiki_v2(
             name="Total Invoice Value (Gross Amount) Match",
             description="Verifies the grand total invoice value inclusive of all taxes and cess charges.",
             category="FINANCIAL_VALUE",
+            rule_tier="COMMERCIAL_POLICY",
+            statutory_reference="CGST Rules Rule 46(h)",
+            advisory_caution="Advisory: Verifies invoice grand total including all taxes. Protects against under-claiming or over-claiming gross purchase register balances.",
             gstr_column="DocumentValue",
             pr_column="DocumentValue",
             canonical_concept="total_value",
@@ -706,6 +1458,9 @@ def build_default_rules_wiki_v2(
             name="Payment Date Compliance (180-Day Rule)",
             description="Evaluates payment date lag against statutory 180-day ITC reversal mandate.",
             category="TEMPORAL_WINDOW",
+            rule_tier="COMMERCIAL_POLICY",
+            statutory_reference="Second Proviso to CGST Sec 16(2)",
+            advisory_caution="Advisory: Statutory mandate requires ITC reversal with 18% interest under Section 50 if payment is not made to supplier within 180 days.",
             gstr_column="PaymentDate",
             pr_column="PaymentDate",
             canonical_concept="payment_date",
@@ -723,6 +1478,9 @@ def build_default_rules_wiki_v2(
             name="Reverse Charge Mechanism (RCM) Alignment",
             description="Ensures both workbooks agree on whether tax is payable under forward charge or reverse charge.",
             category="COMPLIANCE_GUARD",
+            rule_tier="CORE_STATUTORY",
+            statutory_reference="CGST Rules Rule 46(p) • Sec 9(3)/9(4)",
+            advisory_caution="Word of Caution: Mismatched RCM flags lead to erroneous cash tax liability payments under GSTR-3B Table 3.1(d).",
             gstr_column="ReverseCharge",
             pr_column="ReverseCharge",
             canonical_concept="reverse_charge",
@@ -732,6 +1490,62 @@ def build_default_rules_wiki_v2(
             execution_order=7,
             plain_english_explanation="Verifies that if an invoice is marked as Reverse Charge ('Y') in Government GSTR-2B, it is also flagged as Reverse Charge in your ERP.",
             why_it_matters="Mismatched RCM flags lead to erroneous cash tax liability payments under GSTR-3B Table 3.1(d).",
+        ),
+        Rule2Item(
+            id="RW2-008",
+            name="Document Type Classification Alignment",
+            description="Strictly ensures Invoices, Credit Notes, and Debit Notes are not crossed during reconciliation.",
+            category="COMPLIANCE_GUARD",
+            rule_tier="CORE_STATUTORY",
+            statutory_reference="CGST Act Sec 34 • Rule 46",
+            advisory_caution="Word of Caution: Invoices and Credit Notes have opposite financial signs. Disabling this rule risks netting errors and inverted ITC claims.",
+            gstr_column="DocumentType",
+            pr_column="DocumentType",
+            canonical_concept="document_type",
+            strategy=MatchStrategy.VALUE_GUARD,
+            normalizers=[NormalizationType.TRIM_WHITESPACE, NormalizationType.UPPERCASE],
+            is_enabled=True,
+            execution_order=8,
+            plain_english_explanation="Verifies that document classifications (Invoice vs Credit Note vs Debit Note) agree strictly across ledgers.",
+            why_it_matters="Matching a Credit Note against an Invoice reverses the sign of tax amounts and distorts net eligible input tax credit.",
+        ),
+        Rule2Item(
+            id="RW2-009",
+            name="Place of Supply (POS) State Code Alignment",
+            description="Validates recipient state code between GSTR-2B and ERP to prevent inter-state vs intra-state mismatch.",
+            category="COMPLIANCE_GUARD",
+            rule_tier="COMMERCIAL_POLICY",
+            statutory_reference="CGST Rules Rule 46(e)/(m) • IGST Sec 12",
+            advisory_caution="Advisory: Validates supply jurisdiction. Discrepancies between IGST (inter-state) and CGST/SGST (intra-state) trigger ITC disallowance.",
+            gstr_column="PlaceOfSupply",
+            pr_column="PlaceOfSupply",
+            canonical_concept="place_of_supply",
+            strategy=MatchStrategy.NORMALIZED_TEXT,
+            normalizers=[NormalizationType.TRIM_WHITESPACE, NormalizationType.STRIP_SPECIAL_CHARS, NormalizationType.UPPERCASE],
+            is_enabled=True,
+            execution_order=9,
+            plain_english_explanation="Verifies that Place of Supply state codes agree between Government portal and Purchase Register after normalising punctuation.",
+            why_it_matters="Input tax credit eligibility depends on correct supply classification (IGST vs CGST/SGST) under Section 12 of IGST Act.",
+        ),
+        Rule2Item(
+            id="RW2-010",
+            name="Total Tax Amount (IGST / CGST / SGST) Tolerance",
+            description="Absorbs small penny rounding fractions and item-level vs header-level tax differences.",
+            category="FINANCIAL_VALUE",
+            rule_tier="COMMERCIAL_POLICY",
+            statutory_reference="CGST Rules Rule 46(k)",
+            advisory_caution="Advisory: Absorbs item-level tax rounding differences (e.g. ± ₹5.00) between ERP tax engines and GST portal rounding rules.",
+            gstr_column="TotalTaxAmount",
+            pr_column="TotalTaxAmount",
+            canonical_concept="tax_amount",
+            strategy=MatchStrategy.NUMERIC_TOLERANCE,
+            normalizers=[NormalizationType.TRIM_WHITESPACE],
+            tolerance_value=5.0,
+            tolerance_mode=NumericToleranceMode.ABSOLUTE_INR,
+            is_enabled=True,
+            execution_order=10,
+            plain_english_explanation="Ensures the cumulative tax amount (IGST + CGST + SGST) matches within ± ₹5.00 to account for rounding.",
+            why_it_matters="Protects against under-claiming or over-claiming specific tax heads while preventing false rejections from ₹1–₹2 fraction rounding.",
         ),
     ]
 
@@ -961,6 +1775,8 @@ def generate_ai_suggested_rules(
                                 name=item.get("name", f"AI Suggested Rule #{i+1}"),
                                 description=item.get("description", "Contextual rule recommended by AI."),
                                 category="AI_SUGGESTED",
+                                rule_tier="AUXILIARY_METADATA",
+                                advisory_caution="Match Impact Notice: Auxiliary metadata rule. In cross-system datasets, secondary metadata formatting differences may reduce total match rate.",
                                 gstr_column=g_c,
                                 pr_column=p_c,
                                 canonical_concept=concept_item or None,
@@ -981,7 +1797,7 @@ def generate_ai_suggested_rules(
             logger.warning(f"LLM suggested rules generation error: {exc}. Using heuristic data pattern engine.")
 
     # Primary candidate patterns (only if not already covered in pipeline)
-    # Pattern 1: Place of Supply State Alignment
+    # Pattern 1: Place of Supply State Alignment (if not in pipeline)
     if "place_of_supply" not in covered_concepts:
         pos_g = WaterfallMatchingEngine._find_matching_col(gstr_df, "PlaceOfSupply", "place_of_supply") if gstr_df is not None else None
         pos_p = WaterfallMatchingEngine._find_matching_col(pr_df, "PlaceOfSupply", "place_of_supply") if pr_df is not None else None
@@ -994,6 +1810,9 @@ def generate_ai_suggested_rules(
                     name="Place of Supply (POS) State Code Alignment",
                     description="Validates that the recipient State Code or Place of Supply matches between portal and ERP records.",
                     category="AI_SUGGESTED",
+                    rule_tier="COMMERCIAL_POLICY",
+                    statutory_reference="CGST Rules Rule 46(e)/(m) • IGST Sec 12",
+                    advisory_caution="Advisory: Validates supply jurisdiction. Discrepancies between IGST and CGST/SGST trigger credit disallowance.",
                     gstr_column=pos_g,
                     pr_column=pos_p,
                     canonical_concept="place_of_supply",
@@ -1023,6 +1842,9 @@ def generate_ai_suggested_rules(
                     name="HSN / SAC Code Canonical Classification Match",
                     description="Matches goods and services tariff codes between Government portal and Purchase Register.",
                     category="AI_SUGGESTED",
+                    rule_tier="AUXILIARY_METADATA",
+                    statutory_reference="CGST Rules Rule 46(f)",
+                    advisory_caution="Match Impact Notice: HSN codes in ERPs often have 4-digit vs 6-digit or 8-digit granularity. Enabling as a strict rule may reduce match rate by 15–25%.",
                     gstr_column=hsn_g,
                     pr_column=hsn_p,
                     canonical_concept="hsn",
@@ -1032,7 +1854,7 @@ def generate_ai_suggested_rules(
                     is_enabled=False,
                     execution_order=22,
                     plain_english_explanation=f"Validates HSN tariff classification ({hsn_g} ⟷ {hsn_p}) after trimming leading zeroes.",
-                    why_it_matters="Mandatory HSN reporting under Rule 46(d) requires correct 4, 6, or 8 digit classification depending on aggregate taxpayer turnover.",
+                    why_it_matters="Mandatory HSN reporting under Rule 46(f) requires correct 4, 6, or 8 digit classification depending on aggregate taxpayer turnover.",
                     ai_rationale=f"AI Data Study: Both workbooks contain HSN/SAC tariff fields ({hsn_g} and {hsn_p}). Recommends smart canonical digit matching to prevent rate mismatch flags.",
                     is_ai_suggested=True,
                     column_status="AVAILABLE",
@@ -1052,6 +1874,8 @@ def generate_ai_suggested_rules(
                     name="Supplier Legal / Trade Name Secondary Verification",
                     description="Secondary identity verification validating vendor trading names after stripping punctuation.",
                     category="AI_SUGGESTED",
+                    rule_tier="AUXILIARY_METADATA",
+                    advisory_caution="Match Impact Notice: Vendor legal names in GSTR-2B vs ERP trade names frequently vary (e.g. 'Pvt Ltd' vs 'Limited'). Recommended for near-match scoring only.",
                     gstr_column=name_g,
                     pr_column=name_p,
                     canonical_concept="vendor_name",
@@ -1081,6 +1905,8 @@ def generate_ai_suggested_rules(
                     name="Compensation Cess Financial Tolerance",
                     description="Verifies GST compensation cess amounts with commercial fractional rounding tolerance.",
                     category="AI_SUGGESTED",
+                    rule_tier="COMMERCIAL_POLICY",
+                    advisory_caution="Advisory: Absorbs minor rounding fractions in Compensation Cess liabilities.",
                     gstr_column=cess_g,
                     pr_column=cess_p,
                     canonical_concept="cess",

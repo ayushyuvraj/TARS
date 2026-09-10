@@ -79,17 +79,25 @@
 .v2-telemetry-ribbon {
   background: linear-gradient(135deg, #07192f 0%, #0c233c 55%, #161e38 100%);
   border-bottom: 1px solid rgba(0, 145, 218, 0.25);
-  padding: 6px 32px;
+  padding: 6px 20px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
+  gap: 16px;
   color: #e2e8f0;
   position: sticky;
   top: 0;
   z-index: 50;
   box-shadow: 0 4px 20px rgba(7, 25, 47, 0.25);
   flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.v2-telemetry-ribbon::-webkit-scrollbar {
+  display: none;
 }
 
 .v2-telemetry-ribbon::after {
@@ -251,21 +259,34 @@
 .v2-pipeline-ribbon {
   background: #ffffff;
   border-bottom: 1px solid var(--v2-slate-200);
-  padding: 6px 32px;
+  padding: 6px 16px;
   overflow-x: auto;
-  scrollbar-width: none;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
   flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 .v2-pipeline-ribbon::-webkit-scrollbar {
-  display: none;
+  height: 4px;
+}
+.v2-pipeline-ribbon::-webkit-scrollbar-track {
+  background: transparent;
+}
+.v2-pipeline-ribbon::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
 }
 
 .v2-pipeline-track {
   display: flex;
   align-items: center;
-  gap: 6px;
-  max-width: 1440px;
+  gap: 4px;
+  width: 100%;
+  max-width: 100%;
   margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .v2-pipeline-node {
@@ -273,13 +294,14 @@
   border: none;
   display: inline-flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 14px;
+  gap: 8px;
+  padding: 5px 10px;
   border-radius: 8px;
   cursor: pointer;
   position: relative;
   transition: all 0.2s ease;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .v2-pipeline-node:hover:not(.is-locked) {
@@ -308,14 +330,14 @@
 }
 
 .v2-node-label {
-  font-size: 12px;
+  font-size: 11.5px;
   font-weight: 700;
   color: var(--v2-slate-700);
   line-height: 1.2;
 }
 
 .v2-node-subtitle {
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 500;
   color: var(--v2-slate-400);
   line-height: 1.2;
@@ -357,8 +379,9 @@
 }
 
 .v2-pipeline-connector {
-  flex: 1;
-  min-width: 16px;
+  flex: 1 1 8px;
+  min-width: 8px;
+  max-width: 36px;
   height: 2px;
   background: var(--v2-slate-200);
   border-radius: 2px;
@@ -372,17 +395,111 @@
    3. STAGE CANVAS & SETUP HERO (ZERO-SCROLL VIEWPORT FIT)
    ---------------------------------------------------------------------------- */
 .v2-stage-canvas {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
-  padding: 6px 28px 10px 28px;
-  max-width: 1440px;
+  padding: 16px 20px 80px 20px;
+  max-width: 100%;
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto !important;
+  overflow-x: auto !important;
   background: #ffffff;
+  scrollbar-width: thin !important;
+  scrollbar-color: #94a3b8 #f1f5f9 !important;
+}
+
+.v2-stage-canvas::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.v2-stage-canvas::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+.v2-stage-canvas::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 9999px;
+}
+
+.v2-stage-canvas::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.v2-stage-canvas--setup {
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  padding: 8px 20px 24px 20px !important;
+}
+
+.v2-stage-canvas--scrollable {
+  overflow-y: auto !important;
+  overflow-x: auto !important;
+  max-height: 100% !important;
+  height: 100% !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #94a3b8 #f1f5f9 !important;
+  padding-bottom: 80px !important;
+  min-width: 0 !important;
+  box-sizing: border-box !important;
+}
+
+.v2-stage-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.v2-stage-placeholder-card {
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 16px;
+  padding: 48px 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 20px 0;
+}
+
+.v2-placeholder-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: #eff6ff;
+  color: #00338d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.v2-stage-placeholder-card h2 {
+  font-size: 20px;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0;
+}
+
+.v2-stage-placeholder-card p {
+  font-size: 14px;
+  color: #64748b;
+  max-width: 560px;
+  margin: 0;
+  line-height: 1.5;
 }
 
 .v2-alert-error {

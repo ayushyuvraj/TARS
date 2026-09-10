@@ -52,6 +52,9 @@ const DEFAULT_RULES_CATALOG: Rule2Item[] = [
     name: "Supplier GSTIN Identity Match",
     description: "Matches vendor GST identification numbers between Government portal and Client Purchase Register.",
     category: "CORE_IDENTITY",
+    rule_tier: "CORE_STATUTORY",
+    statutory_reference: "CGST Act Sec 16(2)(a) • Rule 46(a)",
+    advisory_caution: "Word of Caution: Primary statutory anchor. Disabling this allows cross-vendor matches and invalidates ITC claims under Section 16(2)(aa).",
     gstr_column: "BillFromGstin",
     pr_column: "BillFromGstin",
     canonical_concept: "gstin",
@@ -72,6 +75,9 @@ const DEFAULT_RULES_CATALOG: Rule2Item[] = [
     name: "Invoice / Document Number Canonical Match",
     description: "Matches invoice, debit note, and credit note numbers across ledgers with smart prefix stripping.",
     category: "DOCUMENT_REFERENCE",
+    rule_tier: "CORE_STATUTORY",
+    statutory_reference: "CGST Act Sec 16(2)(a) • Rule 46(b)",
+    advisory_caution: "Word of Caution: Primary document identifier. Disabling this will cause arbitrary matching across different transactions from the same supplier.",
     gstr_column: "DocumentNumber",
     pr_column: "DocumentNumber",
     canonical_concept: "document_number",
@@ -92,6 +98,9 @@ const DEFAULT_RULES_CATALOG: Rule2Item[] = [
     name: "Invoice Date Proximity Window",
     description: "Allows a flexible calendar window between the invoice issue date and accounting booking date.",
     category: "TEMPORAL_WINDOW",
+    rule_tier: "COMMERCIAL_POLICY",
+    statutory_reference: "CGST Act Sec 16(2)(aa) • Rule 46(c)",
+    advisory_caution: "Advisory: Accommodates transit and monthly accounting delays. Expanding beyond 60 days increases risk of claiming credit outside the statutory fiscal year window.",
     gstr_column: "DocumentDate",
     pr_column: "DocumentDate",
     canonical_concept: "document_date",
@@ -112,6 +121,9 @@ const DEFAULT_RULES_CATALOG: Rule2Item[] = [
     name: "Taxable Value Commercial Tolerance",
     description: "Absorbs rounding fractions and commercial differences in base taxable supply amounts.",
     category: "FINANCIAL_VALUE",
+    rule_tier: "CORE_STATUTORY",
+    statutory_reference: "CGST Act Sec 16(2)(aa) • Rule 46(i)",
+    advisory_caution: "Word of Caution: Primary financial quantum. Disabling this defaults to strict ₹0.00 exact equality. Ensure commercial rounding differences are absorbed.",
     gstr_column: "TaxableValue",
     pr_column: "TaxableValue",
     canonical_concept: "taxable_value",
@@ -132,6 +144,9 @@ const DEFAULT_RULES_CATALOG: Rule2Item[] = [
     name: "Total Invoice Value (Gross Amount) Match",
     description: "Verifies the grand total invoice value inclusive of all taxes and cess charges.",
     category: "FINANCIAL_VALUE",
+    rule_tier: "COMMERCIAL_POLICY",
+    statutory_reference: "CGST Rules Rule 46(h)",
+    advisory_caution: "Advisory: Verifies invoice grand total including all taxes. Protects against under-claiming or over-claiming gross purchase register balances.",
     gstr_column: "DocumentValue",
     pr_column: "DocumentValue",
     canonical_concept: "total_value",
@@ -152,6 +167,9 @@ const DEFAULT_RULES_CATALOG: Rule2Item[] = [
     name: "Payment Date Compliance (180-Day Rule)",
     description: "Evaluates payment date lag against statutory 180-day ITC reversal mandate.",
     category: "TEMPORAL_WINDOW",
+    rule_tier: "COMMERCIAL_POLICY",
+    statutory_reference: "Second Proviso to CGST Sec 16(2)",
+    advisory_caution: "Advisory: Statutory mandate requires ITC reversal with 18% interest under Section 50 if payment is not made to supplier within 180 days.",
     gstr_column: "PaymentDate",
     pr_column: "PaymentDate",
     canonical_concept: "payment_date",
@@ -173,6 +191,9 @@ const DEFAULT_RULES_CATALOG: Rule2Item[] = [
     name: "Reverse Charge Mechanism (RCM) Alignment",
     description: "Ensures both workbooks agree on whether tax is payable under forward charge or reverse charge.",
     category: "COMPLIANCE_GUARD",
+    rule_tier: "CORE_STATUTORY",
+    statutory_reference: "CGST Rules Rule 46(p) • Sec 9(3)/9(4)",
+    advisory_caution: "Word of Caution: Mismatched RCM flags lead to erroneous cash tax liability payments under GSTR-3B Table 3.1(d).",
     gstr_column: "ReverseCharge",
     pr_column: "ReverseCharge",
     canonical_concept: "reverse_charge",
@@ -188,14 +209,37 @@ const DEFAULT_RULES_CATALOG: Rule2Item[] = [
     why_it_matters: "Mismatched RCM flags lead to erroneous cash tax liability payments under GSTR-3B Table 3.1(d).",
     column_status: "AVAILABLE",
   },
-];
-
-const DEFAULT_AI_SUGGESTED_RULES: Rule2Item[] = [
   {
-    id: "AI-SUGG-POS",
+    id: "RW2-008",
+    name: "Document Type Classification Alignment",
+    description: "Strictly ensures Invoices, Credit Notes, and Debit Notes are not crossed during reconciliation.",
+    category: "COMPLIANCE_GUARD",
+    rule_tier: "CORE_STATUTORY",
+    statutory_reference: "CGST Act Sec 34 • Rule 46",
+    advisory_caution: "Word of Caution: Invoices and Credit Notes have opposite financial signs. Disabling this rule risks netting errors and inverted ITC claims.",
+    gstr_column: "DocumentType",
+    pr_column: "DocumentType",
+    canonical_concept: "document_type",
+    strategy: "VALUE_GUARD",
+    normalizers: ["TRIM_WHITESPACE", "UPPERCASE"],
+    tolerance_value: 0,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: true,
+    execution_order: 8,
+    plain_english_explanation: "Verifies that document classifications (Invoice vs Credit Note vs Debit Note) agree strictly across ledgers.",
+    why_it_matters: "Matching a Credit Note against an Invoice reverses the sign of tax amounts and distorts net eligible input tax credit.",
+    column_status: "AVAILABLE",
+  },
+  {
+    id: "RW2-009",
     name: "Place of Supply (POS) State Code Alignment",
-    description: "Validates that recipient State Code matches between GSTR-2B and ERP to prevent inter-state vs intra-state mismatch.",
-    category: "AI_SUGGESTED",
+    description: "Validates recipient state code between GSTR-2B and ERP to prevent inter-state vs intra-state mismatch.",
+    category: "COMPLIANCE_GUARD",
+    rule_tier: "COMMERCIAL_POLICY",
+    statutory_reference: "CGST Rules Rule 46(e)/(m) • IGST Sec 12",
+    advisory_caution: "Advisory: Validates supply jurisdiction. Discrepancies between IGST and CGST/SGST trigger credit disallowance.",
     gstr_column: "PlaceOfSupply",
     pr_column: "PlaceOfSupply",
     canonical_concept: "place_of_supply",
@@ -205,19 +249,46 @@ const DEFAULT_AI_SUGGESTED_RULES: Rule2Item[] = [
     tolerance_mode: "ABSOLUTE_INR",
     date_tolerance_value: 0,
     date_tolerance_unit: "DAYS",
-    is_enabled: false,
-    execution_order: 21,
+    is_enabled: true,
+    execution_order: 9,
     plain_english_explanation: "Verifies that Place of Supply state codes agree between Government portal and Purchase Register after normalising punctuation.",
     why_it_matters: "Input tax credit eligibility depends on correct supply classification (IGST vs CGST/SGST) under Section 12 of IGST Act.",
     column_status: "AVAILABLE",
-    ai_rationale: "AI Data Study: Detected Place of Supply / State Code data in workbooks. Normalization prevents false rejects from state code naming prefixes.",
-    is_ai_suggested: true,
   },
+  {
+    id: "RW2-010",
+    name: "Total Tax Amount (IGST / CGST / SGST) Tolerance",
+    description: "Absorbs small penny rounding fractions and item-level vs header-level tax differences.",
+    category: "FINANCIAL_VALUE",
+    rule_tier: "COMMERCIAL_POLICY",
+    statutory_reference: "CGST Rules Rule 46(k)",
+    advisory_caution: "Advisory: Absorbs item-level tax rounding differences (e.g. ± ₹5.00) between ERP tax engines and GST portal rounding rules.",
+    gstr_column: "TotalTaxAmount",
+    pr_column: "TotalTaxAmount",
+    canonical_concept: "tax_amount",
+    strategy: "NUMERIC_TOLERANCE",
+    normalizers: ["TRIM_WHITESPACE"],
+    tolerance_value: 5,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: true,
+    execution_order: 10,
+    plain_english_explanation: "Ensures the cumulative tax amount (IGST + CGST + SGST) matches within ± ₹5.00 to account for rounding.",
+    why_it_matters: "Protects against under-claiming or over-claiming specific tax heads while preventing false rejections from ₹1–₹2 fraction rounding.",
+    column_status: "AVAILABLE",
+  },
+];
+
+const DEFAULT_AI_SUGGESTED_RULES: Rule2Item[] = [
   {
     id: "AI-SUGG-HSN",
     name: "HSN / SAC Code Canonical Classification Match",
     description: "Matches goods and services tariff classification codes between Government portal and Purchase Register.",
     category: "AI_SUGGESTED",
+    rule_tier: "AUXILIARY_METADATA",
+    statutory_reference: "CGST Rules Rule 46(f)",
+    advisory_caution: "Match Impact Notice: Auxiliary ERP metadata. HSN codes often have 4-digit vs 6-digit or 8-digit granularity. Enabling as a strict rule may reduce match rate by 15–25%.",
     gstr_column: "HsnSac",
     pr_column: "HsnSac",
     canonical_concept: "hsn",
@@ -228,9 +299,9 @@ const DEFAULT_AI_SUGGESTED_RULES: Rule2Item[] = [
     date_tolerance_value: 0,
     date_tolerance_unit: "DAYS",
     is_enabled: false,
-    execution_order: 22,
+    execution_order: 21,
     plain_english_explanation: "Validates HSN/SAC tariff classification across records after stripping leading zeroes and punctuation.",
-    why_it_matters: "Mandatory HSN reporting under Rule 46(d) requires correct 4, 6, or 8 digit classification depending on aggregate turnover.",
+    why_it_matters: "Mandatory HSN reporting under Rule 46(f) requires correct 4, 6, or 8 digit classification depending on aggregate turnover.",
     column_status: "AVAILABLE",
     ai_rationale: "AI Data Study: Both workbooks contain HSN/SAC tariff fields. Canonical trimming prevents 6-digit vs 8-digit classification mismatches.",
     is_ai_suggested: true,
@@ -240,6 +311,8 @@ const DEFAULT_AI_SUGGESTED_RULES: Rule2Item[] = [
     name: "Supplier Legal / Trade Name Secondary Verification",
     description: "Secondary identity verification validating vendor trading names after stripping punctuation and entity abbreviations.",
     category: "AI_SUGGESTED",
+    rule_tier: "AUXILIARY_METADATA",
+    advisory_caution: "Match Impact Notice: Auxiliary ERP metadata. Vendor trading names frequently differ between ERP and portal (e.g. 'Pvt Ltd' vs 'Private Limited'). Recommended for near-match scoring only.",
     gstr_column: "TradeName",
     pr_column: "VendorName",
     canonical_concept: "vendor_name",
@@ -250,7 +323,7 @@ const DEFAULT_AI_SUGGESTED_RULES: Rule2Item[] = [
     date_tolerance_value: 0,
     date_tolerance_unit: "DAYS",
     is_enabled: false,
-    execution_order: 23,
+    execution_order: 22,
     plain_english_explanation: "Verifies supplier entity name across books with case folding and punctuation stripping.",
     why_it_matters: "Helps detect circular invoicing and misallocated vendor ledger entries where GSTIN was keyed with typographical errors.",
     column_status: "AVAILABLE",
@@ -262,6 +335,9 @@ const DEFAULT_AI_SUGGESTED_RULES: Rule2Item[] = [
     name: "Compensation Cess Commercial Tolerance",
     description: "Verifies GST compensation cess amounts with commercial fractional rounding tolerance.",
     category: "AI_SUGGESTED",
+    rule_tier: "COMMERCIAL_POLICY",
+    statutory_reference: "GST (Compensation to States) Act Sec 11",
+    advisory_caution: "Advisory: Absorbs minor rounding fractions in Compensation Cess liabilities.",
     gstr_column: "CessAmount",
     pr_column: "CessAmount",
     canonical_concept: "cess",
@@ -272,7 +348,7 @@ const DEFAULT_AI_SUGGESTED_RULES: Rule2Item[] = [
     date_tolerance_value: 0,
     date_tolerance_unit: "DAYS",
     is_enabled: false,
-    execution_order: 24,
+    execution_order: 23,
     plain_english_explanation: "Verifies compensation cess matches within ± ₹5.00 commercial rounding variance.",
     why_it_matters: "Cess credit can only be offset against output Cess liability under Section 11 of GST (Compensation to States) Act.",
     column_status: "AVAILABLE",
@@ -1337,6 +1413,30 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                     #{idx + 1}
                   </span>
 
+                  {/* Rule Tier Badge */}
+                  {rule.rule_tier === "CORE_STATUTORY" && (
+                    <span className="v2-tier-badge statutory" title="Mandatory statutory anchor under CGST Act & Rules">
+                      <ShieldCheck size={11} /> Core Statutory
+                    </span>
+                  )}
+                  {rule.rule_tier === "AUXILIARY_METADATA" && (
+                    <span className="v2-tier-badge auxiliary" title="Auxiliary metadata rule (discrepancy flag / low yield risk)">
+                      <Info size={11} /> Extra Metadata
+                    </span>
+                  )}
+                  {(!rule.rule_tier || rule.rule_tier === "COMMERCIAL_POLICY") && (
+                    <span className="v2-tier-badge commercial" title="Configurable commercial policy rule">
+                      <Sliders size={11} /> Commercial
+                    </span>
+                  )}
+
+                  {/* Statutory Reference Pill */}
+                  {rule.statutory_reference && (
+                    <span className="v2-statutory-pill" title={`Statutory Legal Authority: ${rule.statutory_reference}`}>
+                      {rule.statutory_reference}
+                    </span>
+                  )}
+
                   <span
                     style={{
                       fontSize: 10.5,
@@ -1497,6 +1597,42 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Word of Caution Banner for Disabled Core Statutory Rules */}
+              {rule.rule_tier === "CORE_STATUTORY" && !rule.is_enabled && (
+                <div className="v2-word-of-caution-box" onClick={(e) => e.stopPropagation()}>
+                  <div className="v2-caution-header">
+                    <AlertTriangle size={15} className="v2-caution-icon" />
+                    <strong>Word of Caution (Core Statutory Rule Excluded):</strong>
+                  </div>
+                  <p className="v2-caution-desc">
+                    {rule.advisory_caution ||
+                      `'${rule.name}' is a primary statutory anchor under ${rule.statutory_reference || "Section 16"}. Excluding this rule allows unanchored cross-vendor matching and exposes ITC claims to audit inquiry (Form DRC-01C).`}
+                  </p>
+                  <button
+                    type="button"
+                    className="btn-re-enable-statutory"
+                    onClick={() => handleToggleRule(rule.id)}
+                    title="Click to re-include this core statutory rule in reconciliation"
+                  >
+                    <Check size={12} /> Re-include Rule
+                  </button>
+                </div>
+              )}
+
+              {/* Match Yield Advisory for Enabled Auxiliary Metadata Rules */}
+              {rule.rule_tier === "AUXILIARY_METADATA" && rule.is_enabled && (
+                <div className="v2-yield-notice-box" onClick={(e) => e.stopPropagation()}>
+                  <Info size={14} style={{ color: "#4338ca", flexShrink: 0, marginTop: 1 }} />
+                  <div style={{ fontSize: 12, color: "#312e81", lineHeight: 1.45 }}>
+                    <strong>Match Yield Advisory: </strong>
+                    <span>
+                      {rule.advisory_caution ||
+                        "Auxiliary metadata column. Formatting variances between ERP and portal may reduce your overall match rate."}
+                    </span>
+                  </div>
+                </div>
+              )}
 
               {/* Expanded Ancillary Drawer */}
               {isExpanded && (

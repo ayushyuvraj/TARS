@@ -8,7 +8,10 @@ import {
 } from "./api_v2";
 import { DynamicMappingGridV2 } from "./DynamicMappingGridV2";
 import { ReconciliationV2RulesStage } from "./ReconciliationV2RulesStage";
+import { ReconciliationV2ResultsStage } from "./ReconciliationV2ResultsStage";
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
+import "./rules_v2.css";
+import "./results_v2.css";
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -385,8 +388,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
         </div>
       </nav>
 
-      {/* 3. CENTER WORKSPACE CANVAS (ZERO-SCROLL FIT ON SETUP, SCROLLABLE ON RULES) */}
-      <main className={`v2-stage-canvas ${currentStage === "rules" || currentStage === "policy" ? "v2-stage-canvas--scrollable" : ""}`}>
+      {/* 3. CENTER WORKSPACE CANVAS (FLEX SCROLLABLE CONTAINER) */}
+      <main className={`v2-stage-canvas ${currentStage === "setup" ? "v2-stage-canvas--setup" : "v2-stage-canvas--scrollable"}`}>
         {errorMessage && (
           <div className="v2-alert-error">
             <AlertCircle size={16} style={{ flexShrink: 0 }} />
@@ -826,9 +829,26 @@ export const ReconciliationV2Workspace: React.FC = () => {
         )}
 
         {/* ========================================================================= */}
-        {/* STAGES 4-8: PROGRESSIVE RECONCILIATION WORKSPACES                         */}
+        {/* STAGE 4: DETERMINISTIC RESULTS & AMBIGUITY HUB                            */}
         {/* ========================================================================= */}
-        {currentStage !== "setup" && currentStage !== "mapping" && currentStage !== "rules" && currentStage !== "policy" && (() => {
+        {currentStage === "results" && (
+          <ReconciliationV2ResultsStage
+            sessionId={sessionId || ""}
+            onBackToRules={() => {
+              setCurrentStage("rules");
+              if (sessionId) navigate(`/reconciliations-v2/${sessionId}/rules`);
+            }}
+            onProceedToNearMatches={() => {
+              setCurrentStage("near-matches");
+              if (sessionId) navigate(`/reconciliations-v2/${sessionId}/near-matches`);
+            }}
+          />
+        )}
+
+        {/* ========================================================================= */}
+        {/* STAGES 5-7: PROGRESSIVE RECONCILIATION WORKSPACES                         */}
+        {/* ========================================================================= */}
+        {currentStage !== "setup" && currentStage !== "mapping" && currentStage !== "rules" && currentStage !== "policy" && currentStage !== "results" && (() => {
           const stageConfigs: Record<string, {
             number: number;
             label: string;

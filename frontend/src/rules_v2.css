@@ -848,18 +848,31 @@
 /* 7. Scrollable Stage Canvas */
 .v2-stage-canvas--scrollable {
   overflow-y: auto !important;
-  max-height: calc(100vh - 120px) !important;
-  scrollbar-width: thin;
-  padding-bottom: 60px !important;
+  overflow-x: auto !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  scrollbar-width: thin !important;
+  scrollbar-color: #94a3b8 #f1f5f9 !important;
+  padding-bottom: 80px !important;
+  box-sizing: border-box !important;
 }
 
 .v2-stage-canvas--scrollable::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
+  height: 8px;
+}
+
+.v2-stage-canvas--scrollable::-webkit-scrollbar-track {
+  background: #f8fafc;
 }
 
 .v2-stage-canvas--scrollable::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #94a3b8;
   border-radius: 9999px;
+}
+
+.v2-stage-canvas--scrollable::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }
 
 /* 8. Agentic Live Loading HUD Console (Point 5) */
@@ -2800,5 +2813,133 @@
   border-color: #2563eb;
   box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
+
+/* ==========================================================================
+   STATUTORY TIERS & ADVISORY WORDS OF CAUTION
+   ========================================================================== */
+
+.v2-tier-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.v2-tier-badge.statutory {
+  color: #1e40af;
+  background: #dbeafe;
+  border: 1px solid #bfdbfe;
+}
+
+.v2-tier-badge.commercial {
+  color: #0369a1;
+  background: #e0f2fe;
+  border: 1px solid #bae6fd;
+}
+
+.v2-tier-badge.auxiliary {
+  color: #6d28d9;
+  background: #ede9fe;
+  border: 1px solid #ddd6fe;
+}
+
+.v2-statutory-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  letter-spacing: 0.01em;
+}
+
+/* Word of Caution Banner for Disabled Core Statutory Rules */
+.v2-word-of-caution-box {
+  margin: 0 16px 12px 16px;
+  background: #fffbeb;
+  border: 1.5px solid #fde68a;
+  border-left: 4px solid #f59e0b;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.v2-caution-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #92400e;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.v2-caution-icon {
+  color: #d97706;
+  flex-shrink: 0;
+}
+
+.v2-caution-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #78350f;
+  line-height: 1.45;
+  flex: 1;
+  min-width: 260px;
+}
+
+.btn-re-enable-statutory {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  padding: 4px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+
+.btn-re-enable-statutory:hover {
+  background: #fde68a;
+  color: #78350f;
+  border-color: #f59e0b;
+}
+
+/* Match Yield Advisory for Enabled Auxiliary Rules */
+.v2-yield-notice-box {
+  margin: 0 16px 10px 16px;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  border-left: 3.5px solid #6366f1;
+  border-radius: 8px;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: fadeIn 0.2s ease-out;
+}
+
 
 

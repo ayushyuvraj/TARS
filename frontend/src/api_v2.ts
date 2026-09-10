@@ -129,6 +129,9 @@ export interface Rule2Item {
   missing_reason?: string | null;
   ai_rationale?: string | null;
   is_ai_suggested?: boolean;
+  rule_tier?: "CORE_STATUTORY" | "COMMERCIAL_POLICY" | "AUXILIARY_METADATA";
+  statutory_reference?: string | null;
+  advisory_caution?: string | null;
   created_at?: string | null;
   created_by?: string | null;
   created_in_run?: string | null;
@@ -174,6 +177,95 @@ export interface ReconciliationV2Session {
   rule_execution_order?: string[];
   waterfall_passes?: MatchingPass[];
   rules_v2?: Rule2Item[];
+}
+
+// --- Stage 4 Results Models ---
+
+export interface ScoreBreakdown {
+  invoice_similarity: number;
+  amount_score: number;
+  date_score: number;
+  tax_score: number;
+}
+
+export interface AmbiguityCandidate {
+  candidate_id: string;
+  pr_row_index: number;
+  pr_record_id: string;
+  confidence_score: number;
+  score_breakdown: ScoreBreakdown;
+  detected_differences: string[];
+  ai_reason: string;
+  pr_preview: Record<string, any>;
+}
+
+export interface AmbiguityCluster {
+  cluster_id: string;
+  gstr_row_index: number;
+  gstr_record_id: string;
+  anchor_preview: Record<string, any>;
+  candidates: AmbiguityCandidate[];
+  ai_justification: string;
+  status: "PENDING_REVIEW" | "RESOLVED" | "REJECTED";
+  resolved_pr_record_id?: string | null;
+  resolved_pr_row_index?: number | null;
+  resolved_at?: string | null;
+}
+
+export interface ReconciliationRecordItem {
+  id: string;
+  bucket: "EXACT_MATCH" | "TOLERANCE_MATCH" | "NEAR_MATCH" | "AMBIGUOUS" | "GSTR_ONLY" | "PR_ONLY" | "RESOLVED_MANUALLY";
+  gstr_row_index?: number | null;
+  pr_row_index?: number | null;
+  gstr_record_id?: string | null;
+  pr_record_id?: string | null;
+  gstin: string;
+  document_number: string;
+  document_date?: string | null;
+  taxable_value: number;
+  tax_amount: number;
+  total_value: number;
+  gstr_preview: Record<string, any>;
+  pr_preview: Record<string, any>;
+  variances: Record<string, any>;
+  matched_by_pass: string;
+  ambiguity_cluster_id?: string | null;
+}
+
+export interface WaterfallPassYield {
+  tier: number;
+  name: string;
+  matched_count: number;
+  matched_itc: number;
+  retention_percentage: number;
+}
+
+export interface Stage4ResultsSummary {
+  total_gstr_rows: number;
+  total_pr_rows: number;
+  exact_match_count: number;
+  exact_match_itc: number;
+  tolerance_match_count: number;
+  tolerance_match_itc: number;
+  near_match_count: number;
+  near_match_itc: number;
+  ambiguous_count: number;
+  ambiguous_itc: number;
+  gstr_only_count: number;
+  gstr_only_itc: number;
+  pr_only_count: number;
+  pr_only_itc: number;
+  total_reconciled_count: number;
+  total_reconciled_itc: number;
+  overall_reconciliation_rate: number;
+  waterfall_passes: WaterfallPassYield[];
+}
+
+export interface Stage4ExecutionResponse {
+  session_id: string;
+  summary: Stage4ResultsSummary;
+  records: ReconciliationRecordItem[];
+  ambiguities: AmbiguityCluster[];
 }
 
 const API_BASE = "/api/reconciliations-v2";
@@ -341,6 +433,34 @@ export const apiV2 = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ rules })
+    });
+  },
+
+  // --- Stage 4 Results Endpoints ---
+  async executeStage4Results(sessionId: string): Promise<Stage4ExecutionResponse> {
+    return request<Stage4ExecutionResponse>(`${API_BASE}/${sessionId}/results/execute`, {
+      method: "POST"
+    });
+  },
+
+  async getStage4Results(sessionId: string): Promise<Stage4ExecutionResponse> {
+    return request<Stage4ExecutionResponse>(`${API_BASE}/${sessionId}/results`);
+  },
+
+  async resolveAmbiguity(
+    sessionId: string,
+    clusterId: string,
+    chosenCandidateId?: string,
+    action: "CHOOSE" | "REJECT" = "CHOOSE"
+  ): Promise<Stage4ExecutionResponse> {
+    return request<Stage4ExecutionResponse>(`${API_BASE}/${sessionId}/results/resolve-ambiguity`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        cluster_id: clusterId,
+        chosen_candidate_id: chosenCandidateId,
+        action
+      })
     });
   },
 
