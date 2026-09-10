@@ -1272,6 +1272,8 @@
    ========================================================================= */
 
 .v2-classification-reason-card {
+  width: 100%;
+  box-sizing: border-box;
   background: linear-gradient(135deg, #f8fafc 0%, #eff6ff 100%);
   border: 1px solid #bfdbfe;
   border-left: 4px solid #2563eb;
@@ -1288,6 +1290,18 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  width: 100%;
+}
+
+.v2-reason-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 750;
+  color: #1e3a8a;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 .v2-reason-header strong {
@@ -1313,12 +1327,15 @@
   white-space: nowrap;
 }
 
+.v2-classification-reason-card .v2-reason-text,
 .v2-reason-text {
   margin: 0;
   font-size: 13px;
   color: #1e293b;
-  line-height: 1.5;
+  line-height: 1.55;
   font-weight: 500;
+  width: 100%;
+  max-width: 100% !important;
 }
 
 .v2-compared-cols-badge {
