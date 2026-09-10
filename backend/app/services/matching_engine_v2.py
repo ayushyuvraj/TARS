@@ -200,6 +200,8 @@ class ReconciliationRecordItem(BaseModel):
     ambiguity_cluster_id: str | None = None
     classification_reason: str = ""
     ai_reason: str = ""
+    reclassified_from: str | None = None  # e.g., "AMBIGUOUS"
+    reclassification_note: str | None = None  # e.g., "Reclassified from Ambiguous (Pass 4) → Tolerance Match"
 
 
 class WaterfallPassYield(BaseModel):
@@ -2814,3 +2816,143 @@ def compile_rule_from_nl(
         plain_english_explanation=f"Matches {col} values stripping symbols, leading zeros, and prefixes.",
         why_it_matters=f"Resolves cross-system data formatting discrepancies per user prompt: '{prompt}'.",
     )
+
+
+def reclassify_ambiguity_candidate(
+    gstr_preview: dict[str, Any],
+    chosen_cand: Any,
+    candidate_count: int,
+    action: str = "CHOOSE",
+    rules: list[Any] | None = None,
+) -> dict[str, Any]:
+    """
+    Re-evaluates a resolved ambiguous row against Stage 3 reconciliation conditions.
+    Seamlessly places the record into one of the canonical matching buckets:
+    - EXACT_MATCH (Pass 1)
+    - TOLERANCE_MATCH (Pass 2)
+    - NEAR_MATCH (Pass 3)
+    - GSTR_ONLY (Pass 5)
+
+    Produces an updated plain-English AI narrative explaining its transition from
+    ambiguous multi-match quarantine to its user-selected canonical classification.
+    """
+    import re
+    import pandas as pd
+
+    doc_raw = str(gstr_preview.get("document_number") or gstr_preview.get("DocumentNumber") or "").strip()
+
+    if action == "REJECT" or not chosen_cand:
+        reason_text = (
+            f"Reclassified from Ambiguous (Pass 4) to GSTR-2B Only (Pass 5). Originally quarantined in Ambiguous Collisions with "
+            f"{candidate_count} possible matching ERP candidates for Portal Document #{doc_raw or 'N/A'}. "
+            f"The reviewer inspected the proposed candidates and rejected all of them as non-matching. "
+            f"The document is now placed in GSTR-2B Only as an unbooked/unclaimed portal invoice."
+        )
+        return {
+            "bucket": "GSTR_ONLY",
+            "matched_by_pass": "Pass 5: In 2B Only (Ambiguity Discarded by Reviewer)",
+            "classification_reason": reason_text,
+            "ai_reason": reason_text,
+            "reclassified_from": "AMBIGUOUS",
+            "reclassification_note": "Reclassified from Ambiguous Collisions (Pass 4) → GSTR-2B Only via Reviewer Rejection",
+            "variances": {"status": "User rejected all multi-match candidates", "candidate_count": candidate_count},
+        }
+
+    # Extract chosen candidate attributes
+    pr_preview = getattr(chosen_cand, "pr_preview", None) or (chosen_cand.get("pr_preview") if isinstance(chosen_cand, dict) else {})
+    cand_id = getattr(chosen_cand, "pr_record_id", None) or (chosen_cand.get("pr_record_id") if isinstance(chosen_cand, dict) else "PR Candidate")
+    cand_conf = getattr(chosen_cand, "confidence_score", None) or (chosen_cand.get("confidence_score") if isinstance(chosen_cand, dict) else 90.0)
+
+    p_doc_raw = str(pr_preview.get("document_number") or pr_preview.get("DocumentNumber") or "").strip()
+
+    # Document number comparison
+    g_norm = re.sub(r"[^A-Za-z0-9]", "", doc_raw).upper().lstrip("0")
+    p_norm = re.sub(r"[^A-Za-z0-9]", "", p_doc_raw).upper().lstrip("0")
+    is_exact_doc = (g_norm == p_norm and len(g_norm) > 0)
+    is_sub = (len(g_norm) >= 3 and g_norm in p_norm) or (len(p_norm) >= 3 and p_norm in g_norm)
+    doc_ratio = 1.0 if is_exact_doc else (calculate_string_ratio(g_norm, p_norm) if (g_norm and p_norm) else 0.0)
+
+    # Taxable amount comparison
+    g_taxable = float(gstr_preview.get("taxable_value") or gstr_preview.get("TaxableValue") or 0.0)
+    p_taxable = float(pr_preview.get("taxable_value") or pr_preview.get("TaxableValue") or 0.0)
+    taxable_diff = round(abs(g_taxable - p_taxable), 2)
+    taxable_tol = 10.0  # Stage 3 default statutory tolerance
+    is_exact_amount = (taxable_diff <= 0.05)
+    is_tol_amount = (taxable_diff <= taxable_tol)
+
+    # Date delta comparison
+    g_date_raw = str(gstr_preview.get("document_date") or gstr_preview.get("DocumentDate") or "").strip()[:10]
+    p_date_raw = str(pr_preview.get("document_date") or pr_preview.get("DocumentDate") or "").strip()[:10]
+    diff_days = 0
+    try:
+        g_dt = pd.to_datetime(g_date_raw, errors="coerce")
+        p_dt = pd.to_datetime(p_date_raw, errors="coerce")
+        if pd.notna(g_dt) and pd.notna(p_dt):
+            diff_days = abs((g_dt - p_dt).days)
+    except Exception:
+        diff_days = 0
+
+    date_tol_days = 30
+    is_exact_date = (diff_days == 0)
+    is_tol_date = (diff_days <= date_tol_days)
+
+    # Classification logic mirroring Stage 3 & Stage 4 waterfall
+    if is_exact_doc and is_exact_amount and is_exact_date:
+        target_bucket = "EXACT_MATCH"
+        tier_name = "Exact Match"
+        matched_pass = "Pass 1: Exact Match (Zero Tolerance - Disambiguated)"
+        condition_summary = f"zero variance across document number, taxable amount (₹{taxable_diff:.2f} diff), and date"
+        note = "Reclassified from Ambiguous Collisions (Pass 4) → Exact Match via Senior Reviewer Resolution"
+        variances = {
+            "Invoice Match": "Exact Match",
+            "Taxable Diff": "Exact (₹0.00)",
+            "Date Delta": "Exact Date",
+            "Disambiguated": "Senior Tax Reviewer",
+        }
+    elif (is_exact_doc or is_sub or doc_ratio >= 0.95) and is_tol_amount and is_tol_date:
+        target_bucket = "TOLERANCE_MATCH"
+        tier_name = "Tolerance Match"
+        matched_pass = "Pass 2: Tolerance Matched (Stage 3 Rules - Disambiguated)"
+        condition_summary = (
+            f"statutory tolerance limits (Taxable variance: ₹{taxable_diff:.2f} within ±₹{taxable_tol:.2f}, "
+            f"Date delta: {diff_days}d within {date_tol_days}d window)"
+        )
+        note = "Reclassified from Ambiguous Collisions (Pass 4) → Tolerance Match via Senior Reviewer Resolution"
+        variances = {
+            "Taxable Diff": f"₹{taxable_diff:.2f}",
+            "Date Delta": f"{diff_days}d delta",
+            "Disambiguated": "Senior Tax Reviewer",
+        }
+    else:
+        target_bucket = "NEAR_MATCH"
+        tier_name = "Near Match"
+        matched_pass = "Pass 3: Semantic Near Match (Disambiguated by Reviewer)"
+        condition_summary = (
+            f"semantic invoice similarity ({round(doc_ratio * 100)}%) with acceptable near-match variance "
+            f"(Taxable diff: ₹{taxable_diff:.2f}, Date delta: {diff_days}d)"
+        )
+        note = "Reclassified from Ambiguous Collisions (Pass 4) → Near Match via Senior Reviewer Resolution"
+        variances = {
+            "Invoice Similarity": f"{round(doc_ratio * 100)}%",
+            "Taxable Diff": f"₹{taxable_diff:.2f}",
+            "Date Delta": f"{diff_days}d delta",
+            "Disambiguated": "Senior Tax Reviewer",
+        }
+
+    reason_narrative = (
+        f"Reclassified from Ambiguous (Pass 4) to {tier_name}. Originally quarantined in Ambiguous Collisions with "
+        f"{candidate_count} possible matching ERP candidates for Portal Document #{doc_raw or 'N/A'}. "
+        f"The reviewer resolved the ambiguity by selecting Candidate {cand_id} ({cand_conf}% confidence). "
+        f"Upon re-evaluating the pair against Stage 3 reconciliation conditions, it satisfied all {tier_name} criteria "
+        f"({condition_summary}). It has now been officially placed in {tier_name}."
+    )
+
+    return {
+        "bucket": target_bucket,
+        "matched_by_pass": matched_pass,
+        "classification_reason": reason_narrative,
+        "ai_reason": reason_narrative,
+        "reclassified_from": "AMBIGUOUS",
+        "reclassification_note": note,
+        "variances": variances,
+    }

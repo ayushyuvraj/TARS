@@ -214,7 +214,7 @@ export interface AmbiguityCluster {
 
 export interface ReconciliationRecordItem {
   id: string;
-  bucket: "EXACT_MATCH" | "TOLERANCE_MATCH" | "NEAR_MATCH" | "AMBIGUOUS" | "GSTR_ONLY" | "PR_ONLY" | "RESOLVED_MANUALLY";
+  bucket: "EXACT_MATCH" | "TOLERANCE_MATCH" | "NEAR_MATCH" | "AMBIGUOUS" | "GSTR_ONLY" | "PR_ONLY";
   gstr_row_index?: number | null;
   pr_row_index?: number | null;
   gstr_record_id?: string | null;
@@ -232,6 +232,8 @@ export interface ReconciliationRecordItem {
   ambiguity_cluster_id?: string | null;
   classification_reason?: string;
   ai_reason?: string;
+  reclassified_from?: string | null;
+  reclassification_note?: string | null;
 }
 
 export interface WaterfallPassYield {

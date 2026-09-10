@@ -34,6 +34,7 @@ from app.services.matching_engine_v2 import (
     AmbiguityCluster,
     AmbiguityCandidate,
     ReconciliationRecordItem,
+    reclassify_ambiguity_candidate,
 )
 from app.services.audit_v2_service import (
     audit_v2_service,
@@ -1394,6 +1395,7 @@ def resolve_ambiguity_endpoint(
 
     import datetime
     now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    candidate_count = len(target_cluster.get("candidates", []))
 
     if req.action == "CHOOSE" and req.chosen_candidate_id:
         chosen_cand = None
@@ -1409,41 +1411,133 @@ def resolve_ambiguity_endpoint(
         target_cluster["resolved_pr_row_index"] = chosen_cand.get("pr_row_index")
         target_cluster["resolved_at"] = now_iso
 
-        for rec in records:
-            if rec.get("ambiguity_cluster_id") == req.cluster_id:
-                rec["bucket"] = "RESOLVED_MANUALLY"
-                rec["pr_row_index"] = chosen_cand.get("pr_row_index")
-                rec["pr_record_id"] = chosen_cand.get("pr_record_id")
-                rec["pr_preview"] = chosen_cand.get("pr_preview", {})
-                rec["matched_by_pass"] = "Human-in-the-Loop Consensus"
-                rec["variances"] = {
-                    "resolved_by": "Senior Tax Accountant",
-                    "confidence_at_resolution": chosen_cand.get("confidence_score"),
-                    "resolved_at": now_iso,
-                }
-                break
+        # Locate the anchor GSTR record
+        target_rec = next((r for r in records if r.get("ambiguity_cluster_id") == req.cluster_id), None)
+        gstr_preview = target_rec.get("gstr_preview", {}) if target_rec else target_cluster.get("anchor_preview", {})
 
-        # Update KPIs
-        cand_tax = float(chosen_cand.get("pr_preview", {}).get("tax_amount") or 0.0)
+        # Re-evaluate the pair against Stage 3 conditions
+        reclass_result = reclassify_ambiguity_candidate(
+            gstr_preview=gstr_preview,
+            chosen_cand=chosen_cand,
+            candidate_count=candidate_count,
+            action="CHOOSE",
+            rules=session.get("rules", []),
+        )
+
+        chosen_pr_row_idx = chosen_cand.get("pr_row_index")
+
+        if target_rec:
+            target_rec["bucket"] = reclass_result["bucket"]
+            target_rec["pr_row_index"] = chosen_pr_row_idx
+            target_rec["pr_record_id"] = chosen_cand.get("pr_record_id")
+            target_rec["pr_preview"] = chosen_cand.get("pr_preview", {})
+            target_rec["matched_by_pass"] = reclass_result["matched_by_pass"]
+            target_rec["classification_reason"] = reclass_result["classification_reason"]
+            target_rec["ai_reason"] = reclass_result["ai_reason"]
+            target_rec["reclassified_from"] = reclass_result["reclassified_from"]
+            target_rec["reclassification_note"] = reclass_result["reclassification_note"]
+            target_rec["variances"] = {
+                **reclass_result.get("variances", {}),
+                "resolved_by": "Senior Tax Accountant",
+                "confidence_at_resolution": chosen_cand.get("confidence_score"),
+                "resolved_at": now_iso,
+                "candidate_count": candidate_count,
+            }
+
+        # Retire the PR_ONLY record for this chosen PR row so it doesn't remain as "missing in GSTR-2B"
+        pr_tax_removed = 0.0
+        new_records = []
+        for r in records:
+            if r.get("bucket") == "PR_ONLY" and r.get("pr_row_index") == chosen_pr_row_idx:
+                pr_tax_removed = float(r.get("tax_amount") or 0.0)
+                continue  # Retire this PR_ONLY record
+            new_records.append(r)
+        records = new_records
+
+        # Update Summary KPIs
+        cand_tax = float(chosen_cand.get("pr_preview", {}).get("tax_amount") or target_rec.get("tax_amount", 0.0) if target_rec else 0.0)
+        target_bucket = reclass_result["bucket"]
+
         summary["ambiguous_count"] = max(0, summary.get("ambiguous_count", 1) - 1)
+        summary["ambiguous_itc"] = max(0.0, round(summary.get("ambiguous_itc", 0.0) - cand_tax, 2))
+
+        if pr_tax_removed > 0:
+            summary["pr_only_count"] = max(0, summary.get("pr_only_count", 1) - 1)
+            summary["pr_only_itc"] = max(0.0, round(summary.get("pr_only_itc", 0.0) - pr_tax_removed, 2))
+
+        if target_bucket == "EXACT_MATCH":
+            summary["exact_match_count"] = summary.get("exact_match_count", 0) + 1
+            summary["exact_match_itc"] = round(summary.get("exact_match_itc", 0.0) + cand_tax, 2)
+        elif target_bucket == "TOLERANCE_MATCH":
+            summary["tolerance_match_count"] = summary.get("tolerance_match_count", 0) + 1
+            summary["tolerance_match_itc"] = round(summary.get("tolerance_match_itc", 0.0) + cand_tax, 2)
+        elif target_bucket == "NEAR_MATCH":
+            summary["near_match_count"] = summary.get("near_match_count", 0) + 1
+            summary["near_match_itc"] = round(summary.get("near_match_itc", 0.0) + cand_tax, 2)
+
         summary["total_reconciled_count"] = summary.get("total_reconciled_count", 0) + 1
         summary["total_reconciled_itc"] = round(summary.get("total_reconciled_itc", 0.0) + cand_tax, 2)
         total_g = summary.get("total_gstr_rows", 1) or 1
         summary["overall_reconciliation_rate"] = round((summary["total_reconciled_count"] / total_g) * 100.0, 1)
 
+        # Sync Waterfall Passes
+        for p in summary.get("waterfall_passes", []):
+            t = p.get("tier")
+            if t == 1:
+                p["matched_count"] = summary.get("exact_match_count", p.get("matched_count", 0))
+                p["matched_itc"] = summary.get("exact_match_itc", p.get("matched_itc", 0.0))
+            elif t == 2:
+                p["matched_count"] = summary.get("tolerance_match_count", p.get("matched_count", 0))
+                p["matched_itc"] = summary.get("tolerance_match_itc", p.get("matched_itc", 0.0))
+            elif t == 3:
+                p["matched_count"] = summary.get("near_match_count", p.get("matched_count", 0))
+                p["matched_itc"] = summary.get("near_match_itc", p.get("matched_itc", 0.0))
+            elif t == 4:
+                p["matched_count"] = summary.get("ambiguous_count", p.get("matched_count", 0))
+                p["matched_itc"] = summary.get("ambiguous_itc", p.get("matched_itc", 0.0))
+            elif t == 5:
+                p["matched_count"] = summary.get("pr_only_count", p.get("matched_count", 0)) + summary.get("gstr_only_count", 0)
+            p["retention_percentage"] = round((p.get("matched_count", 0) / total_g * 100.0), 1)
+
     elif req.action == "REJECT":
         target_cluster["status"] = "REJECTED"
         target_cluster["resolved_at"] = now_iso
 
-        for rec in records:
-            if rec.get("ambiguity_cluster_id") == req.cluster_id:
-                rec["bucket"] = "GSTR_ONLY"
-                rec["matched_by_pass"] = "Pass 5: In 2B Only (Ambiguity Rejected by Reviewer)"
-                rec["variances"] = {"status": "User rejected all multi-match candidates"}
-                break
+        target_rec = next((r for r in records if r.get("ambiguity_cluster_id") == req.cluster_id), None)
+        gstr_preview = target_rec.get("gstr_preview", {}) if target_rec else target_cluster.get("anchor_preview", {})
 
+        reclass_result = reclassify_ambiguity_candidate(
+            gstr_preview=gstr_preview,
+            chosen_cand=None,
+            candidate_count=candidate_count,
+            action="REJECT",
+            rules=session.get("rules", []),
+        )
+
+        if target_rec:
+            target_rec["bucket"] = "GSTR_ONLY"
+            target_rec["matched_by_pass"] = reclass_result["matched_by_pass"]
+            target_rec["classification_reason"] = reclass_result["classification_reason"]
+            target_rec["ai_reason"] = reclass_result["ai_reason"]
+            target_rec["reclassified_from"] = reclass_result["reclassified_from"]
+            target_rec["reclassification_note"] = reclass_result["reclassification_note"]
+            target_rec["variances"] = reclass_result.get("variances", {})
+
+        g_tax = float(target_rec.get("tax_amount", 0.0) if target_rec else 0.0)
         summary["ambiguous_count"] = max(0, summary.get("ambiguous_count", 1) - 1)
+        summary["ambiguous_itc"] = max(0.0, round(summary.get("ambiguous_itc", 0.0) - g_tax, 2))
         summary["gstr_only_count"] = summary.get("gstr_only_count", 0) + 1
+        summary["gstr_only_itc"] = round(summary.get("gstr_only_itc", 0.0) + g_tax, 2)
+
+        total_g = summary.get("total_gstr_rows", 1) or 1
+        for p in summary.get("waterfall_passes", []):
+            t = p.get("tier")
+            if t == 4:
+                p["matched_count"] = summary.get("ambiguous_count", 0)
+                p["matched_itc"] = summary.get("ambiguous_itc", 0.0)
+            elif t == 5:
+                p["matched_count"] = summary.get("pr_only_count", 0) + summary.get("gstr_only_count", 0)
+            p["retention_percentage"] = round((p.get("matched_count", 0) / total_g * 100.0), 1)
 
     cached["ambiguities"] = ambiguities
     cached["records"] = records

@@ -882,7 +882,30 @@
 .v2-bucket-badge.ambiguous { background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }
 .v2-bucket-badge.gstr-only { background: #fef2f2; color: #b91c1c; border: 1px solid #fecaca; }
 .v2-bucket-badge.pr-only { background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; }
-.v2-bucket-badge.resolved { background: #f0fdf4; color: #15803d; border: 1px solid #bbf7d0; }
+
+/* Reclassified Provenance Pill */
+.v2-reclassified-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  color: #b45309;
+  border-radius: 9999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  margin-left: 6px;
+  cursor: help;
+  transition: all 0.15s ease;
+}
+
+.v2-reclassified-pill:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
+}
 
 .v2-gstin-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -1585,6 +1608,68 @@
   background: #ecfdf5;
   color: #065f46;
   border: 1px solid #a7f3d0;
+}
+
+/* Provenance Trace Banner (when resolved from Ambiguous) */
+.v2-reclassification-provenance-banner {
+  width: 100%;
+  box-sizing: border-box;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-left: 4px solid #d97706;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  animation: v2FadeIn 0.2s ease;
+}
+
+.v2-provenance-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: #fef3c7;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.v2-provenance-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+}
+
+.v2-provenance-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 750;
+  color: #92400e;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.v2-provenance-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #78350f;
+  background: #fde68a;
+  padding: 1px 7px;
+  border-radius: 10px;
+}
+
+.v2-provenance-text {
+  margin: 0;
+  font-size: 12.5px;
+  color: #78350f;
+  line-height: 1.5;
+  font-weight: 500;
 }
 
 

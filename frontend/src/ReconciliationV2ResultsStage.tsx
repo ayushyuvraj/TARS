@@ -138,7 +138,6 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
       if (activeTab === "AMBIGUOUS" && rec.bucket !== "AMBIGUOUS") return false;
       if (activeTab === "GSTR_ONLY" && rec.bucket !== "GSTR_ONLY") return false;
       if (activeTab === "PR_ONLY" && rec.bucket !== "PR_ONLY") return false;
-      if (activeTab === "RESOLVED_MANUALLY" && rec.bucket !== "RESOLVED_MANUALLY") return false;
 
       // Search filter
       if (searchQuery.trim()) {
@@ -181,7 +180,6 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
       AMBIGUOUS: 0,
       GSTR_ONLY: 0,
       PR_ONLY: 0,
-      RESOLVED_MANUALLY: 0,
     };
     for (const r of records) {
       if (r.bucket in counts) {
@@ -764,17 +762,6 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
               <span>PR Only (DRC-01C)</span>
               <span className="v2-tab-count-pill">{tabCounts.PR_ONLY}</span>
             </button>
-            {tabCounts.RESOLVED_MANUALLY > 0 && (
-              <button
-                type="button"
-                className={`v2-ledger-tab-btn ${activeTab === "RESOLVED_MANUALLY" ? "is-active" : ""}`}
-                onClick={() => setActiveTab("RESOLVED_MANUALLY")}
-              >
-                <Check size={13} color={activeTab === "RESOLVED_MANUALLY" ? "#fff" : "#15803d"} />
-                <span>Resolved Manually</span>
-                <span className="v2-tab-count-pill">{tabCounts.RESOLVED_MANUALLY}</span>
-              </button>
-            )}
           </div>
 
           {/* Search & Control Row */}
@@ -897,9 +884,12 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                               <AlertTriangle size={11} /> PR Only
                             </span>
                           )}
-                          {rec.bucket === "RESOLVED_MANUALLY" && (
-                            <span className="v2-bucket-badge resolved">
-                              <Check size={11} /> Resolved Manually
+                          {rec.reclassified_from && (
+                            <span
+                              className="v2-reclassified-pill"
+                              title={rec.reclassification_note || `Reclassified from ${rec.reclassified_from} via Reviewer Resolution`}
+                            >
+                              <Split size={10} /> From Ambiguous
                             </span>
                           )}
                         </td>
@@ -928,15 +918,16 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                           </span>
                         </td>
                         <td>
-                          <span style={{ fontSize: 12, color: "#475569" }}>{rec.matched_by_pass}</span>
+                          <span className="v2-pass-tag">{rec.matched_by_pass || rec.bucket}</span>
                         </td>
                         <td style={{ textAlign: "center" }}>
-                          {rec.bucket === "AMBIGUOUS" && rec.ambiguity_cluster_id ? (
+                          {rec.bucket === "AMBIGUOUS" ? (
                             <button
                               type="button"
+                              className="v2-btn-resolve-trigger"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const cluster = ambiguities.find((c) => c.cluster_id === rec.ambiguity_cluster_id);
+                                const cluster = ambiguities.find((a) => a.cluster_id === rec.ambiguity_cluster_id);
                                 if (cluster) setSelectedCluster(cluster);
                               }}
                               style={{
@@ -965,6 +956,25 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                         <tr>
                           <td colSpan={10} style={{ padding: 0 }}>
                             <div className="v2-row-detail-panel">
+                              {/* Audit Lifecycle Provenance Banner (if reclassified from Ambiguous) */}
+                              {rec.reclassified_from && (
+                                <div className="v2-reclassification-provenance-banner">
+                                  <div className="v2-provenance-icon-wrap">
+                                    <Split size={14} color="#b45309" />
+                                  </div>
+                                  <div className="v2-provenance-content">
+                                    <div className="v2-provenance-title">
+                                      <span>Audit Provenance Trace</span>
+                                      <span className="v2-provenance-badge">Human-in-the-Loop Disambiguation</span>
+                                    </div>
+                                    <p className="v2-provenance-text">
+                                      {rec.reclassification_note ||
+                                        `Originally quarantined in Ambiguous Collisions (Pass 4). Following senior reviewer resolution, this record was re-evaluated against Stage 3 reconciliation conditions and transitioned into ${rec.bucket}.`}
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
                               {/* AI / Matching Engine Classification Rationale */}
                               {(rec.classification_reason || rec.ai_reason) && (
                                 <div className="v2-classification-reason-card">

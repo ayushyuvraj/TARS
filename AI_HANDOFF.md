@@ -1,17 +1,18 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Stage 4 Compact Layout & Collapsible Waterfall Flow Checkpoint (11th September 2026)
+## Ambiguity Canonical Tier Reclassification & Lifecycle Provenance Checkpoint (11th September 2026)
 
-- **Checkpoint Name**: `Stage 4 Compact Layout & Collapsible Waterfall Flow Checkpoint`
+- **Checkpoint Name**: `Ambiguity Canonical Tier Reclassification & Lifecycle Provenance Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-collapsible-waterfall-flow-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-dynamic-multicolumn-reconciliation-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-11-ambiguity-canonical-reclassification-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-collapsible-waterfall-flow-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Stage 4 Results UI compressed and optimized for zero-waste vertical layout:
-  1. *Collapsible Waterfall Flow*: "Progressive Elimination Waterfall Flow" card now defaults to collapsed mode with a single slim bar, animated dropdown button ("View Flow" / "Hide Flow"), rotating chevron, and click-anywhere header toggle.
-  2. *Streamlined KPI Row*: Replaced bulky multi-row KPI grid with a dedicated highlighted Overall Accuracy unit and a single compact 6-box status strip (Exact, Tolerance, Near, Ambiguous, 2B Only, PR Only).
-  3. *Compressed Hero Banner*: Compacted deterministic matrix hero banner height by >50% with inline badge alignment.
-  4. *Dynamic Multi-Column Engine & Audit Explanations*: Zero-hardcoding multi-column matching engine, user sovereignty guardrails, and plain-English classification rationales.
+- **Current Objective**: Complete elimination of the separate "Resolved Manually" section/tab in its entirety, with automated re-evaluation of resolved ambiguous collisions into canonical matching tiers:
+  1. *Complete Elimination of "Resolved Manually"*: Removed the 7th section and tab button completely from UI and models.
+  2. *Dynamic Re-Evaluation against Stage 3 Conditions*: Resolved pairs are evaluated against Stage 3 conditions and automatically placed into **Exact Match** (Pass 1), **Tolerance Match** (Pass 2), **Near Match** (Pass 3), or **GSTR-2B Only** (Pass 5).
+  3. *Audit Lifecycle Provenance*: Added a visual `From Ambiguous` provenance pill on the record row and an Audit Provenance Trace banner in the expanded drawer.
+  4. *Updated AI Rationale Narrative*: The record's plain-English AI description dynamically updates to explain its lifecycle history: the initial multi-candidate quarantine, the reviewer-selected candidate, the criteria satisfied upon re-evaluation, and its final placement.
+  5. *PR Residuals Retirement & KPI Resync*: Resolving a PR candidate automatically retires its standalone PR-only residual, updating `pr_only_count`, `ambiguous_count`, target tier yield, and executive waterfall percentages.
 
 ---
 
