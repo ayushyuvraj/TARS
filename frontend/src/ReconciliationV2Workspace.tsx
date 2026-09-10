@@ -9,9 +9,12 @@ import {
 import { DynamicMappingGridV2 } from "./DynamicMappingGridV2";
 import { ReconciliationV2RulesStage } from "./ReconciliationV2RulesStage";
 import { ReconciliationV2ResultsStage } from "./ReconciliationV2ResultsStage";
+import { ReconciliationV2SummaryStage } from "./ReconciliationV2SummaryStage";
+import { ReconciliationV2ExportStage } from "./ReconciliationV2ExportStage";
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import "./rules_v2.css";
 import "./results_v2.css";
+import "./summary_export_v2.css";
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -30,7 +33,7 @@ import {
   Database
 } from "lucide-react";
 
-type V2Stage = "setup" | "mapping" | "rules" | "policy" | "results" | "near-matches" | "exceptions" | "export";
+type V2Stage = "setup" | "mapping" | "rules" | "policy" | "results" | "summary" | "export";
 
 interface V2StageInfo {
   key: V2Stage;
@@ -44,9 +47,8 @@ const V2_STAGES: V2StageInfo[] = [
   { key: "mapping", label: "Mapping 2.0", number: 2, subtitle: "AI Schema Coupling" },
   { key: "rules", label: "Rules", number: 3, subtitle: "Reconciliation Rules" },
   { key: "results", label: "Results", number: 4, subtitle: "Reconciliation Matrix" },
-  { key: "near-matches", label: "Near matches", number: 5, subtitle: "AI Discrepancy Hub" },
-  { key: "exceptions", label: "Exceptions", number: 6, subtitle: "Audit Resolution" },
-  { key: "export", label: "Export", number: 7, subtitle: "Ledger Dispatch" }
+  { key: "summary", label: "Summary", number: 5, subtitle: "Executive Intelligence" },
+  { key: "export", label: "Export", number: 6, subtitle: "Ledger Dispatch" }
 ];
 
 interface ChainStep {
@@ -161,7 +163,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               sess.status === "rules_confirmed" ||
               sess.status === "results" ||
               (sess.selected_rule_ids && sess.selected_rule_ids.length > 0) ||
-              (routeStage && ["rules", "results", "near-matches", "exceptions", "export"].includes(routeStage))
+              (routeStage && ["rules", "results", "summary", "export"].includes(routeStage))
             ) {
               setMappingConfirmed(true);
             }
@@ -169,7 +171,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               sess.status === "rules_confirmed" ||
               sess.status === "results" ||
               (sess.selected_rule_ids && sess.selected_rule_ids.length > 0) ||
-              (routeStage && ["results", "near-matches", "exceptions", "export"].includes(routeStage))
+              (routeStage && ["results", "summary", "export"].includes(routeStage))
             ) {
               setRulesConfirmed(true);
             }
@@ -410,11 +412,23 @@ export const ReconciliationV2Workspace: React.FC = () => {
       <nav className="v2-pipeline-ribbon">
         <div className="v2-pipeline-track">
           {V2_STAGES.map((s, idx) => {
+            const stageOrder: Record<string, number> = {
+              setup: 1,
+              mapping: 2,
+              rules: 3,
+              policy: 3,
+              results: 4,
+              summary: 5,
+              export: 6,
+            };
+            const currentStageNum = stageOrder[currentStage] || 1;
             const isActive = currentStage === s.key;
             const isCompleted =
-              (s.key === "setup" && correlationResult !== null) ||
-              (s.key === "mapping" && (mappingConfirmed || rulesConfirmed)) ||
-              (s.key === "rules" && rulesConfirmed);
+              (s.key === "setup" && (correlationResult !== null || currentStageNum > 1)) ||
+              (s.key === "mapping" && (mappingConfirmed || rulesConfirmed || currentStageNum > 2)) ||
+              (s.key === "rules" && (rulesConfirmed || currentStageNum > 3)) ||
+              (s.key === "results" && currentStageNum > 4) ||
+              (s.key === "summary" && currentStageNum > 5);
             const isAvailable = true;
 
             return (
@@ -494,7 +508,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               extraLeft={
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
                   <Sparkles size={14} color="#00338d" />
-                  <span>Stage 1 of 8: Dual Ingestion Docking Bay</span>
+                  <span>Stage 1 of 6: Dual Ingestion Docking Bay</span>
                 </div>
               }
             />
@@ -802,7 +816,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               extraLeft={
                 <div style={{ fontSize: 12.5, fontWeight: 600, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
                   <Sparkles size={14} color="#00338d" />
-                  <span>Stage 1 of 8: Dual Ingestion Docking Bay</span>
+                  <span>Stage 1 of 6: Dual Ingestion Docking Bay</span>
                 </div>
               }
             />
@@ -898,152 +912,42 @@ export const ReconciliationV2Workspace: React.FC = () => {
               setCurrentStage("rules");
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/rules`);
             }}
-            onProceedToNearMatches={() => {
-              setCurrentStage("near-matches");
-              if (sessionId) navigate(`/reconciliations-v2/${sessionId}/near-matches`);
+            onProceedToSummary={() => {
+              setCurrentStage("summary");
+              if (sessionId) navigate(`/reconciliations-v2/${sessionId}/summary`);
             }}
           />
         )}
 
         {/* ========================================================================= */}
-        {/* STAGES 5-7: PROGRESSIVE RECONCILIATION WORKSPACES                         */}
+        {/* STAGE 5: EXECUTIVE SUMMARY DASHBOARD & COMPLIANCE INTELLIGENCE            */}
         {/* ========================================================================= */}
-        {currentStage !== "setup" && currentStage !== "mapping" && currentStage !== "rules" && currentStage !== "policy" && currentStage !== "results" && (() => {
-          const stageConfigs: Record<string, {
-            number: number;
-            label: string;
-            subtitle: string;
-            title: string;
-            desc: string;
-            backLabel: string;
-            onBack: () => void;
-            nextLabel?: string;
-            onNext?: () => void;
-          }> = {
-            results: {
-              number: 4,
-              label: "Results",
-              subtitle: "Reconciliation Matrix",
-              title: "Deterministic Match Matrix",
-              desc: "Exact and tolerance-based reconciliation results have been calculated from confirmed rules.",
-              backLabel: "Back to Reconciliation Rules",
-              onBack: () => {
-                setCurrentStage("rules");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/rules`);
-              },
-              nextLabel: "Review Near Matches",
-              onNext: () => {
-                setCurrentStage("near-matches");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/near-matches`);
-              },
-            },
-            "near-matches": {
-              number: 5,
-              label: "Near Matches",
-              subtitle: "AI Discrepancy Hub",
-              title: "Probabilistic Near-Match Review",
-              desc: "AI agents have identified candidate invoice matches with slight OCR variance or date displacement.",
-              backLabel: "Back to Results Matrix",
-              onBack: () => {
-                setCurrentStage("results");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/results`);
-              },
-              nextLabel: "Resolve Exceptions",
-              onNext: () => {
-                setCurrentStage("exceptions");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/exceptions`);
-              },
-            },
-            exceptions: {
-              number: 6,
-              label: "Exceptions",
-              subtitle: "Audit Resolution",
-              title: "Unresolved Exception Ledger",
-              desc: "Review remaining discrepancies requiring manual accountant judgement or dispute filing.",
-              backLabel: "Back to Near Matches",
-              onBack: () => {
-                setCurrentStage("near-matches");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/near-matches`);
-              },
-              nextLabel: "Proceed to Ledger Export",
-              onNext: () => {
-                setCurrentStage("export");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/export`);
-              },
-            },
-            export: {
-              number: 7,
-              label: "Export",
-              subtitle: "Ledger Dispatch",
-              title: "Export Reconciled Financial Package",
-              desc: "Generate ERP adjustment vouchers, GSTR-2B compliance certificates, and auditable Excel workbooks.",
-              backLabel: "Back to Exceptions",
-              onBack: () => {
-                setCurrentStage("exceptions");
-                if (sessionId) navigate(`/reconciliations-v2/${sessionId}/exceptions`);
-              },
-              nextLabel: "Dispatch & Export Ledger",
-              onNext: () => {
-                alert("Reconciliation export package compiled successfully.");
-              },
-            },
-          };
+        {currentStage === "summary" && (
+          <ReconciliationV2SummaryStage
+            sessionId={sessionId || ""}
+            onBack={() => {
+              setCurrentStage("results");
+              if (sessionId) navigate(`/reconciliations-v2/${sessionId}/results`);
+            }}
+            onProceedToExport={() => {
+              setCurrentStage("export");
+              if (sessionId) navigate(`/reconciliations-v2/${sessionId}/export`);
+            }}
+          />
+        )}
 
-          const config = stageConfigs[currentStage] || {
-            number: 4,
-            label: "Stage",
-            subtitle: "Reconciliation",
-            title: `Stage: ${currentStage}`,
-            desc: "Reconciliation 2.0 autonomous engine stage ready for execution.",
-            backLabel: "Back to Rules Engine",
-            onBack: () => setCurrentStage("rules"),
-          };
-
-          return (
-            <div className="v2-stage-flow" style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              {/* Stage Header */}
-              <header className="v2-rules-header">
-                <div className="v2-rules-header__info">
-                  <span className="v2-rules-eyebrow">
-                    <Sparkles size={13} />
-                    Stage {config.number} of 7: {config.subtitle}
-                  </span>
-                  <h1 className="v2-rules-title">{config.title}</h1>
-                  <p className="v2-rules-subtitle">{config.desc}</p>
-                </div>
-              </header>
-
-              {/* Top Stage Action Bar */}
-              <ReconciliationV2ActionBar
-                position="top"
-                stageNumber={config.number}
-                backLabel={config.backLabel}
-                onBack={config.onBack}
-                nextLabel={config.nextLabel}
-                onNext={config.onNext}
-              />
-
-              {/* Stage Content Card */}
-              <div className="v2-stage-placeholder-card">
-                <div className="v2-placeholder-icon">
-                  <Sparkles size={36} />
-                </div>
-                <h2>{config.title}</h2>
-                <p>{config.desc}</p>
-              </div>
-
-              {/* Bottom Stage Action Bar */}
-              <ReconciliationV2ActionBar
-                position="bottom"
-                stageNumber={config.number}
-                backLabel={config.backLabel}
-                onBack={config.onBack}
-                nextLabel={config.nextLabel}
-                onNext={config.onNext}
-              />
-            </div>
-          );
-        })()}
+        {/* ========================================================================= */}
+        {/* STAGE 6: EXPORT STUDIO & MULTI-FORMAT DISPATCH                            */}
+        {/* ========================================================================= */}
+        {currentStage === "export" && (
+          <ReconciliationV2ExportStage
+            sessionId={sessionId || ""}
+            onBack={() => {
+              setCurrentStage("summary");
+              if (sessionId) navigate(`/reconciliations-v2/${sessionId}/summary`);
+            }}
+          />
+        )}
       </main>
     </div>
   );

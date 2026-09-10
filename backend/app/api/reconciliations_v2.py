@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Annotated, Any
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 import pandas as pd
@@ -43,6 +44,7 @@ from app.services.audit_v2_service import (
     V2LogEntry,
     V2StepErrorDetail,
 )
+from app.services.export_v2_service import export_v2_service
 from app.workflows.schema_mapping_v2 import SchemaMappingV2Workflow
 
 logger = logging.getLogger(__name__)
@@ -1552,6 +1554,52 @@ def resolve_ambiguity_endpoint(
         logger.warning(f"Error persisting ambiguity resolution: {exc}")
 
     return Stage4ExecutionResponse(**cached)
+
+
+# =========================================================================
+# EXPORT 2.0 REST ENDPOINTS (STAGE 6)
+# =========================================================================
+
+@router_v2.get("/{session_id}/export/preview")
+def get_v2_export_preview(session_id: str, limit: int = 50):
+    """Returns preview records and summary stats for Stage 6 Export Studio."""
+    try:
+        return export_v2_service.get_preview(session_id, limit=limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error fetching export preview for session {session_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate export preview: {exc}") from exc
+
+
+@router_v2.get("/{session_id}/export/download")
+def download_v2_export(
+    session_id: str,
+    format: str = "xlsx",
+    color_coded: bool = True,
+    include_auxiliary: bool = True,
+):
+    """Streams the compiled reconciliation ledger workbook (XLSX), flat CSV, or JSON."""
+    try:
+        content, filename, media_type = export_v2_service.build_export(
+            session_id=session_id,
+            export_format=format,
+            color_coded=color_coded,
+            include_auxiliary=include_auxiliary,
+        )
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error generating export package for session {session_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate export package: {exc}") from exc
 
 
 # =========================================================================

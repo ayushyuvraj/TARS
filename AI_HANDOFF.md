@@ -1,18 +1,22 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Ambiguity Canonical Tier Reclassification & Lifecycle Provenance Checkpoint (11th September 2026)
+## Reconciliation 2.0 6-Stage Architecture & Export Studio Checkpoint (11th September 2026)
 
-- **Checkpoint Name**: `Ambiguity Canonical Tier Reclassification & Lifecycle Provenance Checkpoint`
+- **Checkpoint Name**: `Reconciliation 2.0 6-Stage Architecture & Export Studio Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-ambiguity-canonical-reclassification-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-collapsible-waterfall-flow-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-11-reconciliation-v2-6-stages-export-studio-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-ambiguity-canonical-reclassification-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Complete elimination of the separate "Resolved Manually" section/tab in its entirety, with automated re-evaluation of resolved ambiguous collisions into canonical matching tiers:
-  1. *Complete Elimination of "Resolved Manually"*: Removed the 7th section and tab button completely from UI and models.
-  2. *Dynamic Re-Evaluation against Stage 3 Conditions*: Resolved pairs are evaluated against Stage 3 conditions and automatically placed into **Exact Match** (Pass 1), **Tolerance Match** (Pass 2), **Near Match** (Pass 3), or **GSTR-2B Only** (Pass 5).
-  3. *Audit Lifecycle Provenance*: Added a visual `From Ambiguous` provenance pill on the record row and an Audit Provenance Trace banner in the expanded drawer.
-  4. *Updated AI Rationale Narrative*: The record's plain-English AI description dynamically updates to explain its lifecycle history: the initial multi-candidate quarantine, the reviewer-selected candidate, the criteria satisfied upon re-evaluation, and its final placement.
-  5. *PR Residuals Retirement & KPI Resync*: Resolving a PR candidate automatically retires its standalone PR-only residual, updating `pr_only_count`, `ambiguous_count`, target tier yield, and executive waterfall percentages.
+- **Current Objective**: Streamlining Reconciliation 2.0 into a 6-stage workflow, retiring placeholder stages 5, 6, and 7, and establishing Stage 5 Executive Summary Dashboard and Stage 6 Multi-Format Color-Coded Export Studio:
+  1. *Consistent 6-Stage Stepper & Numbering*: Updated all eyebrow and heading references across Stages 1 through 4 from "Stage X of 8" (or "of 7") to "Stage X of 6".
+  2. *Stage 4 Action Buttons*: Re-pointed top-right and bottom primary action buttons from "Review Near Matches" to "Proceed to Summary Dashboard".
+  3. *Stepper Completion Progression*: Stepper checkmark logic automatically ticks off Stage 4 with a green checkmark when navigating to Stage 5, and Stage 5 when navigating to Stage 6.
+  4. *Stage 5 Executive Summary Dashboard*: Synthesizes financial KPIs, Progressive Waterfall Funnel retention, Stage 3 Rule Effectiveness Scorecard, Supplier Risk & Exposure Stratification, and Human-in-the-Loop Disambiguation Audit Traces.
+  5. *Stage 6 Multi-Format Export Studio*: Production ledger package generator supporting:
+     - Microsoft Excel (`.xlsx`) multi-sheet workbook styled with corporate KPMG Navy palette, statutory status color coding, and dynamic comparison columns.
+     - Enriched CSV (`.csv`) with all rule comparison fields, variances, and deterministic AI classification rationales.
+     - Machine JSON (`.json`) payload for ERP and webhook integrations.
+     - Color coding toggle, auxiliary columns toggle, and live on-screen interactive table preview.
 
 ---
 
@@ -20,14 +24,13 @@
 
 1. **Reconciliation 2.0 (`/reconciliations-v2`)**:
    - Built alongside Reconciliation 1.0 without modifying any existing 1.0 flows.
-   - **7 Stages in Total**: Clean sequential progression:
+   - **6 Clean Sequential Stages**:
      1. `Setup` *(Dual Ingestion)*
      2. `Mapping 2.0` *(AI Schema Coupling)*
      3. `Rules` *(Reconciliation Rules Studio & Statutory Core Advisory Guardrails)*
      4. `Results` *(Multi-Pass Waterfall Match Matrix & Ambiguity Disambiguation Hub)*
-     5. `Near matches` *(AI Discrepancy Hub)*
-     6. `Exceptions` *(Audit Resolution)*
-     7. `Export` *(Ledger Dispatch & ERP Vouchers)*
+     5. `Summary` *(Executive Flight Deck & Risk Intelligence)*
+     6. `Export` *(Multi-Format Ledger Dispatch & Color-Coded Export Studio)*
    - **Dynamic Session Lifecycle & Order File Persistence**:
      - Auto-generates brand-new session IDs (`POST /api/v2/reconciliations`) when navigating to `/reconciliations-v2` or clicking sidebar links.
      - Hard refresh (F5) reads `:id` from URL (`/reconciliations-v2/:id/:stage`), restoring exact stage, uploaded files, rules, and waterfall matrix from disk (`data/audit_v2/sessions_v2.json`).

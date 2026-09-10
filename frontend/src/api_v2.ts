@@ -503,8 +503,47 @@ export const apiV2 = {
       `${API_BASE}/audit/runs/${encodeURIComponent(runId)}/resume`,
       { method: "POST" }
     );
+  },
+
+  // --- Stage 6 Export Endpoints ---
+  async getExportPreview(sessionId: string, limit: number = 50): Promise<ExportPreviewResponse> {
+    return request<ExportPreviewResponse>(`${API_BASE}/${sessionId}/export/preview?limit=${limit}`);
+  },
+
+  getExportDownloadUrl(
+    sessionId: string,
+    format: "xlsx" | "csv" | "json" = "xlsx",
+    colorCoded: boolean = true,
+    includeAuxiliary: boolean = true
+  ): string {
+    return `${API_BASE}/${sessionId}/export/download?format=${format}&color_coded=${colorCoded}&include_auxiliary=${includeAuxiliary}`;
   }
 };
+
+export interface ExportPreviewItem {
+  id: string;
+  bucket: string;
+  matched_by_pass?: string | null;
+  gstin: string;
+  gstr_doc: string;
+  pr_doc: string;
+  gstr_date: string;
+  pr_date: string;
+  gstr_taxable: number;
+  pr_taxable: number;
+  gstr_tax: number;
+  pr_tax: number;
+  tax_diff: number;
+  ai_reason: string;
+  provenance: string;
+}
+
+export interface ExportPreviewResponse {
+  total_records: number;
+  preview_records: ExportPreviewItem[];
+  compared_columns: Array<{ gstr_column: string; pr_column: string; match_strategy?: string }>;
+  summary: Stage4ResultsSummary;
+}
 
 export interface AuditStats {
   total_runs: number;

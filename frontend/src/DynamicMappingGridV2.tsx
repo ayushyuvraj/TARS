@@ -120,7 +120,7 @@ export const DynamicMappingGridV2: React.FC<DynamicMappingGridV2Props> = ({
 
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="v2-stage-kicker">STAGE 2 OF 8</span>
+              <span className="v2-stage-kicker">STAGE 2 OF 6</span>
               <span className="v2-status-chip green">
                 <Check size={11} />
                 Schema Correlation Active

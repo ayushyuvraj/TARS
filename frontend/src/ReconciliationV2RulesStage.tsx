@@ -899,7 +899,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         <div className="v2-rules-header__info">
           <span className="v2-rules-eyebrow">
             <Sliders size={13} />
-            Stage 3 of 8: Reconciliation Rules Engine
+            Stage 3 of 6: Reconciliation Rules Engine
           </span>
           <h1 className="v2-rules-title">Configure Reconciliation Rules</h1>
           <p className="v2-rules-subtitle">

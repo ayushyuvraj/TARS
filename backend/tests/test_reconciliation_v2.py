@@ -6,6 +6,7 @@ from app.domain.models import DatasetRole
 from app.main import create_app
 from app.services.direct_schema_correlator import DirectSchemaCorrelator
 from app.services.fast_excel_parser import FastExcelParser
+from app.services.audit_v2_service import audit_v2_service
 
 
 def test_fast_excel_parser():
@@ -353,5 +354,117 @@ def test_resolve_ambiguity_api_endpoint_lifecycle():
     assert data["summary"]["tolerance_match_count"] == 3  # increased from 2 to 3
     assert data["summary"]["pr_only_count"] == 0         # decreased from 1 to 0
     assert data["summary"]["total_reconciled_count"] == 9  # increased from 8 to 9
+
+
+def test_v2_export_endpoints():
+    app = create_app()
+    client = TestClient(app)
+
+    # 1. Create V2 Session
+    create_res = client.post("/api/reconciliations-v2")
+    assert create_res.status_code == 201
+    session_id = create_res.json()["id"]
+
+    # 2. Mock Stage 4 results
+    mock_record = {
+        "id": "REC-EXP-01",
+        "bucket": "EXACT_MATCH",
+        "matched_by_pass": "Pass 1 - Strict Exact",
+        "gstr_row_index": 1,
+        "pr_row_index": 1,
+        "gstin": "27AABCT3518Q1Z6",
+        "document_number": "INV-2026-001",
+        "document_date": "2026-08-15",
+        "taxable_value": 50000.0,
+        "tax_amount": 9000.0,
+        "total_value": 59000.0,
+        "pr_preview": {
+            "document_number": "INV-2026-001",
+            "document_date": "2026-08-15",
+            "taxable_value": 50000.0,
+            "tax_amount": 9000.0,
+            "total_value": 59000.0,
+        },
+        "gstr_preview": {
+            "BillFromGstin": "27AABCT3518Q1Z6",
+            "DocumentNumber": "INV-2026-001",
+            "DocumentDate": "2026-08-15",
+            "TaxableValue": 50000.0,
+            "TotalTaxAmount": 9000.0,
+            "TotalValue": 59000.0,
+        },
+        "classification_reason": "Deterministic identity satisfied across GSTIN, Invoice, Date, and Tax Amount.",
+        "reclassification_note": "Reclassified from Ambiguous (Pass 4) to Exact Match.",
+    }
+
+    mock_summary = {
+        "total_gstr_rows": 1,
+        "total_pr_rows": 1,
+        "exact_match_count": 1,
+        "exact_match_itc": 9000.0,
+        "tolerance_match_count": 0,
+        "tolerance_match_itc": 0.0,
+        "near_match_count": 0,
+        "near_match_itc": 0.0,
+        "ambiguous_count": 0,
+        "ambiguous_itc": 0.0,
+        "gstr_only_count": 0,
+        "gstr_only_itc": 0.0,
+        "pr_only_count": 0,
+        "pr_only_itc": 0.0,
+        "total_reconciled_count": 1,
+        "total_reconciled_itc": 9000.0,
+        "overall_reconciliation_rate": 100.0,
+        "waterfall_passes": [
+            {"tier": 1, "name": "Pass 1 - Strict Exact", "matched_count": 1, "matched_itc": 9000.0, "retention_percentage": 100.0},
+        ],
+    }
+
+    cached_results = {
+        "session_id": session_id,
+        "ambiguities": [],
+        "records": [mock_record],
+        "summary": mock_summary,
+        "compared_columns": [
+            {"gstr_column": "BillFromGstin", "pr_column": "Vendor_GSTIN", "match_strategy": "DETERMINISTIC"},
+            {"gstr_column": "DocumentNumber", "pr_column": "Invoice_Number", "match_strategy": "DETERMINISTIC"},
+        ],
+    }
+    audit_v2_service.save_stage4_results(session_id, cached_results)
+
+    # 3. Test Preview endpoint
+    preview_res = client.get(f"/api/reconciliations-v2/{session_id}/export/preview")
+    assert preview_res.status_code == 200
+    preview_data = preview_res.json()
+    assert preview_data["total_records"] == 1
+    assert len(preview_data["preview_records"]) == 1
+    assert preview_data["preview_records"][0]["bucket"] == "EXACT_MATCH"
+    assert preview_data["preview_records"][0]["provenance"] == "Reclassified from Ambiguous (Pass 4) to Exact Match."
+
+    # 4. Test Excel Download
+    xlsx_res = client.get(f"/api/reconciliations-v2/{session_id}/export/download?format=xlsx&color_coded=true")
+    assert xlsx_res.status_code == 200
+    assert "spreadsheetml.sheet" in xlsx_res.headers["content-type"]
+    assert len(xlsx_res.content) > 1000  # Valid binary Excel file
+
+    # 5. Test CSV Download
+    csv_res = client.get(f"/api/reconciliations-v2/{session_id}/export/download?format=csv")
+    assert csv_res.status_code == 200
+    assert "text/csv" in csv_res.headers["content-type"]
+    csv_text = csv_res.content.decode("utf-8")
+    assert "Reconciliation_ID" in csv_text
+    assert "Classification_Bucket" in csv_text
+    assert "AI_Classification_Rationale" in csv_text
+    assert "Lifecycle_Provenance_Trace" in csv_text
+    assert "REC-EXP-01" in csv_text
+
+    # 6. Test JSON Download
+    json_res = client.get(f"/api/reconciliations-v2/{session_id}/export/download?format=json")
+    assert json_res.status_code == 200
+    assert "application/json" in json_res.headers["content-type"]
+    json_data = json_res.json()
+    assert json_data["session_id"] == session_id
+    assert len(json_data["records"]) == 1
+
 
 

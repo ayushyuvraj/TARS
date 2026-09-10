@@ -39,13 +39,13 @@ import "./results_v2.css";
 interface ResultsStageProps {
   sessionId: string;
   onBackToRules: () => void;
-  onProceedToNearMatches: () => void;
+  onProceedToSummary: () => void;
 }
 
 export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
   sessionId,
   onBackToRules,
-  onProceedToNearMatches,
+  onProceedToSummary,
 }) => {
   const [data, setData] = useState<Stage4ExecutionResponse | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -306,7 +306,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
           <div className="v2-results-hero-left">
             <div className="v2-results-stage-tag" style={{ background: "rgba(59, 130, 246, 0.2)", color: "#93c5fd" }}>
               <Sparkles size={13} />
-              <span>Stage 4 of 8 • Reconciliation Engine Launchpad</span>
+              <span>Stage 4 of 6 • Reconciliation Engine Launchpad</span>
             </div>
             <h2 className="v2-results-hero-title">Ready to Run Reconciliation Engine</h2>
             <p className="v2-results-hero-desc">
@@ -418,7 +418,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
             <h2 className="v2-results-hero-title">Deterministic Match Matrix &amp; Ambiguity Hub</h2>
             <div className="v2-results-stage-tag">
               <Sparkles size={12} />
-              <span>Stage 4 of 8 • Multi-Pass Reconciliation Matrix</span>
+              <span>Stage 4 of 6 • Multi-Pass Reconciliation Matrix</span>
             </div>
           </div>
           <p className="v2-results-hero-desc">
@@ -440,9 +440,9 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
           <button
             type="button"
             className="v2-btn-primary-action"
-            onClick={onProceedToNearMatches}
+            onClick={onProceedToSummary}
           >
-            <span>Review Near Matches</span>
+            <span>Proceed to Summary Dashboard</span>
             <ArrowRight size={14} />
           </button>
         </div>
@@ -1493,12 +1493,12 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
         stageNumber={4}
         backLabel="Back to Rules Wiki Studio"
         onBack={onBackToRules}
-        nextLabel="Proceed to Near-Match Review"
-        onNext={onProceedToNearMatches}
+        nextLabel="Proceed to Summary Dashboard"
+        onNext={onProceedToSummary}
         extraLeft={
           <div style={{ fontSize: 12.5, fontWeight: 600, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
             <Sparkles size={14} color="#00338d" />
-            <span>Stage 4 of 8: Deterministic Reconciliation Matrix</span>
+            <span>Stage 4 of 6: Deterministic Reconciliation Matrix</span>
           </div>
         }
       />
