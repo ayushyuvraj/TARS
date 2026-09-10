@@ -45,7 +45,7 @@ class NumericToleranceMode(str, Enum):
 class Rule2Item(BaseModel):
     id: str
     name: str
-    description: str
+    description: str = ""
     category: str = "CORE_MATCHING"  # CORE_IDENTITY, DOCUMENT_REFERENCE, TEMPORAL_WINDOW, FINANCIAL_VALUE, COMPLIANCE_GUARD
     gstr_column: str
     pr_column: str
@@ -198,6 +198,8 @@ class ReconciliationRecordItem(BaseModel):
     variances: dict[str, Any] = Field(default_factory=dict)
     matched_by_pass: str = ""
     ambiguity_cluster_id: str | None = None
+    classification_reason: str = ""
+    ai_reason: str = ""
 
 
 class WaterfallPassYield(BaseModel):
@@ -229,11 +231,22 @@ class Stage4ResultsSummary(BaseModel):
     waterfall_passes: list[WaterfallPassYield] = Field(default_factory=list)
 
 
+class ComparedColumnInfo(BaseModel):
+    rule_id: str
+    rule_name: str
+    category: str
+    strategy: str
+    gstr_column: str
+    pr_column: str
+    tolerance_summary: str = ""
+
+
 class Stage4ExecutionResponse(BaseModel):
     session_id: str
     summary: Stage4ResultsSummary
     records: list[ReconciliationRecordItem] = Field(default_factory=list)
     ambiguities: list[AmbiguityCluster] = Field(default_factory=list)
+    compared_columns: list[ComparedColumnInfo] = Field(default_factory=list)
 
 
 def calculate_string_ratio(s1: str, s2: str) -> float:
@@ -970,11 +983,12 @@ class WaterfallMatchingEngine:
     ) -> Stage4ExecutionResponse:
         """
         Executes the 5-tier progressive elimination reconciliation waterfall for Stage 4:
-        Pass 1: Exact Match (zero-tolerance match across GSTIN, clean Doc #, Date, Values)
-        Pass 2: Tolerance Matched (Stage 3 configured tolerances for remaining rows)
-        Pass 3: Near Match (Advanced prefix stripping, leading zero trimming, fuzzy edit distance >= 85%)
-        Pass 4: Ambiguity Clustering (Quarantines multi-matches 1:N and N:1 with deterministic confidence vector)
+        Pass 1: Exact Match (zero-tolerance match across all active rules)
+        Pass 2: Tolerance Matched (Stage 3 configured tolerances for numeric/temporal rules + guards held)
+        Pass 3: Near Match (Document reference normalization/fuzzy + active guards held within near tolerances)
+        Pass 4: Ambiguity Clustering (Quarantines multi-matches 1:N and N:1 with dynamic confidence vector)
         Pass 5: Single-Sided Residuals (GSTR Only / Missing in Books vs PR Only / DRC-01C Ineligibility Risk)
+        Zero hardcoding: every column configured in active rules is dynamically evaluated and displayed.
         """
         total_gstr = len(gstr_df) if gstr_df is not None else 0
         total_pr = len(pr_df) if pr_df is not None else 0
@@ -1000,45 +1014,143 @@ class WaterfallMatchingEngine:
                 overall_reconciliation_rate=0.0,
                 waterfall_passes=[],
             )
-            return Stage4ExecutionResponse(session_id=session_id, summary=summary, records=[], ambiguities=[])
+            return Stage4ExecutionResponse(session_id=session_id, summary=summary, records=[], ambiguities=[], compared_columns=[])
 
-        # 1. Resolve column names across both dataframes
-        g_gstin_col = self._find_matching_col(gstr_df, "BillFromGstin", "gstin") or "BillFromGstin"
-        p_gstin_col = self._find_matching_col(pr_df, "BillFromGstin", "gstin") or "BillFromGstin"
-        g_doc_col = self._find_matching_col(gstr_df, "DocumentNumber", "document_number") or "DocumentNumber"
-        p_doc_col = self._find_matching_col(pr_df, "DocumentNumber", "document_number") or "DocumentNumber"
-        g_date_col = self._find_matching_col(gstr_df, "DocumentDate", "document_date") or "DocumentDate"
-        p_date_col = self._find_matching_col(pr_df, "DocumentDate", "document_date") or "DocumentDate"
-        g_taxable_col = self._find_matching_col(gstr_df, "TaxableValue", "taxable_value") or "TaxableValue"
-        p_taxable_col = self._find_matching_col(pr_df, "TaxableValue", "taxable_value") or "TaxableValue"
-        g_total_col = self._find_matching_col(gstr_df, "TotalValue", "total_value") or "TotalValue"
-        p_total_col = self._find_matching_col(pr_df, "TotalValue", "total_value") or "TotalValue"
-        g_tax_col = self._find_matching_col(gstr_df, "TotalTaxAmount", "total_tax_amount") or self._find_matching_col(gstr_df, "TaxAmount", "tax_amount") or g_total_col
-        p_tax_col = self._find_matching_col(pr_df, "TotalTaxAmount", "total_tax_amount") or self._find_matching_col(pr_df, "TaxAmount", "tax_amount") or p_total_col
+        norm_inst = self.normalizer
 
-        # Extract tolerances from active rules
-        amt_tolerance_val = 10.0
-        amt_tolerance_is_pct = False
-        date_tolerance_days = 30
-        tax_tolerance_val = 10.0
+        # 1. Resolve active rules dynamically (Zero Hardcoding)
+        parsed_rules: list[Rule2Item] = []
+        for r in (rules or []):
+            if isinstance(r, dict):
+                r_id = r.get("id") or r.get("rule_id", "custom_rule")
+                r_name = r.get("name") or r.get("rule_name", "Custom Rule")
+                r_desc = r.get("description", "")
+                r_dict = {**r, "id": r_id, "name": r_name, "description": r_desc}
+                parsed_rules.append(Rule2Item(**r_dict))
+            elif isinstance(r, Rule2Item):
+                parsed_rules.append(r)
+        active_rules: list[Rule2Item] = [r for r in parsed_rules if r.is_enabled]
+        if not active_rules:
+            active_rules = [r for r in build_default_rules_wiki_v2() if r.is_enabled]
 
-        for r in rules:
-            if not r.is_enabled:
-                continue
-            if r.canonical_concept == "taxable_value" or "taxable" in r.name.lower():
-                amt_tolerance_val = float(r.tolerance_value or 10.0)
-                amt_tolerance_is_pct = r.tolerance_mode == NumericToleranceMode.PERCENTAGE
-            elif r.canonical_concept == "document_date" or "date" in r.name.lower():
-                days = int(r.date_tolerance_value or 30)
-                if r.date_tolerance_unit == DateToleranceUnit.MONTHS:
-                    days *= 30
-                elif r.date_tolerance_unit == DateToleranceUnit.YEARS:
-                    days *= 365
-                date_tolerance_days = max(1, days)
-            elif r.canonical_concept in ("total_tax_amount", "tax_amount") or "tax amount" in r.name.lower():
-                tax_tolerance_val = float(r.tolerance_value or 10.0)
+        resolved_rules: list[Rule2Item] = []
+        compared_columns: list[ComparedColumnInfo] = []
 
-        # 2. Fast pre-parsing of rows into Python dicts for maximum throughput
+        for r in active_rules:
+            g_col = self._find_matching_col(gstr_df, r.gstr_column, r.canonical_concept) or r.gstr_column
+            p_col = self._find_matching_col(pr_df, r.pr_column, r.canonical_concept) or r.pr_column
+            if g_col in gstr_df.columns and p_col in pr_df.columns:
+                resolved_r = r.model_copy(update={"gstr_column": g_col, "pr_column": p_col})
+                resolved_rules.append(resolved_r)
+                tol_str = "Exact Equality"
+                if r.strategy == MatchStrategy.NUMERIC_TOLERANCE:
+                    tol_str = f"±{r.tolerance_value}%" if r.tolerance_mode == NumericToleranceMode.PERCENTAGE else f"±₹{r.tolerance_value:.2f}"
+                elif r.strategy == MatchStrategy.DATE_PROXIMITY:
+                    u_str = r.date_tolerance_unit.value if hasattr(r.date_tolerance_unit, "value") else str(r.date_tolerance_unit)
+                    tol_str = f"±{r.date_tolerance_value} {u_str}"
+                elif r.strategy == MatchStrategy.VALUE_GUARD:
+                    tol_str = "Guard (Exact Flag)"
+                compared_columns.append(
+                    ComparedColumnInfo(
+                        rule_id=r.id,
+                        rule_name=r.name,
+                        category=r.category,
+                        strategy=r.strategy.value if hasattr(r.strategy, "value") else str(r.strategy),
+                        gstr_column=g_col,
+                        pr_column=p_col,
+                        tolerance_summary=tol_str,
+                    )
+                )
+
+        # Identify key rule references (if enabled by user)
+        gstin_rule = next((r for r in resolved_rules if r.canonical_concept == "gstin" or "gstin" in r.name.lower()), None)
+        doc_rule = next((r for r in resolved_rules if r.canonical_concept == "document_number" or "invoice" in r.name.lower() or "document" in r.name.lower()), None)
+        taxable_rule = next((r for r in resolved_rules if r.canonical_concept == "taxable_value" or "taxable" in r.name.lower()), None)
+        date_rule = next((r for r in resolved_rules if r.canonical_concept == "document_date" or ("date" in r.name.lower() and "payment" not in r.name.lower())), None)
+        tax_rule = next((r for r in resolved_rules if r.canonical_concept in ("total_tax_amount", "tax_amount") or "tax amount" in r.name.lower()), None)
+        total_rule = next((r for r in resolved_rules if r.canonical_concept == "total_value" or "total" in r.name.lower() or "documentvalue" in r.name.lower()), None)
+
+        is_gstin_enabled = gstin_rule is not None
+        is_doc_enabled = doc_rule is not None
+        is_taxable_enabled = taxable_rule is not None
+        is_date_enabled = date_rule is not None
+
+        # Display anchor columns
+        g_gstin_col = gstin_rule.gstr_column if gstin_rule else (self._find_matching_col(gstr_df, "BillFromGstin", "gstin") or "BillFromGstin")
+        p_gstin_col = gstin_rule.pr_column if gstin_rule else (self._find_matching_col(pr_df, "BillFromGstin", "gstin") or "BillFromGstin")
+        g_doc_col = doc_rule.gstr_column if doc_rule else (self._find_matching_col(gstr_df, "DocumentNumber", "document_number") or "DocumentNumber")
+        p_doc_col = doc_rule.pr_column if doc_rule else (self._find_matching_col(pr_df, "DocumentNumber", "document_number") or "DocumentNumber")
+        g_date_col = date_rule.gstr_column if date_rule else (self._find_matching_col(gstr_df, "DocumentDate", "document_date") or "DocumentDate")
+        p_date_col = date_rule.pr_column if date_rule else (self._find_matching_col(pr_df, "DocumentDate", "document_date") or "DocumentDate")
+        g_taxable_col = taxable_rule.gstr_column if taxable_rule else (self._find_matching_col(gstr_df, "TaxableValue", "taxable_value") or "TaxableValue")
+        p_taxable_col = taxable_rule.pr_column if taxable_rule else (self._find_matching_col(pr_df, "TaxableValue", "taxable_value") or "TaxableValue")
+        g_total_col = total_rule.gstr_column if total_rule else (self._find_matching_col(gstr_df, "TotalValue", "total_value") or "TotalValue")
+        p_total_col = total_rule.pr_column if total_rule else (self._find_matching_col(pr_df, "TotalValue", "total_value") or "TotalValue")
+        g_tax_col = tax_rule.gstr_column if tax_rule else (self._find_matching_col(gstr_df, "TotalTaxAmount", "total_tax_amount") or g_total_col)
+        p_tax_col = tax_rule.pr_column if tax_rule else (self._find_matching_col(pr_df, "TotalTaxAmount", "total_tax_amount") or p_total_col)
+
+        # Vectorized Series pre-parsing helpers
+        def _extract_series_dates(df: pd.DataFrame, col: str) -> tuple[list[str], list[date | None]]:
+            if col in df.columns:
+                dt_s = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
+                raw_s = df[col].fillna("").astype(str).str.slice(0, 10).tolist()
+                obj_l = [t.date() if pd.notna(t) else None for t in dt_s]
+                return raw_s, obj_l
+            return [""] * len(df), [None] * len(df)
+
+        def _extract_series_floats(df: pd.DataFrame, col: str) -> list[float]:
+            if col in df.columns:
+                cleaned = df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True)
+                return pd.to_numeric(cleaned, errors="coerce").fillna(0.0).tolist()
+            return [0.0] * len(df)
+
+        # 2. Vectorized pre-parsing across all active rule columns (C-level throughput)
+        gstr_num_data: dict[str, list[float]] = {}
+        pr_num_data: dict[str, list[float]] = {}
+        gstr_date_data: dict[str, tuple[list[str], list[date | None]]] = {}
+        pr_date_data: dict[str, tuple[list[str], list[date | None]]] = {}
+        gstr_text_data: dict[str, list[str]] = {}
+        pr_text_data: dict[str, list[str]] = {}
+
+        for r in resolved_rules:
+            if r.strategy == MatchStrategy.NUMERIC_TOLERANCE:
+                if r.gstr_column not in gstr_num_data:
+                    gstr_num_data[r.gstr_column] = _extract_series_floats(gstr_df, r.gstr_column)
+                if r.pr_column not in pr_num_data:
+                    pr_num_data[r.pr_column] = _extract_series_floats(pr_df, r.pr_column)
+            elif r.strategy == MatchStrategy.DATE_PROXIMITY:
+                if r.gstr_column not in gstr_date_data:
+                    gstr_date_data[r.gstr_column] = _extract_series_dates(gstr_df, r.gstr_column)
+                if r.pr_column not in pr_date_data:
+                    pr_date_data[r.pr_column] = _extract_series_dates(pr_df, r.pr_column)
+            else:
+                if r.gstr_column not in gstr_text_data:
+                    if r.strategy == MatchStrategy.VALUE_GUARD:
+                        gstr_text_data[r.gstr_column] = [str(v or "").strip().upper() if pd.notna(v) else "" for v in gstr_df[r.gstr_column]]
+                    else:
+                        gstr_text_data[r.gstr_column] = [norm_inst.normalize_text(v, r.normalizers) or "" for v in gstr_df[r.gstr_column]]
+                if r.pr_column not in pr_text_data:
+                    if r.strategy == MatchStrategy.VALUE_GUARD:
+                        pr_text_data[r.pr_column] = [str(v or "").strip().upper() if pd.notna(v) else "" for v in pr_df[r.pr_column]]
+                    else:
+                        pr_text_data[r.pr_column] = [norm_inst.normalize_text(v, r.normalizers) or "" for v in pr_df[r.pr_column]]
+
+        # Primary series extractions
+        gstr_dates_raw, gstr_dates_obj = _extract_series_dates(gstr_df, g_date_col)
+        pr_dates_raw, pr_dates_obj = _extract_series_dates(pr_df, p_date_col)
+
+        gstr_taxable_vals = _extract_series_floats(gstr_df, g_taxable_col)
+        pr_taxable_vals = _extract_series_floats(pr_df, p_taxable_col)
+
+        gstr_total_vals = _extract_series_floats(gstr_df, g_total_col)
+        pr_total_vals = _extract_series_floats(pr_df, p_total_col)
+
+        gstr_tax_vals = _extract_series_floats(gstr_df, g_tax_col) if g_tax_col in gstr_df.columns else [max(0.0, round(t - tx, 2)) for t, tx in zip(gstr_total_vals, gstr_taxable_vals)]
+        pr_tax_vals = _extract_series_floats(pr_df, p_tax_col) if p_tax_col in pr_df.columns else [max(0.0, round(t - tx, 2)) for t, tx in zip(pr_total_vals, pr_taxable_vals)]
+
+        gstr_raw_dicts = gstr_df.to_dict(orient="records") if gstr_df is not None else []
+        pr_raw_dicts = pr_df.to_dict(orient="records") if pr_df is not None else []
+
         class ParsedRow:
             __slots__ = (
                 "idx", "gstin_raw", "gstin_norm", "doc_raw", "doc_clean", "doc_norm",
@@ -1061,56 +1173,9 @@ class WaterfallMatchingEngine:
                 self.preview = preview
                 self.raw_dict = raw_dict
 
-        norm_inst = self.normalizer
-
-        # Vectorized Series pre-parsing for dates and numbers (100x faster than per-row conversions)
-        def _extract_series_dates(df: pd.DataFrame, col: str) -> tuple[list[str], list[date | None]]:
-            if col in df.columns:
-                dt_s = pd.to_datetime(df[col], errors="coerce", dayfirst=True)
-                raw_s = df[col].fillna("").astype(str).str.slice(0, 10).tolist()
-                obj_l = [t.date() if pd.notna(t) else None for t in dt_s]
-                return raw_s, obj_l
-            return [""] * len(df), [None] * len(df)
-
-        def _extract_series_floats(df: pd.DataFrame, col: str) -> list[float]:
-            if col in df.columns:
-                cleaned = df[col].astype(str).str.replace(r"[^\d.-]", "", regex=True)
-                return pd.to_numeric(cleaned, errors="coerce").fillna(0.0).tolist()
-            return [0.0] * len(df)
-
-        gstr_dates_raw, gstr_dates_obj = _extract_series_dates(gstr_df, g_date_col)
-        pr_dates_raw, pr_dates_obj = _extract_series_dates(pr_df, p_date_col)
-
-        gstr_taxable_vals = _extract_series_floats(gstr_df, g_taxable_col)
-        pr_taxable_vals = _extract_series_floats(pr_df, p_taxable_col)
-
-        gstr_total_vals = _extract_series_floats(gstr_df, g_total_col)
-        pr_total_vals = _extract_series_floats(pr_df, p_total_col)
-
-        gstr_tax_vals = _extract_series_floats(gstr_df, g_tax_col) if g_tax_col in gstr_df.columns else [max(0.0, round(t - tx, 2)) for t, tx in zip(gstr_total_vals, gstr_taxable_vals)]
-        pr_tax_vals = _extract_series_floats(pr_df, p_tax_col) if p_tax_col in pr_df.columns else [max(0.0, round(t - tx, 2)) for t, tx in zip(pr_total_vals, pr_taxable_vals)]
-
-        # Convert DataFrames to record dicts once upfront at C-level
-        gstr_raw_dicts = gstr_df.to_dict(orient="records") if gstr_df is not None else []
-        pr_raw_dicts = pr_df.to_dict(orient="records") if pr_df is not None else []
-
-        # Pre-resolve extra preview columns once across dataframes to avoid regex per row
-        def _prefind_extras(df: pd.DataFrame) -> dict[str, str]:
-            res = {}
-            if df is not None:
-                for extra in ["VendorName", "SupplierName", "DocumentType", "PlaceOfSupply", "ReverseCharge"]:
-                    for c in df.columns:
-                        if extra.lower() in re.sub(r"[^a-zA-Z]", "", str(c)).lower():
-                            res[extra] = c
-                            break
-            return res
-
-        gstr_extra_cols = _prefind_extras(gstr_df)
-        pr_extra_cols = _prefind_extras(pr_df)
-
-        def _parse_row(row_raw: dict[str, Any], idx: int, g_gstin: str, g_doc: str,
-                       date_raw: str, date_obj: date | None, taxable_val: float, total_val: float, tax_val: float,
-                       extra_cols: dict[str, str]) -> ParsedRow:
+        def _build_row(row_raw: dict[str, Any], idx: int, is_gstr: bool,
+                       g_gstin: str, g_doc: str, date_raw: str, date_obj: date | None,
+                       taxable_val: float, total_val: float, tax_val: float) -> ParsedRow:
             row_dict = {str(k): (None if pd.isna(v) else v) for k, v in row_raw.items()}
             gstin_val = row_dict.get(g_gstin)
             gstin_raw = str(gstin_val or "").strip()
@@ -1119,7 +1184,6 @@ class WaterfallMatchingEngine:
             doc_val = row_dict.get(g_doc)
             doc_raw = str(doc_val or "").strip()
             doc_clean = " ".join(doc_raw.upper().split())
-            # Normalization: strip common prefixes, special chars, leading zeros
             doc_norm = norm_inst.normalize_text(doc_val, [
                 NormalizationType.TRIM_WHITESPACE,
                 NormalizationType.REMOVE_PREFIXES,
@@ -1128,7 +1192,7 @@ class WaterfallMatchingEngine:
                 NormalizationType.UPPERCASE,
             ]) or doc_clean
 
-            preview = {
+            preview: dict[str, Any] = {
                 "gstin": gstin_raw,
                 "document_number": doc_raw,
                 "document_date": date_raw,
@@ -1136,10 +1200,12 @@ class WaterfallMatchingEngine:
                 "total_value": total_val,
                 "tax_amount": tax_val,
             }
-            for extra, c in extra_cols.items():
-                v = row_dict.get(c)
-                if v is not None and not pd.isna(v):
-                    preview[extra] = str(v)
+            # Dynamically include every active rule's evaluated column in preview
+            for r in resolved_rules:
+                target_col = r.gstr_column if is_gstr else r.pr_column
+                val = row_dict.get(target_col)
+                if val is not None and not pd.isna(val):
+                    preview[target_col] = str(val)
 
             return ParsedRow(
                 idx=idx, gstin_raw=gstin_raw, gstin_norm=gstin_norm, doc_raw=doc_raw,
@@ -1149,15 +1215,13 @@ class WaterfallMatchingEngine:
             )
 
         gstr_rows = [
-            _parse_row(gstr_raw_dicts[i], i, g_gstin_col, g_doc_col,
-                       gstr_dates_raw[i], gstr_dates_obj[i], gstr_taxable_vals[i], gstr_total_vals[i], gstr_tax_vals[i],
-                       gstr_extra_cols)
+            _build_row(gstr_raw_dicts[i], i, True, g_gstin_col, g_doc_col,
+                       gstr_dates_raw[i], gstr_dates_obj[i], gstr_taxable_vals[i], gstr_total_vals[i], gstr_tax_vals[i])
             for i in range(total_gstr)
         ]
         pr_rows = [
-            _parse_row(pr_raw_dicts[i], i, p_gstin_col, p_doc_col,
-                       pr_dates_raw[i], pr_dates_obj[i], pr_taxable_vals[i], pr_total_vals[i], pr_tax_vals[i],
-                       pr_extra_cols)
+            _build_row(pr_raw_dicts[i], i, False, p_gstin_col, p_doc_col,
+                       pr_dates_raw[i], pr_dates_obj[i], pr_taxable_vals[i], pr_total_vals[i], pr_tax_vals[i])
             for i in range(total_pr)
         ]
 
@@ -1167,23 +1231,158 @@ class WaterfallMatchingEngine:
         records: list[ReconciliationRecordItem] = []
         ambiguities: list[AmbiguityCluster] = []
 
-        # Build fast indexes for PR rows
-        # 1. Exact statutory index: (gstin_norm, doc_norm) -> list[int]
-        # 2. Clean doc index: (gstin_norm, doc_clean) -> list[int] (O(1) lookup in Pass 2)
-        # 3. PR by GSTIN index: gstin_norm -> list[int] (avoids quadratic scans in Pass 3)
-        pr_exact_index: dict[tuple[str, str], list[int]] = {}
-        pr_clean_index: dict[tuple[str, str], list[int]] = {}
+        # 3. Dynamic Candidate Indexing (Adaptive to user rule selections)
+        pr_exact_index: dict[tuple[str, ...], list[int]] = {}
+        pr_clean_index: dict[tuple[str, ...], list[int]] = {}
         pr_by_gstin: dict[str, list[int]] = {}
+
         for p in pr_rows:
-            if p.gstin_norm:
-                pr_by_gstin.setdefault(p.gstin_norm, []).append(p.idx)
-                if p.doc_norm:
+            part_key = p.gstin_norm if is_gstin_enabled and p.gstin_norm else "ALL"
+            pr_by_gstin.setdefault(part_key, []).append(p.idx)
+
+            if is_gstin_enabled and is_doc_enabled:
+                if p.gstin_norm and p.doc_norm:
                     pr_exact_index.setdefault((p.gstin_norm, p.doc_norm), []).append(p.idx)
-                if p.doc_clean:
+                if p.gstin_norm and p.doc_clean:
                     pr_clean_index.setdefault((p.gstin_norm, p.doc_clean), []).append(p.idx)
+            elif is_doc_enabled and not is_gstin_enabled:
+                if p.doc_norm:
+                    pr_exact_index.setdefault((p.doc_norm,), []).append(p.idx)
+                if p.doc_clean:
+                    pr_clean_index.setdefault((p.doc_clean,), []).append(p.idx)
+            elif is_gstin_enabled and not is_doc_enabled:
+                if p.gstin_norm:
+                    pr_exact_index.setdefault((p.gstin_norm,), []).append(p.idx)
+                    pr_clean_index.setdefault((p.gstin_norm,), []).append(p.idx)
+            else:
+                first_r = next((r for r in resolved_rules if r.strategy in (MatchStrategy.EXACT, MatchStrategy.NORMALIZED_TEXT, MatchStrategy.VALUE_GUARD)), None)
+                if first_r:
+                    k_val = pr_text_data.get(first_r.pr_column, [""] * total_pr)[p.idx]
+                    if k_val:
+                        pr_exact_index.setdefault((k_val,), []).append(p.idx)
+                        pr_clean_index.setdefault((k_val,), []).append(p.idx)
+
+        # 4. Universal Rule Checking Functions
+        def check_exact_match(g_idx: int, p_idx: int) -> tuple[bool, dict[str, Any]]:
+            variances: dict[str, Any] = {}
+            for r in resolved_rules:
+                if r.strategy == MatchStrategy.NUMERIC_TOLERANCE:
+                    g_v = gstr_num_data[r.gstr_column][g_idx]
+                    p_v = pr_num_data[r.pr_column][p_idx]
+                    diff = abs(g_v - p_v)
+                    if diff > 0.05:
+                        return False, {}
+                    variances[r.name] = "Exact (₹0.00)" if diff <= 0.01 else f"₹{diff:.2f}"
+                elif r.strategy == MatchStrategy.DATE_PROXIMITY:
+                    g_raw, g_obj = gstr_date_data[r.gstr_column]
+                    p_raw, p_obj = pr_date_data[r.pr_column]
+                    g_o = g_obj[g_idx]
+                    p_o = p_obj[p_idx]
+                    g_r = g_raw[g_idx]
+                    p_r = p_raw[p_idx]
+                    is_same = (g_o is not None and p_o is not None and g_o == p_o) or (bool(g_r) and g_r == p_r)
+                    if not is_same:
+                        return False, {}
+                    variances[r.name] = "Exact Date"
+                else:
+                    g_s = gstr_text_data[r.gstr_column][g_idx]
+                    p_s = pr_text_data[r.pr_column][p_idx]
+                    if not (g_s and p_s and g_s == p_s):
+                        return False, {}
+                    variances[r.name] = f"Agreed ({g_s})" if r.strategy == MatchStrategy.VALUE_GUARD else "Exact Match"
+            return True, variances
+
+        def check_tolerance_match(g_idx: int, p_idx: int) -> tuple[bool, dict[str, Any], list[str]]:
+            variances: dict[str, Any] = {}
+            diff_notes: list[str] = []
+            for r in resolved_rules:
+                if r.strategy == MatchStrategy.NUMERIC_TOLERANCE:
+                    g_v = gstr_num_data[r.gstr_column][g_idx]
+                    p_v = pr_num_data[r.pr_column][p_idx]
+                    diff = abs(g_v - p_v)
+                    eff_tol = abs(g_v * r.tolerance_value / 100.0) if r.tolerance_mode == NumericToleranceMode.PERCENTAGE else r.tolerance_value
+                    if diff > (eff_tol + 1e-3):
+                        return False, {}, []
+                    if diff > 0.05:
+                        diff_notes.append(f"{r.name} variance: ₹{diff:.2f} (within ±₹{eff_tol:.2f})")
+                        variances[r.name] = f"Diff: ₹{diff:.2f}"
+                    else:
+                        variances[r.name] = "Exact"
+                elif r.strategy == MatchStrategy.DATE_PROXIMITY:
+                    g_raw, g_obj = gstr_date_data[r.gstr_column]
+                    p_raw, p_obj = pr_date_data[r.pr_column]
+                    g_o = g_obj[g_idx]
+                    p_o = p_obj[p_idx]
+                    diff_days = abs((g_o - p_o).days) if (g_o and p_o) else 0
+                    days_tol = int(r.date_tolerance_value or 30)
+                    if r.date_tolerance_unit == DateToleranceUnit.MONTHS:
+                        days_tol *= 30
+                    elif r.date_tolerance_unit == DateToleranceUnit.YEARS:
+                        days_tol *= 365
+                    if diff_days > days_tol:
+                        return False, {}, []
+                    if diff_days > 0:
+                        diff_notes.append(f"{r.name} delta: {diff_days}d (within {days_tol}d window)")
+                        variances[r.name] = f"{diff_days}d delta"
+                    else:
+                        variances[r.name] = "Exact Date"
+                else:
+                    g_s = gstr_text_data[r.gstr_column][g_idx]
+                    p_s = pr_text_data[r.pr_column][p_idx]
+                    if not (g_s and p_s and g_s == p_s):
+                        return False, {}, []
+                    variances[r.name] = f"Agreed ({g_s})" if r.strategy == MatchStrategy.VALUE_GUARD else "Matched"
+            return True, variances, diff_notes
+
+        def check_near_match(g_idx: int, p_idx: int) -> tuple[bool, dict[str, Any], float, list[str]]:
+            variances: dict[str, Any] = {}
+            diff_notes: list[str] = []
+            g_row = gstr_rows[g_idx]
+            p_row = pr_rows[p_idx]
+            ratio = 1.0
+
+            if is_doc_enabled:
+                if g_row.doc_norm == p_row.doc_norm:
+                    ratio = 1.0
+                else:
+                    is_sub = (len(g_row.doc_norm) >= 3 and g_row.doc_norm in p_row.doc_norm) or (len(p_row.doc_norm) >= 3 and p_row.doc_norm in g_row.doc_norm)
+                    ratio = calculate_string_ratio(g_row.doc_norm, p_row.doc_norm)
+                    if ratio < 0.85 and not is_sub:
+                        return False, {}, 0.0, []
+                variances["invoice_similarity_ratio"] = round(ratio, 2)
+
+            for r in resolved_rules:
+                if r == doc_rule:
+                    continue
+                if r.strategy == MatchStrategy.NUMERIC_TOLERANCE:
+                    g_v = gstr_num_data[r.gstr_column][g_idx]
+                    p_v = pr_num_data[r.pr_column][p_idx]
+                    diff = abs(g_v - p_v)
+                    max_amt = max(r.tolerance_value * 2.0, 50.0)
+                    if diff > max_amt:
+                        return False, {}, 0.0, []
+                    variances[r.name] = f"Near Diff: ₹{diff:.2f}"
+                elif r.strategy == MatchStrategy.DATE_PROXIMITY:
+                    g_raw, g_obj = gstr_date_data[r.gstr_column]
+                    p_raw, p_obj = pr_date_data[r.pr_column]
+                    g_o = g_obj[g_idx]
+                    p_o = p_obj[p_idx]
+                    diff_days = abs((g_o - p_o).days) if (g_o and p_o) else 0
+                    max_days = max(int(r.date_tolerance_value or 30), 45)
+                    if diff_days > max_days:
+                        return False, {}, 0.0, []
+                    variances[r.name] = f"Near Delta: {diff_days}d"
+                else:
+                    g_s = gstr_text_data[r.gstr_column][g_idx]
+                    p_s = pr_text_data[r.pr_column][p_idx]
+                    if not (g_s and p_s and g_s == p_s):
+                        return False, {}, 0.0, []
+                    variances[r.name] = f"Agreed ({g_s})" if r.strategy == MatchStrategy.VALUE_GUARD else "Matched"
+
+            return True, variances, ratio, diff_notes
 
         # -------------------------------------------------------------
-        # PASS 1: EXACT MATCH (Zero Tolerance Statutory Baseline)
+        # PASS 1: EXACT MATCH (Zero-Tolerance across ALL active rules)
         # -------------------------------------------------------------
         pass1_matched_count = 0
         pass1_matched_itc = 0.0
@@ -1191,20 +1390,29 @@ class WaterfallMatchingEngine:
         for g in gstr_rows:
             if g.idx not in remaining_gstr:
                 continue
-            key = (g.gstin_norm, g.doc_norm)
-            candidate_p_indices = pr_exact_index.get(key, [])
+
+            if is_gstin_enabled and is_doc_enabled:
+                candidate_keys = [(g.gstin_norm, g.doc_norm)]
+            elif is_doc_enabled:
+                candidate_keys = [(g.doc_norm,)]
+            elif is_gstin_enabled:
+                candidate_keys = [(g.gstin_norm,)]
+            else:
+                first_r = next((r for r in resolved_rules if r.strategy in (MatchStrategy.EXACT, MatchStrategy.NORMALIZED_TEXT, MatchStrategy.VALUE_GUARD)), None)
+                candidate_keys = [(gstr_text_data.get(first_r.gstr_column, [""] * total_gstr)[g.idx],)] if first_r else []
+
+            candidate_p_indices: list[int] = []
+            for ck in candidate_keys:
+                candidate_p_indices.extend(pr_exact_index.get(ck, []))
             valid_p_candidates = [p_idx for p_idx in candidate_p_indices if p_idx in remaining_pr]
 
             exact_match_idx: int | None = None
+            exact_variances: dict[str, Any] = {}
             for p_idx in valid_p_candidates:
-                p = pr_rows[p_idx]
-                # Zero tolerance: Date identical, Taxable Value diff <= 0.05, Total Value diff <= 0.05
-                date_matches = (g.date_obj is not None and p.date_obj is not None and g.date_obj == p.date_obj) or (g.date_raw == p.date_raw)
-                taxable_matches = abs(g.taxable_val - p.taxable_val) <= 0.05
-                total_matches = abs(g.total_val - p.total_val) <= 0.05
-
-                if date_matches and taxable_matches and total_matches:
+                ok, vars_res = check_exact_match(g.idx, p_idx)
+                if ok:
                     exact_match_idx = p_idx
+                    exact_variances = vars_res
                     break
 
             if exact_match_idx is not None:
@@ -1213,6 +1421,21 @@ class WaterfallMatchingEngine:
                 remaining_pr.remove(exact_match_idx)
                 pass1_matched_count += 1
                 pass1_matched_itc += g.tax_val
+
+                # Synthesize plain-English classification reason
+                reason_parts = [f"Exact Statutory Identity Match across {len(resolved_rules)} active criteria."]
+                if is_gstin_enabled and g.gstin_raw:
+                    reason_parts.append(f"Supplier GSTIN ({g.gstin_raw})")
+                if is_doc_enabled and g.doc_raw:
+                    reason_parts.append(f"Document #{g.doc_raw}")
+                if is_date_enabled and g.date_raw:
+                    reason_parts.append(f"Date ({g.date_raw})")
+                if is_taxable_enabled:
+                    reason_parts.append(f"Taxable Value (₹{g.taxable_val:,.2f})")
+                aux_rules = [r.name for r in resolved_rules if r not in (gstin_rule, doc_rule, taxable_rule, date_rule)]
+                if aux_rules:
+                    reason_parts.append(f"and {len(aux_rules)} auxiliary checks ({', '.join(aux_rules[:3])})")
+                reason_text = " ".join(reason_parts) + " agreed with 0.00 variance across both Government and Books."
 
                 records.append(
                     ReconciliationRecordItem(
@@ -1230,8 +1453,10 @@ class WaterfallMatchingEngine:
                         total_value=g.total_val,
                         gstr_preview=g.preview,
                         pr_preview=p.preview,
-                        variances={"taxable_diff": 0.0, "total_diff": 0.0, "tax_diff": 0.0, "date_diff_days": 0},
+                        variances=exact_variances or {"status": "Exact Statutory Identity"},
                         matched_by_pass="Pass 1: Exact Statutory Identity",
+                        classification_reason=reason_text,
+                        ai_reason=reason_text,
                     )
                 )
 
@@ -1244,41 +1469,39 @@ class WaterfallMatchingEngine:
 
         for g_idx in sorted(remaining_gstr):
             g = gstr_rows[g_idx]
-            key = (g.gstin_norm, g.doc_norm)
-            candidate_p_indices = [p_idx for p_idx in pr_exact_index.get(key, []) if p_idx in remaining_pr]
 
-            # If no key match, check clean doc under same GSTIN via pre-computed hash index (O(1))
-            if not candidate_p_indices and g.gstin_norm and g.doc_clean:
-                candidate_p_indices = [
-                    p_idx for p_idx in pr_clean_index.get((g.gstin_norm, g.doc_clean), [])
-                    if p_idx in remaining_pr
-                ]
+            if is_gstin_enabled and is_doc_enabled:
+                candidate_p_indices = [p_idx for p_idx in pr_exact_index.get((g.gstin_norm, g.doc_norm), []) if p_idx in remaining_pr]
+                if not candidate_p_indices and g.gstin_norm and g.doc_clean:
+                    candidate_p_indices = [p_idx for p_idx in pr_clean_index.get((g.gstin_norm, g.doc_clean), []) if p_idx in remaining_pr]
+            elif is_doc_enabled:
+                candidate_p_indices = [p_idx for p_idx in pr_exact_index.get((g.doc_norm,), []) if p_idx in remaining_pr]
+                if not candidate_p_indices and g.doc_clean:
+                    candidate_p_indices = [p_idx for p_idx in pr_clean_index.get((g.doc_clean,), []) if p_idx in remaining_pr]
+            elif is_gstin_enabled:
+                candidate_p_indices = [p_idx for p_idx in pr_exact_index.get((g.gstin_norm,), []) if p_idx in remaining_pr]
+            else:
+                first_r = next((r for r in resolved_rules if r.strategy in (MatchStrategy.EXACT, MatchStrategy.NORMALIZED_TEXT, MatchStrategy.VALUE_GUARD)), None)
+                k_val = gstr_text_data.get(first_r.gstr_column, [""] * total_gstr)[g.idx] if first_r else ""
+                candidate_p_indices = [p_idx for p_idx in pr_exact_index.get((k_val,), []) if p_idx in remaining_pr] if k_val else []
 
-            qualifying_p: list[int] = []
+            qualifying_p: list[tuple[int, dict[str, Any], list[str]]] = []
             for p_idx in candidate_p_indices:
-                p = pr_rows[p_idx]
-                effective_amt_tol = amt_tolerance_val
-                if amt_tolerance_is_pct:
-                    effective_amt_tol = abs(g.taxable_val * amt_tolerance_val / 100.0)
-
-                amt_diff = abs(g.taxable_val - p.taxable_val)
-                tax_diff = abs(g.tax_val - p.tax_val)
-                date_diff_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
-
-                if amt_diff <= (effective_amt_tol + 1e-3) and date_diff_days <= date_tolerance_days and tax_diff <= (tax_tolerance_val + 1e-3):
-                    qualifying_p.append(p_idx)
+                ok, vars_res, diff_notes = check_tolerance_match(g_idx, p_idx)
+                if ok:
+                    qualifying_p.append((p_idx, vars_res, diff_notes))
 
             if len(qualifying_p) == 1:
-                p_match = qualifying_p[0]
+                p_match, vars_res, diff_notes = qualifying_p[0]
                 p = pr_rows[p_match]
                 remaining_gstr.remove(g.idx)
                 remaining_pr.remove(p_match)
                 pass2_matched_count += 1
                 pass2_matched_itc += g.tax_val
 
-                amt_diff = round(abs(g.taxable_val - p.taxable_val), 2)
-                tax_diff = round(abs(g.tax_val - p.tax_val), 2)
-                d_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
+                reason_text = "Commercial Tolerance Match. Reconciled under Pass 2 within enterprise tolerance thresholds: "
+                reason_text += ("; ".join(diff_notes) if diff_notes else "amounts and dates are within configured tolerances.")
+                reason_text += " All active compliance guard rules were satisfied."
 
                 records.append(
                     ReconciliationRecordItem(
@@ -1296,12 +1519,14 @@ class WaterfallMatchingEngine:
                         total_value=g.total_val,
                         gstr_preview=g.preview,
                         pr_preview=p.preview,
-                        variances={"taxable_diff": amt_diff, "tax_diff": tax_diff, "date_diff_days": d_days},
+                        variances=vars_res,
                         matched_by_pass="Pass 2: Enterprise Tolerance",
+                        classification_reason=reason_text,
+                        ai_reason=reason_text,
                     )
                 )
             elif len(qualifying_p) > 1:
-                pass2_collisions[g.idx] = qualifying_p
+                pass2_collisions[g.idx] = [item[0] for item in qualifying_p]
 
         # -------------------------------------------------------------
         # PASS 3: NEAR MATCH (Prefix Strip, Leading Zero Trim, Fuzzy >= 85%)
@@ -1312,51 +1537,31 @@ class WaterfallMatchingEngine:
 
         for g_idx in sorted(remaining_gstr):
             if g_idx in pass2_collisions:
-                continue  # Handled by Pass 4 Ambiguity Clustering
+                continue
             g = gstr_rows[g_idx]
-            raw_cands = pr_by_gstin.get(g.gstin_norm, [])
+            part_key = g.gstin_norm if is_gstin_enabled and g.gstin_norm else "ALL"
+            raw_cands = pr_by_gstin.get(part_key, [])
             candidate_p_indices = [p_idx for p_idx in raw_cands if p_idx in remaining_pr]
 
-            near_qualifying_p: list[tuple[int, float]] = []
-            max_amt = max(amt_tolerance_val * 2.0, 50.0)
-            max_days = max(date_tolerance_days, 45)
-
+            near_qualifying_p: list[tuple[int, dict[str, Any], float, list[str]]] = []
             for p_idx in candidate_p_indices:
-                if p_idx not in remaining_pr:
-                    continue
-                p = pr_rows[p_idx]
-
-                # Cheap numeric pruning first (nanoseconds) before expensive fuzzy distance (microseconds)
-                amt_diff = abs(g.taxable_val - p.taxable_val)
-                if amt_diff > max_amt:
-                    continue
-
-                date_diff_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
-                if date_diff_days > max_days:
-                    continue
-
-                # Compare normalized document numbers
-                if g.doc_norm == p.doc_norm:
-                    near_qualifying_p.append((p_idx, 1.0))
-                    continue
-
-                is_sub = (len(g.doc_norm) >= 3 and g.doc_norm in p.doc_norm) or (len(p.doc_norm) >= 3 and p.doc_norm in g.doc_norm)
-                ratio = calculate_string_ratio(g.doc_norm, p.doc_norm)
-
-                if ratio >= 0.85 or is_sub:
-                    near_qualifying_p.append((p_idx, ratio))
+                ok, vars_res, ratio, diff_notes = check_near_match(g_idx, p_idx)
+                if ok:
+                    near_qualifying_p.append((p_idx, vars_res, ratio, diff_notes))
 
             if len(near_qualifying_p) == 1:
-                p_match, ratio = near_qualifying_p[0]
+                p_match, vars_res, ratio, diff_notes = near_qualifying_p[0]
                 p = pr_rows[p_match]
                 remaining_gstr.remove(g.idx)
                 remaining_pr.remove(p_match)
                 pass3_matched_count += 1
                 pass3_matched_itc += g.tax_val
 
-                amt_diff = round(abs(g.taxable_val - p.taxable_val), 2)
-                tax_diff = round(abs(g.tax_val - p.tax_val), 2)
-                d_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
+                reason_text = (
+                    f"Semantic Near Match. Reconciled under Pass 3 via document normalization: "
+                    f"Portal Document #{g.doc_raw} matched ERP Document #{p.doc_raw} with {round(ratio * 100)}% similarity "
+                    f"after trimming standard prefixes and leading zeros. Base financial amounts and dates are within allowable proximity."
+                )
 
                 records.append(
                     ReconciliationRecordItem(
@@ -1374,13 +1579,10 @@ class WaterfallMatchingEngine:
                         total_value=g.total_val,
                         gstr_preview=g.preview,
                         pr_preview=p.preview,
-                        variances={
-                            "taxable_diff": amt_diff,
-                            "tax_diff": tax_diff,
-                            "date_diff_days": d_days,
-                            "invoice_similarity_ratio": round(ratio, 2),
-                        },
+                        variances=vars_res,
                         matched_by_pass="Pass 3: Semantic Near Match",
+                        classification_reason=reason_text,
+                        ai_reason=reason_text,
                     )
                 )
             elif len(near_qualifying_p) > 1:
@@ -1389,18 +1591,16 @@ class WaterfallMatchingEngine:
         # -------------------------------------------------------------
         # PASS 4: AMBIGUITY CLUSTERING & CONFIDENCE CALCULATION
         # -------------------------------------------------------------
-        # Gather all multi-match collision cases from Pass 2 and Pass 3
         all_collisions: dict[int, list[int]] = {**pass2_collisions, **pass3_collisions}
 
-        # Also identify any remaining GSTR rows with potential candidates in remaining PR under same GSTIN
         for g_idx in sorted(remaining_gstr):
             if g_idx in all_collisions:
                 continue
             g = gstr_rows[g_idx]
-            cand = pr_by_gstin.get(g.gstin_norm, [])
+            part_key = g.gstin_norm if is_gstin_enabled and g.gstin_norm else "ALL"
+            cand = pr_by_gstin.get(part_key, [])
             potential_p = [p_idx for p_idx in cand if p_idx in remaining_pr]
             if len(potential_p) >= 2:
-                # Rank potential by amount closeness
                 sorted_potential = sorted(potential_p, key=lambda p_idx: abs(g.taxable_val - pr_rows[p_idx].taxable_val))[:3]
                 all_collisions[g_idx] = sorted_potential
 
@@ -1420,7 +1620,7 @@ class WaterfallMatchingEngine:
 
             for p_idx in valid_candidates:
                 p = pr_rows[p_idx]
-                inv_sim = calculate_string_ratio(g.doc_norm, p.doc_norm)
+                inv_sim = calculate_string_ratio(g.doc_norm, p.doc_norm) if (g.doc_norm and p.doc_norm) else 0.5
                 amt_denom = max(g.taxable_val, 1.0)
                 amt_score = max(0.0, 1.0 - (abs(g.taxable_val - p.taxable_val) / amt_denom))
                 date_diff_days = abs((g.date_obj - p.date_obj).days) if (g.date_obj and p.date_obj) else 0
@@ -1441,7 +1641,7 @@ class WaterfallMatchingEngine:
                     diffs.append(f"Tax Variance: ₹{abs(g.tax_val - p.tax_val):.2f}")
 
                 cand_reason = (
-                    f"Candidate #{p.idx+1} shares Supplier GSTIN {g.gstin_raw} with {conf}% confidence. "
+                    f"Candidate #{p.idx+1} shares identifying attributes with {conf}% confidence. "
                     f"Doc similarity: {round(inv_sim*100)}%, amount closeness: {round(amt_score*100)}%."
                 )
 
@@ -1488,6 +1688,12 @@ class WaterfallMatchingEngine:
             pass4_ambiguous_count += 1
             pass4_ambiguous_itc += g.tax_val
 
+            reason_text = (
+                f"Ambiguity Quarantined. Multi-match collision detected: {len(candidates_list)} ERP purchase register invoices qualify for "
+                f"Portal Document #{g.doc_raw}. Top candidate {top_cand.pr_record_id} exhibits {top_cand.confidence_score}% alignment. "
+                "Quarantined for Human-In-The-Loop review to prevent duplicate ITC claims."
+            )
+
             records.append(
                 ReconciliationRecordItem(
                     id=f"REC-{uuid4().hex[:8].upper()}",
@@ -1507,6 +1713,8 @@ class WaterfallMatchingEngine:
                     variances={"candidate_count": len(candidates_list), "top_confidence": top_cand.confidence_score},
                     matched_by_pass="Pass 4: Ambiguity Quarantined",
                     ambiguity_cluster_id=cluster_id,
+                    classification_reason=reason_text,
+                    ai_reason=reason_text,
                 )
             )
 
@@ -1519,6 +1727,12 @@ class WaterfallMatchingEngine:
             g = gstr_rows[g_idx]
             gstr_only_count += 1
             gstr_only_itc += g.tax_val
+
+            reason_text = (
+                f"In GSTR-2B Only (Unclaimed Credit Risk). Invoice #{g.doc_raw} was reported by Supplier {g.gstin_raw} on {g.date_raw or 'N/A'} "
+                f"for Taxable ₹{g.taxable_val:,.2f} and ITC ₹{g.tax_val:,.2f}, but has no corresponding entry in your ERP Purchase Register. "
+                "Action required: Confirm receipt of goods/services or book invoice in purchase register to avail eligible credit before statutory deadline."
+            )
 
             records.append(
                 ReconciliationRecordItem(
@@ -1538,6 +1752,8 @@ class WaterfallMatchingEngine:
                     pr_preview={},
                     variances={"status": "Missing in ERP Purchase Register"},
                     matched_by_pass="Pass 5: In 2B Only (Unclaimed ITC Risk)",
+                    classification_reason=reason_text,
+                    ai_reason=reason_text,
                 )
             )
 
@@ -1547,6 +1763,12 @@ class WaterfallMatchingEngine:
             p = pr_rows[p_idx]
             pr_only_count += 1
             pr_only_itc += p.tax_val
+
+            reason_text = (
+                f"In Purchase Register Only (DRC-01C Audit Risk). Invoice #{p.doc_raw} for Taxable ₹{p.taxable_val:,.2f} and ITC ₹{p.tax_val:,.2f} "
+                "is booked in your ERP ledger, but is missing from official GSTR-2B. Under Section 16(2)(aa) of the CGST Act, "
+                "Input Tax Credit cannot be legally availed in GSTR-3B until the supplier files their GSTR-1 return."
+            )
 
             records.append(
                 ReconciliationRecordItem(
@@ -1566,6 +1788,8 @@ class WaterfallMatchingEngine:
                     pr_preview=p.preview,
                     variances={"status": "Missing in Official Portal GSTR-2B"},
                     matched_by_pass="Pass 5: In Books Only (DRC-01C Risk)",
+                    classification_reason=reason_text,
+                    ai_reason=reason_text,
                 )
             )
 
@@ -1640,6 +1864,7 @@ class WaterfallMatchingEngine:
             summary=summary,
             records=records,
             ambiguities=ambiguities,
+            compared_columns=compared_columns,
         )
 
 

@@ -230,6 +230,8 @@ export interface ReconciliationRecordItem {
   variances: Record<string, any>;
   matched_by_pass: string;
   ambiguity_cluster_id?: string | null;
+  classification_reason?: string;
+  ai_reason?: string;
 }
 
 export interface WaterfallPassYield {
@@ -261,11 +263,24 @@ export interface Stage4ResultsSummary {
   waterfall_passes: WaterfallPassYield[];
 }
 
+export interface ComparedColumnInfo {
+  rule_id: string;
+  rule_name: string;
+  category: string;
+  strategy: string;
+  gstr_column: string;
+  pr_column: string;
+  field_a?: string;
+  field_b?: string;
+  tolerance_summary?: string;
+}
+
 export interface Stage4ExecutionResponse {
   session_id: string;
   summary: Stage4ResultsSummary;
   records: ReconciliationRecordItem[];
   ambiguities: AmbiguityCluster[];
+  compared_columns?: ComparedColumnInfo[];
 }
 
 const API_BASE = "/api/reconciliations-v2";

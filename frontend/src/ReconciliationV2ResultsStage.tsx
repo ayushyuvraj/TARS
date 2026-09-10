@@ -125,6 +125,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
   const summary = data?.summary;
   const records = data?.records || [];
   const ambiguities = data?.ambiguities || [];
+  const comparedColumns = data?.compared_columns || [];
 
   // Filtered records
   const filteredRecords = useMemo(() => {
@@ -792,6 +793,11 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                   ).toLocaleString()}`}{" "}
               of {filteredRecords.length.toLocaleString()} records
               {totalPages > 1 && ` • Page ${currentPage} of ${totalPages}`}
+              {comparedColumns.length > 0 && (
+                <span className="v2-compared-cols-badge" title="Dynamic rules actively evaluated across both datasets">
+                  {comparedColumns.length} Columns Reconciled
+                </span>
+              )}
             </span>
           </div>
         </div>
@@ -935,6 +941,24 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                         <tr>
                           <td colSpan={10} style={{ padding: 0 }}>
                             <div className="v2-row-detail-panel">
+                              {/* AI / Matching Engine Classification Rationale */}
+                              {(rec.classification_reason || rec.ai_reason) && (
+                                <div className="v2-classification-reason-card">
+                                  <div className="v2-reason-header">
+                                    <div className="v2-reason-title">
+                                      <Sparkles size={15} color="#00338d" />
+                                      <span>Match Classification &amp; Audit Rationale</span>
+                                    </div>
+                                    <span className="v2-reason-pass-badge">
+                                      {rec.matched_by_pass || rec.bucket}
+                                    </span>
+                                  </div>
+                                  <div className="v2-reason-text">
+                                    {rec.classification_reason || rec.ai_reason}
+                                  </div>
+                                </div>
+                              )}
+
                               <div className="v2-side-by-side-grid">
                                 {/* Left Side: GSTR-2B */}
                                 <div className="v2-side-box gstr">
@@ -981,6 +1005,38 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                                         <span>{rec.gstr_preview.VendorName}</span>
                                       </div>
                                     )}
+
+                                    {/* Dynamic auxiliary columns evaluated in Stage 3 */}
+                                    {comparedColumns
+                                      .filter((c) => {
+                                        const fa = c.field_a || c.gstr_column;
+                                        return (
+                                          fa &&
+                                          ![
+                                            "gstin",
+                                            "document_number",
+                                            "document_date",
+                                            "taxable_value",
+                                            "tax_amount",
+                                            "total_value",
+                                            "VendorName",
+                                          ].includes(fa)
+                                        );
+                                      })
+                                      .map((c) => {
+                                        const fa = c.field_a || c.gstr_column;
+                                        const val = rec.gstr_preview && fa ? rec.gstr_preview[fa] : undefined;
+                                        return (
+                                          <div key={c.rule_id} className="v2-field-unit auxiliary">
+                                            <label>{c.rule_name || fa}</label>
+                                            <span>
+                                              {val !== undefined && val !== null && String(val).trim() !== ""
+                                                ? String(val)
+                                                : "—"}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
                                   </div>
                                 </div>
 
@@ -1035,26 +1091,65 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                                         <span>{rec.pr_preview.SupplierName}</span>
                                       </div>
                                     )}
+
+                                    {/* Dynamic auxiliary columns evaluated in Stage 3 */}
+                                    {comparedColumns
+                                      .filter((c) => {
+                                        const fb = c.field_b || c.pr_column;
+                                        return (
+                                          fb &&
+                                          ![
+                                            "gstin",
+                                            "document_number",
+                                            "document_date",
+                                            "taxable_value",
+                                            "tax_amount",
+                                            "total_value",
+                                            "SupplierName",
+                                          ].includes(fb)
+                                        );
+                                      })
+                                      .map((c) => {
+                                        const fb = c.field_b || c.pr_column;
+                                        const val = rec.pr_preview && fb ? rec.pr_preview[fb] : undefined;
+                                        return (
+                                          <div key={c.rule_id} className="v2-field-unit auxiliary">
+                                            <label>{c.rule_name || fb}</label>
+                                            <span>
+                                              {val !== undefined && val !== null && String(val).trim() !== ""
+                                                ? String(val)
+                                                : rec.bucket === "GSTR_ONLY"
+                                                ? "—"
+                                                : "—"}
+                                            </span>
+                                          </div>
+                                        );
+                                      })}
                                   </div>
                                 </div>
                               </div>
 
                               {/* Variances Chip Bar */}
                               <div className="v2-variance-bar">
-                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                                   <strong>Consensus Variances:</strong>
                                   <div className="v2-variance-chips">
                                     {rec.variances && Object.keys(rec.variances).length > 0 ? (
-                                      Object.entries(rec.variances).map(([k, v]) => (
-                                        <span
-                                          key={k}
-                                          className={`v2-diff-chip ${
-                                            k.includes("diff") && Number(v) > 0 ? "warn" : ""
-                                          }`}
-                                        >
-                                          {k.replace(/_/g, " ")}: <strong>{String(v)}</strong>
-                                        </span>
-                                      ))
+                                      Object.entries(rec.variances).map(([k, v]) => {
+                                        const isWarn =
+                                          (k.includes("diff") && Number(v) > 0) || String(v) === "MISMATCH";
+                                        const isAgreed = String(v) === "YES" || String(v) === "EXACT";
+                                        return (
+                                          <span
+                                            key={k}
+                                            className={`v2-diff-chip ${
+                                              isWarn ? "warn" : isAgreed ? "guard-agreed" : ""
+                                            }`}
+                                          >
+                                            {k.replace(/_/g, " ")}: <strong>{String(v)}</strong>
+                                          </span>
+                                        );
+                                      })
                                     ) : (
                                       <span className="v2-diff-chip">Zero Variance (Exact Match)</span>
                                     )}
