@@ -415,11 +415,13 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
       {/* 1. HERO BANNER */}
       <div className="v2-results-hero">
         <div className="v2-results-hero-left">
-          <div className="v2-results-stage-tag">
-            <Sparkles size={13} />
-            <span>Stage 4 of 8 • Multi-Pass Reconciliation Matrix</span>
+          <div className="v2-results-hero-title-row">
+            <h2 className="v2-results-hero-title">Deterministic Match Matrix &amp; Ambiguity Hub</h2>
+            <div className="v2-results-stage-tag">
+              <Sparkles size={12} />
+              <span>Stage 4 of 8 • Multi-Pass Reconciliation Matrix</span>
+            </div>
           </div>
-          <h2 className="v2-results-hero-title">Deterministic Match Matrix & Ambiguity Hub</h2>
           <p className="v2-results-hero-desc">
             Dual-ledger progressive elimination executed across 5 statutory and commercial passes: zero-tolerance identity,
             configured numerical tolerances, semantic near-matching, and quarantined multi-matches with human-in-the-loop consensus.
