@@ -88,3 +88,39 @@ def test_v2_api_session_lifecycle():
     )
     assert confirm_res.status_code == 200
     assert confirm_res.json()["status"] == "mapping_confirmed"
+
+
+def test_compile_ai_rule_endpoint():
+    app = create_app()
+    client = TestClient(app)
+
+    # 1. Compile exact payment match
+    res = client.post(
+        "/api/reconciliations-v2/rules-v2/compile-ai",
+        json={"prompt": "Payment amount must match exactly in both tables", "available_columns": ["PaymentAmount", "DocumentDate"]},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["name"] == "Payment Amount Match"
+    assert data["canonical_concept"] == "payment_amount"
+    assert data["strategy"] == "NUMERIC_TOLERANCE"
+    assert data["tolerance_value"] == 0.0
+
+    # 2. Compile date tolerance rule
+    res2 = client.post(
+        "/api/reconciliations-v2/rules-v2/compile-ai",
+        json={"prompt": "Allow invoice date variance of 15 days", "available_columns": []},
+    )
+    assert res2.status_code == 200
+    data2 = res2.json()
+    assert data2["strategy"] == "DATE_PROXIMITY"
+    assert data2["date_tolerance_value"] == 15
+    assert data2["date_tolerance_unit"] == "days"
+
+    # 3. Compile empty prompt returns 400
+    res3 = client.post(
+        "/api/reconciliations-v2/rules-v2/compile-ai",
+        json={"prompt": "   ", "available_columns": []},
+    )
+    assert res3.status_code == 400
+

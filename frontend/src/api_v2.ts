@@ -125,6 +125,22 @@ export interface Rule2Item {
   execution_order: number;
   plain_english_explanation: string;
   why_it_matters: string;
+  column_status?: "AVAILABLE" | "MISSING" | "UNMAPPED";
+  missing_reason?: string | null;
+  ai_rationale?: string | null;
+  is_ai_suggested?: boolean;
+  created_at?: string | null;
+  created_by?: string | null;
+  created_in_run?: string | null;
+  version?: string;
+  last_modified_at?: string | null;
+  last_modified_by?: string | null;
+  is_custom?: boolean;
+}
+
+export interface SessionRulesResponse {
+  pipeline_rules: Rule2Item[];
+  ai_suggested_rules: Rule2Item[];
 }
 
 export interface RuleBreakdownStat {
@@ -256,8 +272,51 @@ export const apiV2 = {
     });
   },
 
+  async getSessionRules(sessionId: string): Promise<SessionRulesResponse> {
+    return request<SessionRulesResponse>(`${API_BASE}/${sessionId}/rules-v2`);
+  },
+
+  async acceptRuleV2(sessionId: string, rule: Rule2Item): Promise<SessionRulesResponse> {
+    return request<SessionRulesResponse>(`${API_BASE}/${sessionId}/rules-v2/accept`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(rule)
+    });
+  },
+
+  async refreshAiSuggestedRules(sessionId: string, identifyMore: boolean = false): Promise<Rule2Item[]> {
+    return request<Rule2Item[]>(`${API_BASE}/${sessionId}/rules-v2/suggest-ai`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ identify_more: identifyMore })
+    });
+  },
+
+
   async getRules2Catalog(): Promise<Rule2Item[]> {
     return request<Rule2Item[]>(`${API_BASE}/rules-v2/catalog`);
+  },
+
+  async saveRules2Catalog(rules: Rule2Item[]): Promise<Rule2Item[]> {
+    return request<Rule2Item[]>(`${API_BASE}/rules-v2/catalog`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(rules)
+    });
+  },
+
+  async deleteRuleFromCatalog(ruleId: string): Promise<Rule2Item[]> {
+    return request<Rule2Item[]>(`${API_BASE}/rules-v2/catalog/${encodeURIComponent(ruleId)}`, {
+      method: "DELETE"
+    });
+  },
+
+  async batchDeleteRulesFromCatalog(ruleIds: string[]): Promise<Rule2Item[]> {
+    return request<Rule2Item[]>(`${API_BASE}/rules-v2/catalog/delete-batch`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rule_ids: ruleIds })
+    });
   },
 
   async compileAiRule(prompt: string, availableColumns: string[] = []): Promise<Rule2Item> {

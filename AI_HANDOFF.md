@@ -1,14 +1,13 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Dynamic Session State — Rules Engine 2.0 Performance & Studio Checkpoint (10th September 2026)
+## Dynamic Session State — Rules Engine 2.0 & Governance Checkpoint (10th September 2026)
 
-- **Checkpoint Name**: `Rules Engine 2.0 Studio & Performance Optimization Checkpoint`
+- **Checkpoint Name**: `Rules Engine 2.0 Governance, Audit Provenance & Irreversible Delete Checkpoint`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Current HEAD Commit**: `56a0a59` (`feat(rules-v2): optimize matching engine performance, resolve ingestion freeze, and add per-rule match metrics`)
-- **Checkpoint Tag**: `tars-2026-09-10-eod-checkpoint`
-- **Previous Checkpoint Tag**: `rules-engine-v2-complete`
+- **Checkpoint Tag**: `tars-2026-09-10-rules-governance-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-10-eod-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Stage 3 Rules Engine 2.0 with optimized sub-millisecond simulation matching (<30ms), sub-millisecond openpyxl streaming header extraction, async event loop offloading, per-rule dynamic match metrics (9,959 matches / 99.6%), live agentic simulation HUD, instant abort control, and drag-and-drop rule reordering.
+- **Current Objective**: Rules Wiki 2.0 (`/rules-v2`) enterprise governance with full audit metadata (created_at, created_by, created_in_run, version, last_modified), mandatory irreversible delete caution pop-ups, rule editing, multi-select batch deletion, clean non-draggable catalog layout, AI-suggested Stage 3 rule synthesis, and strict Stage 3 isolation.
 
 
 ---

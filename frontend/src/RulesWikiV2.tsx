@@ -8,36 +8,49 @@ import {
   NormalizationType,
 } from "./api_v2";
 import {
-  Sparkles,
   Play,
-  HelpCircle,
-  ChevronUp,
   ChevronDown,
   Info,
   CheckCircle2,
   AlertTriangle,
-  FileText,
   Clock,
   ShieldCheck,
-  Percent,
   Sliders,
   X,
-  Plus,
-  ArrowRight,
-  Database,
-  GripVertical,
   StopCircle,
   Activity,
+  Trash2,
+  Edit3,
+  User,
+  Layers,
+  Sparkles,
 } from "lucide-react";
 import "./rules_v2.css";
 
-const ALL_NORMALIZERS: { type: NormalizationType; label: string }[] = [
-  { type: "TRIM_WHITESPACE", label: "Clean Spaces" },
-  { type: "STRIP_SPECIAL_CHARS", label: "Strip Symbols (+, -, /, _)" },
-  { type: "REMOVE_PREFIXES", label: "Strip Prefixes (INV, BILL)" },
-  { type: "TRIM_LEADING_ZEROS", label: "Trim Leading Zeros (0042 → 42)" },
-  { type: "UPPERCASE", label: "Case Fold (A-Z)" },
+const ALL_NORMALIZERS: { type: NormalizationType; label: string; description?: string }[] = [
+  { type: "TRIM_WHITESPACE", label: "Clean Spaces", description: "Trim leading and trailing whitespace" },
+  { type: "STRIP_SPECIAL_CHARS", label: "Strip Symbols (+, -, /, _)", description: "Strip punctuation and delimiter symbols" },
+  { type: "REMOVE_PREFIXES", label: "Strip Prefixes (INV, BILL)", description: "Strip standard document prefixes like INV or BILL" },
+  { type: "TRIM_LEADING_ZEROS", label: "Trim Leading Zeros (0042 → 42)", description: "Remove leading zeroes from numeric identifiers" },
+  { type: "UPPERCASE", label: "Case Fold (A-Z)", description: "Normalize letters to uppercase" },
 ];
+
+function formatAuditDate(iso?: string | null): string {
+  if (!iso) return "Initial Baseline";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return iso;
+  }
+}
 
 export const RulesWikiV2: React.FC = () => {
   const [rules, setRules] = useState<Rule2Item[]>([]);
@@ -46,40 +59,112 @@ export const RulesWikiV2: React.FC = () => {
   const [simulationResult, setSimulationResult] = useState<SimulationResultV2 | null>(null);
   const [simulationAborted, setSimulationAborted] = useState<boolean>(false);
 
-  // Drag and Drop state
-  const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  // Multi-select & Batch Deletion state
+  const [selectedRuleIds, setSelectedRuleIds] = useState<Set<string>>(new Set());
+
+  // Irreversible Caution Delete Modal state
+  const [deleteModalState, setDeleteModalState] = useState<{
+    isOpen: boolean;
+    ruleIds: string[];
+    ruleName?: string;
+  } | null>(null);
+
+  // Edit Rule Modal state
+  const [editingRule, setEditingRule] = useState<Rule2Item | null>(null);
+  const [editForm, setEditForm] = useState<Rule2Item | null>(null);
+
+  // Expanded Rule details state
+  const [expandedRuleIds, setExpandedRuleIds] = useState<Set<string>>(new Set());
+
+  const toggleRuleExpand = (ruleId: string) => {
+    setExpandedRuleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(ruleId)) {
+        next.delete(ruleId);
+      } else {
+        next.add(ruleId);
+      }
+      return next;
+    });
+  };
 
   // Agentic Simulation HUD telemetry state
   const [simStep, setSimStep] = useState<number>(1);
   const [simElapsedMs, setSimElapsedMs] = useState<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  // Modal states
+  // Explanation Modal state
   const [explainingRule, setExplainingRule] = useState<Rule2Item | null>(null);
-  const [showAiModal, setShowAiModal] = useState<boolean>(false);
-  const [aiPrompt, setAiPrompt] = useState<string>("");
-  const [isAiCompiling, setIsAiCompiling] = useState<boolean>(false);
-  const [compiledPreview, setCompiledPreview] = useState<Rule2Item | null>(null);
-  const [aiError, setAiError] = useState<string | null>(null);
 
-  // Load catalog on mount (NO auto-simulation)
+  // Load master catalog on mount with cross-storage synchronization
   useEffect(() => {
     let isMounted = true;
     setIsLoading(true);
-    apiV2
-      .getRules2Catalog()
-      .then((data) => {
-        if (isMounted && data) {
-          setRules(data);
+
+    const loadCatalog = async () => {
+      try {
+        const data = await apiV2.getRules2Catalog();
+        if (!isMounted) return;
+
+        let merged = [...(data || [])];
+        try {
+          // 1. Check local master storage
+          const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
+          if (masterSaved) {
+            const parsedMaster: Rule2Item[] = JSON.parse(masterSaved);
+            for (const r of parsedMaster) {
+              if (!merged.some((m) => m.id === r.id || (r.canonical_concept && m.canonical_concept === r.canonical_concept))) {
+                merged.push(r);
+              }
+            }
+          }
+          // 2. Check active session rules across localStorage
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && key.startsWith("tars_v2_rules_")) {
+              const raw = localStorage.getItem(key);
+              if (raw) {
+                const sessionRules: Rule2Item[] = JSON.parse(raw);
+                for (const sr of sessionRules) {
+                  if (
+                    (sr.is_custom || sr.is_ai_suggested || sr.category === "AI_SUGGESTED") &&
+                    !merged.some((m) => m.id === sr.id || (sr.canonical_concept && m.canonical_concept === sr.canonical_concept))
+                  ) {
+                    merged.push(sr);
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Could not merge local rules into Rules Wiki 2.0:", e);
         }
-      })
-      .catch((err) => {
+
+        merged = merged.map((r, idx) => ({
+          ...r,
+          execution_order: idx + 1,
+          created_at: r.created_at || "2026-08-01T00:00:00Z",
+          created_by: r.created_by || (r.is_ai_suggested ? "AI Data Engine (GPT-5.4-mini)" : "System Standard Baseline"),
+          created_in_run: r.created_in_run || "Master Catalog v2.0",
+          version: r.version || "1.0.0",
+        }));
+
+        setRules(merged);
+        try {
+          localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(merged));
+        } catch {}
+
+        if (data && merged.length > data.length) {
+          apiV2.saveRules2Catalog(merged).catch(() => {});
+        }
+      } catch (err) {
         console.error("Failed to load Rules 2.0 catalog:", err);
-      })
-      .finally(() => {
+      } finally {
         if (isMounted) setIsLoading(false);
-      });
+      }
+    };
+
+    loadCatalog();
 
     return () => {
       isMounted = false;
@@ -89,7 +174,19 @@ export const RulesWikiV2: React.FC = () => {
     };
   }, []);
 
+  // Continuously persist any rule modifications to master catalog storage
+  useEffect(() => {
+    if (rules.length > 0) {
+      try {
+        localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(rules));
+      } catch {}
+    }
+  }, [rules]);
+
+  const isExplicitAbortRef = useRef<boolean>(false);
+
   const handleAbortSimulation = () => {
+    isExplicitAbortRef.current = true;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -99,6 +196,7 @@ export const RulesWikiV2: React.FC = () => {
   };
 
   const runSimulation = async (rulesToSimulate = rules) => {
+    isExplicitAbortRef.current = false;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -118,10 +216,13 @@ export const RulesWikiV2: React.FC = () => {
     try {
       const res = await apiV2.simulateRulesV2("master-catalog-preview", rulesToSimulate, controller.signal);
       setSimulationResult(res);
+      setSimulationAborted(false);
     } catch (err: any) {
       if (err.name === "AbortError" || err.message?.includes("aborted")) {
-        console.log("Simulation aborted by user.");
-        setSimulationAborted(true);
+        if (isExplicitAbortRef.current) {
+          console.log("Simulation explicitly aborted by user.");
+          setSimulationAborted(true);
+        }
       } else {
         console.error("Simulation failed:", err);
       }
@@ -132,67 +233,38 @@ export const RulesWikiV2: React.FC = () => {
     }
   };
 
-  // Drag and Drop Handlers
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    e.dataTransfer.setData("text/plain", index.toString());
-    e.dataTransfer.effectAllowed = "move";
-    setDraggedIdx(index);
+  // Selection handlers
+  const handleToggleSelectRule = (id: string) => {
+    setSelectedRuleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
   };
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-    if (dragOverIdx !== index) {
-      setDragOverIdx(index);
+  const handleToggleSelectAll = () => {
+    if (selectedRuleIds.size === rules.length) {
+      setSelectedRuleIds(new Set());
+    } else {
+      setSelectedRuleIds(new Set(rules.map((r) => r.id)));
     }
   };
 
-  const handleDrop = (e: React.DragEvent, dropIdx: number) => {
-    e.preventDefault();
-    const dragIdxStr = e.dataTransfer.getData("text/plain");
-    const dragIdx = parseInt(dragIdxStr, 10);
-    if (isNaN(dragIdx) || dragIdx === dropIdx) {
-      setDraggedIdx(null);
-      setDragOverIdx(null);
-      return;
-    }
-
-    const newRules = [...rules];
-    const [draggedItem] = newRules.splice(dragIdx, 1);
-    newRules.splice(dropIdx, 0, draggedItem);
-
-    const reordered = newRules.map((r, i) => ({ ...r, execution_order: i + 1 }));
-    setRules(reordered);
-    setDraggedIdx(null);
-    setDragOverIdx(null);
+  const handleClearSelection = () => {
+    setSelectedRuleIds(new Set());
   };
 
-  const handleDragEnd = () => {
-    setDraggedIdx(null);
-    setDragOverIdx(null);
-  };
-
-  // Rule toggle (NO auto-simulation)
+  // Rule toggle active state (NO auto-simulation)
   const handleToggleRule = (id: string) => {
     const updated = rules.map((r) => (r.id === id ? { ...r, is_enabled: !r.is_enabled } : r));
     setRules(updated);
   };
 
-  // Rule reordering (NO auto-simulation)
-  const handleMoveRule = (index: number, direction: "up" | "down") => {
-    const targetIdx = direction === "up" ? index - 1 : index + 1;
-    if (targetIdx < 0 || targetIdx >= rules.length) return;
-
-    const newRules = [...rules];
-    const temp = newRules[index];
-    newRules[index] = newRules[targetIdx];
-    newRules[targetIdx] = temp;
-
-    const reordered = newRules.map((r, i) => ({ ...r, execution_order: i + 1 }));
-    setRules(reordered);
-  };
-
-  // Tolerance updates (NO auto-simulation)
+  // Tolerance updates
   const handleUpdateNumericTol = (id: string, val: number, mode?: NumericToleranceMode) => {
     const updated = rules.map((r) => {
       if (r.id === id) {
@@ -233,33 +305,125 @@ export const RulesWikiV2: React.FC = () => {
     setRules(updated);
   };
 
-  // AI Rule Compilation (NO auto-simulation)
-  const handleCompileAi = async () => {
-    if (!aiPrompt.trim()) return;
-    setIsAiCompiling(true);
-    setAiError(null);
-    try {
-      const res = await apiV2.compileAiRule(aiPrompt.trim());
-      setCompiledPreview(res);
-    } catch (err: any) {
-      setAiError(err.message || "Failed to compile AI rule.");
-    } finally {
-      setIsAiCompiling(false);
-    }
+  const handleSetMatchMode = (id: string, mode: "EXACT" | "TOLERANCE") => {
+    const updated = rules.map((r) => {
+      if (r.id === id) {
+        const isDateRule = r.strategy === "DATE_PROXIMITY" || r.id === "RW2-003" || r.id === "RW2-006";
+        if (mode === "EXACT") {
+          return {
+            ...r,
+            tolerance_value: 0,
+            date_tolerance_value: 0,
+          };
+        } else {
+          return {
+            ...r,
+            tolerance_value: r.tolerance_value > 0 ? r.tolerance_value : 10.0,
+            date_tolerance_value: r.date_tolerance_value > 0 ? r.date_tolerance_value : 30,
+            tolerance_mode: r.tolerance_mode || "ABSOLUTE_INR",
+            date_tolerance_unit: r.date_tolerance_unit || "DAYS",
+            strategy: isDateRule ? "DATE_PROXIMITY" : (r.strategy === "VALUE_GUARD" ? "VALUE_GUARD" : "NUMERIC_TOLERANCE"),
+          };
+        }
+      }
+      return r;
+    });
+    setRules(updated);
   };
 
-  const handleAddCompiledRule = () => {
-    if (!compiledPreview) return;
-    const updated = [...rules, { ...compiledPreview, execution_order: rules.length + 1 }];
-    setRules(updated);
-    setCompiledPreview(null);
-    setAiPrompt("");
-    setShowAiModal(false);
+  // Delete Prompt
+  const promptDeleteSingle = (rule: Rule2Item) => {
+    setDeleteModalState({
+      isOpen: true,
+      ruleIds: [rule.id],
+      ruleName: rule.name,
+    });
+  };
+
+  const promptDeleteBatch = () => {
+    if (selectedRuleIds.size === 0) return;
+    setDeleteModalState({
+      isOpen: true,
+      ruleIds: Array.from(selectedRuleIds),
+    });
+  };
+
+  // Perform Delete after explicit confirmation of irreversible caution
+  const handleConfirmDelete = async () => {
+    if (!deleteModalState || deleteModalState.ruleIds.length === 0) return;
+    const idsToDelete = new Set(deleteModalState.ruleIds);
+
+    try {
+      if (deleteModalState.ruleIds.length === 1) {
+        await apiV2.deleteRuleFromCatalog(deleteModalState.ruleIds[0]);
+      } else {
+        await apiV2.batchDeleteRulesFromCatalog(deleteModalState.ruleIds);
+      }
+    } catch (err) {
+      console.warn("Backend delete endpoint notice (fallback to local state):", err);
+    }
+
+    const updatedRules = rules.filter((r) => !idsToDelete.has(r.id));
+    setRules(updatedRules);
+
+    setSelectedRuleIds((prev) => {
+      const next = new Set(prev);
+      for (const id of idsToDelete) {
+        next.delete(id);
+      }
+      return next;
+    });
+
+    try {
+      localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(updatedRules));
+    } catch {}
+
+    setDeleteModalState(null);
+  };
+
+  // Edit Rule Handlers
+  const handleStartEdit = (rule: Rule2Item) => {
+    setEditingRule(rule);
+    setEditForm({ ...rule });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editForm || !editingRule) return;
+
+    const now = new Date().toISOString();
+    const updatedRule: Rule2Item = {
+      ...editForm,
+      last_modified_at: now,
+      last_modified_by: "Tax Reviewer (Manual Edit)",
+      version: editForm.version ? incrementVersion(editForm.version) : "1.1.0",
+    };
+
+    const updatedList = rules.map((r) => (r.id === editingRule.id ? updatedRule : r));
+    setRules(updatedList);
+
+    try {
+      localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(updatedList));
+    } catch {}
+
+    apiV2.saveRules2Catalog(updatedList).catch(console.error);
+    setEditingRule(null);
+    setEditForm(null);
+  };
+
+  const incrementVersion = (v: string): string => {
+    const parts = v.split(".");
+    if (parts.length === 3) {
+      const patch = parseInt(parts[2], 10);
+      if (!isNaN(patch)) {
+        return `${parts[0]}.${parts[1]}.${patch + 1}`;
+      }
+    }
+    return `${v}.1`;
   };
 
   return (
     <div className="v2-rules-container" style={{ maxWidth: 1240, margin: "0 auto", padding: "24px 16px" }}>
-      {/* 1. Header Banner */}
+      {/* 1. Header Banner (No 'Make Rules with AI' button) */}
       <header className="v2-rules-header">
         <div className="v2-rules-header__info">
           <span className="v2-rules-eyebrow">
@@ -268,26 +432,12 @@ export const RulesWikiV2: React.FC = () => {
           </span>
           <h1 className="v2-rules-title">Rules Wiki 2.0</h1>
           <p className="v2-rules-subtitle">
-            Authoritative declarative business rules configured for real-world enterprise GST reconciliation.
-            Click any rule to inspect its plain-English explanation, columns evaluated, and regulatory rationale.
+            Master repository of declarative business rules configured for real-world enterprise GST reconciliation.
+            Audit provenance, inspect comparison logic, edit parameters, or manage catalog policies.
           </p>
         </div>
 
         <div className="v2-rules-header__actions">
-          <button
-            type="button"
-            className="btn-ai-sparkle"
-            onClick={() => {
-              setAiPrompt("");
-              setCompiledPreview(null);
-              setAiError(null);
-              setShowAiModal(true);
-            }}
-          >
-            <Sparkles size={16} />
-            <span>Make Rules with AI</span>
-          </button>
-
           <button
             type="button"
             className="btn-sim-run"
@@ -295,10 +445,40 @@ export const RulesWikiV2: React.FC = () => {
             onClick={() => runSimulation()}
           >
             <Play size={15} fill="currentColor" />
-            <span>{isSimulating ? "Simulating..." : "Simulate Dataset"}</span>
+            <span>{isSimulating ? "Simulating..." : "Simulate"}</span>
           </button>
         </div>
       </header>
+
+      {/* Floating Bulk Action Bar when rules are selected */}
+      {selectedRuleIds.size > 0 && (
+        <div className="v2-bulk-bar">
+          <div className="v2-bulk-info">
+            <span className="v2-bulk-count-badge">{selectedRuleIds.size}</span>
+            <span>
+              {selectedRuleIds.size === 1 ? "1 rule selected" : `${selectedRuleIds.size} rules selected`}
+            </span>
+          </div>
+
+          <div className="v2-bulk-actions">
+            <button
+              type="button"
+              className="btn-bulk-clear"
+              onClick={handleClearSelection}
+            >
+              Clear Selection
+            </button>
+            <button
+              type="button"
+              className="btn-bulk-delete"
+              onClick={promptDeleteBatch}
+            >
+              <Trash2 size={14} />
+              <span>Delete Selected ({selectedRuleIds.size})</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Agentic Simulation Deep Dive Console HUD */}
       {isSimulating && (
@@ -363,7 +543,7 @@ export const RulesWikiV2: React.FC = () => {
                   <span className="v2-hud-step-num">03</span>
                   <div>
                     <div className="v2-hud-step-title">Executing Sequential Waterfall Pipeline</div>
-                    <div className="v2-hud-step-desc">Evaluating {rules.filter((r) => r.is_enabled).length} active rules in drag sequence</div>
+                    <div className="v2-hud-step-desc">Evaluating {rules.filter((r) => r.is_enabled).length} active rules in sequence</div>
                   </div>
                 </div>
                 <span className={`v2-hud-step-badge ${simStep > 3 ? "completed" : simStep === 3 ? "running" : ""}`}>
@@ -403,9 +583,19 @@ export const RulesWikiV2: React.FC = () => {
 
       {/* Aborted Banner */}
       {simulationAborted && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 12, padding: "12px 18px", color: "#991b1b", display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600 }}>
-          <AlertTriangle size={18} />
-          <span>Simulation run was aborted by user. Click "Simulate Dataset" to run a new simulation when ready.</span>
+        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 12, padding: "12px 18px", color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontSize: 13, fontWeight: 600 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <AlertTriangle size={18} />
+            <span>Simulation run was aborted. Click "Simulate" to run a new simulation when ready.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSimulationAborted(false)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#991b1b", padding: 2 }}
+            title="Dismiss"
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
 
@@ -506,98 +696,279 @@ export const RulesWikiV2: React.FC = () => {
       {/* 3. Rules Catalog List */}
       <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: 0 }}>
-            Active Rules Catalog ({rules.filter((r) => r.is_enabled).length} of {rules.length} enabled)
-          </h2>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#334155" }}>
+              <input
+                type="checkbox"
+                className="v2-card-select-checkbox"
+                checked={rules.length > 0 && selectedRuleIds.size === rules.length}
+                onChange={handleToggleSelectAll}
+                title="Select all rules for bulk action"
+              />
+              <span>Select All</span>
+            </label>
+            <span style={{ color: "#94a3b8" }}>|</span>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+              Master Catalog Rules ({rules.filter((r) => r.is_enabled).length} of {rules.length} active)
+            </h2>
+          </div>
+
           <span style={{ fontSize: 12, color: "#64748b" }}>
-            Drag handle <GripVertical size={13} style={{ display: "inline", verticalAlign: "middle" }} /> or use arrows to reorder execution sequence.
+            Click rule card to view/configure comparison parameters & audit metadata.
           </span>
         </div>
 
         {rules.map((rule, idx) => {
-          const isDate = rule.strategy === "DATE_PROXIMITY";
-          const isNumeric = rule.strategy === "NUMERIC_TOLERANCE";
-          const isNormalized = rule.strategy === "NORMALIZED_TEXT" || rule.strategy === "EXACT";
+          const isDate = rule.strategy === "DATE_PROXIMITY" || rule.id === "RW2-003" || rule.id === "RW2-006";
+          const isExactMatch = isDate ? rule.date_tolerance_value === 0 : rule.tolerance_value === 0;
           const stat = simulationResult?.rule_breakdowns.find((b) => b.rule_id === rule.id);
+          const isExpanded = expandedRuleIds.has(rule.id);
+          const isSelected = selectedRuleIds.has(rule.id);
 
           return (
             <div
               key={rule.id}
-              draggable
-              onDragStart={(e) => handleDragStart(e, idx)}
-              onDragOver={(e) => handleDragOver(e, idx)}
-              onDrop={(e) => handleDrop(e, idx)}
-              onDragEnd={handleDragEnd}
-              className={`v2-rule-item-card ${!rule.is_enabled ? "disabled" : ""} ${draggedIdx === idx ? "dragging" : ""}`}
+              id={`v2-rule-card-${rule.id}`}
+              className={`v2-rule-item-card ${!rule.is_enabled ? "disabled" : ""} ${isExpanded ? "is-expanded" : ""} ${rule.is_ai_suggested ? "is-ai-suggested-rule" : ""}`}
               style={{
-                background: rule.is_enabled ? "#ffffff" : "#f8fafc",
-                borderColor: dragOverIdx === idx ? "#2563eb" : rule.is_enabled ? "#cbd5e1" : "#e2e8f0",
-                opacity: draggedIdx === idx ? 0.4 : rule.is_enabled ? 1 : 0.75,
-                transition: "all 0.15s ease",
+                background: !rule.is_enabled ? "#f8fafc" : "#ffffff",
+                borderColor: isSelected ? "#2563eb" : isExpanded ? "#93c5fd" : rule.is_enabled ? "#cbd5e1" : "#e2e8f0",
+                boxShadow: isSelected ? "0 0 0 2px rgba(37, 99, 235, 0.2)" : undefined,
               }}
             >
-              {/* Top Row: Drag Handle, Checkbox, Order, Title, Individual Metric Badge, Explain Button */}
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  {/* Drag Handle */}
-                  <div className="v2-drag-grip" title="Drag to reorder rule execution sequence">
-                    <GripVertical size={18} />
-                  </div>
+              {/* Compact Main Row */}
+              <div
+                className="v2-rule-compact-row"
+                onClick={() => toggleRuleExpand(rule.id)}
+                title={isExpanded ? "Click to collapse details" : "Click to expand configuration & audit metadata"}
+              >
+                {/* Left: Checkbox for batch selection, Rule enable toggle, Category, Name */}
+                <div className="v2-rule-compact-left">
+                  <input
+                    type="checkbox"
+                    className="v2-card-select-checkbox"
+                    checked={isSelected}
+                    onChange={() => handleToggleSelectRule(rule.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    title={isSelected ? "Deselect rule" : "Select rule for bulk deletion"}
+                  />
 
                   <input
                     type="checkbox"
                     checked={rule.is_enabled}
                     onChange={() => handleToggleRule(rule.id)}
-                    style={{ width: 18, height: 18, cursor: "pointer", marginTop: 3 }}
-                    title={rule.is_enabled ? "Click to disable rule" : "Click to enable rule"}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ width: 17, height: 17, cursor: "pointer" }}
+                    title={rule.is_enabled ? "Active in reconciliation engine. Click to disable" : "Disabled in engine. Click to enable"}
                   />
 
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                      <span className="v2-wf-tier-tag">Priority #{idx + 1}</span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          color: "#475569",
-                          background: "#f1f5f9",
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                        }}
-                      >
-                        {rule.category.replaceAll("_", " ")}
+                  <span className="v2-wf-tier-tag" style={{ fontSize: 10.5, padding: "2px 7px" }}>
+                    #{idx + 1}
+                  </span>
+
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      color: "#475569",
+                      background: "#f1f5f9",
+                      padding: "2px 7px",
+                      borderRadius: 4,
+                      letterSpacing: "0.02em",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {rule.category.replaceAll("_", " ")}
+                  </span>
+
+                  <h3 className="v2-rule-name-text">
+                    {rule.name}
+                  </h3>
+                </div>
+
+                {/* Middle: Column Mapping & Parameter Summary */}
+                <div className="v2-rule-compact-mid">
+                  <span className="v2-source-pill-compact" title={`Matched columns: ${rule.gstr_column} ⟷ ${rule.pr_column}`}>
+                    <strong className="gov">{rule.gstr_column}</strong>
+                    <span style={{ color: "#94a3b8" }}>⟷</span>
+                    <strong className="pr">{rule.pr_column}</strong>
+                  </span>
+
+                  {/* AI Suggested or Custom Origin Badges */}
+                  {rule.is_ai_suggested && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "#6d28d9",
+                        background: "#f3e8ff",
+                        border: "1px solid #d8b4fe",
+                        padding: "2px 7px",
+                        borderRadius: 999,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                      title="AI suggested or adopted from Stage 3"
+                    >
+                      <Sparkles size={11} /> AI Suggested
+                    </span>
+                  )}
+                  {rule.is_custom && !rule.is_ai_suggested && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "#0369a1",
+                        background: "#e0f2fe",
+                        border: "1px solid #bae6fd",
+                        padding: "2px 7px",
+                        borderRadius: 999,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                      title="Custom enterprise rule"
+                    >
+                      Custom Rule
+                    </span>
+                  )}
+
+                  {/* Parameter Summary Badge */}
+                  {isExactMatch ? (
+                    <span className="v2-param-badge" style={{ background: "#ecfdf5", color: "#065f46", borderColor: "#a7f3d0" }} title="Exact match (0 variance)">
+                      Exact Match
+                    </span>
+                  ) : isDate ? (
+                    <span className="v2-param-badge date" title="Date tolerance parameter">
+                      ± {rule.date_tolerance_value} {rule.date_tolerance_unit.toLowerCase()}
+                    </span>
+                  ) : (
+                    <span className="v2-param-badge numeric" title="Numeric tolerance parameter">
+                      ± {rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹${rule.tolerance_value}`}
+                    </span>
+                  )}
+                  <span className="v2-param-badge" title="Active normalization rules count">
+                    {rule.normalizers.length} normalizer{rule.normalizers.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                {/* Right: Simulation Match Stats, Edit, Delete, Expand Chevron */}
+                <div className="v2-rule-compact-right">
+                  {simulationResult && rule.is_enabled && stat && (
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "3px 8px",
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        color: "#047857",
+                        background: "#ecfdf5",
+                        border: "1px solid #a7f3d0",
+                        borderRadius: 6,
+                        whiteSpace: "nowrap",
+                      }}
+                      title="Actual 1-to-1 matches and percentage for this rule"
+                    >
+                      <CheckCircle2 size={12} color="#10b981" />
+                      <span>
+                        <strong>{stat.individual_satisfied_count.toLocaleString()}</strong> ({stat.individual_satisfied_percentage}%)
                       </span>
-                      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", margin: 0 }}>
-                        {rule.name}
-                      </h3>
                     </div>
-                    <p style={{ fontSize: 13, color: "#475569", margin: 0, lineHeight: 1.4 }}>
-                      {rule.description}
-                    </p>
+                  )}
+
+                  {/* Edit Action Button */}
+                  <button
+                    type="button"
+                    className="v2-rule-action-btn edit"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleStartEdit(rule);
+                    }}
+                    title="Edit rule name, columns, tolerances, or rationale"
+                  >
+                    <Edit3 size={12} />
+                    <span>Edit</span>
+                  </button>
+
+                  {/* Single Delete Action Button */}
+                  <button
+                    type="button"
+                    className="v2-rule-action-btn delete"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      promptDeleteSingle(rule);
+                    }}
+                    title="Delete rule permanently from catalog"
+                  >
+                    <Trash2 size={12} />
+                    <span>Delete</span>
+                  </button>
+
+                  {/* Expand/Collapse Chevron Button */}
+                  <button
+                    type="button"
+                    className={`v2-expand-chevron-btn ${isExpanded ? "expanded" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleRuleExpand(rule.id);
+                    }}
+                    title={isExpanded ? "Collapse ancillary details" : "Expand ancillary details"}
+                  >
+                    <ChevronDown size={15} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Audit & Governance Provenance Tray on each card */}
+              <div className="v2-audit-tray">
+                <div className="v2-audit-tray-left">
+                  <div className="v2-audit-item" title="Timestamp when this rule was created">
+                    <Clock size={12} color="#64748b" />
+                    <span>Created: <strong>{formatAuditDate(rule.created_at)}</strong></span>
+                  </div>
+
+                  <div className="v2-audit-item" title="Author or system agent that authored this rule">
+                    <User size={12} color="#64748b" />
+                    <span>By: <strong>{rule.created_by || "System Standard Baseline"}</strong></span>
+                  </div>
+
+                  <div className="v2-audit-item" title="Reconciliation run or catalog context where this rule originated">
+                    <Layers size={12} color="#64748b" />
+                    <span>In Run: <strong>{rule.created_in_run || "Master Catalog v2.0"}</strong></span>
                   </div>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                    <button
-                      type="button"
-                      className="v2-rule-card-order-btn"
-                      disabled={idx === 0}
-                      onClick={() => handleMoveRule(idx, "up")}
-                      title="Move up in execution priority"
-                    >
-                      <ChevronUp size={16} />
-                    </button>
-                    <button
-                      type="button"
-                      className="v2-rule-card-order-btn"
-                      disabled={idx === rules.length - 1}
-                      onClick={() => handleMoveRule(idx, "down")}
-                      title="Move down in execution priority"
-                    >
-                      <ChevronDown size={16} />
-                    </button>
+                <div className="v2-audit-tray-right">
+                  <span className={`v2-audit-badge ${rule.is_ai_suggested ? "ai" : rule.is_custom ? "custom" : "system"}`}>
+                    v{rule.version || "1.0.0"}
+                  </span>
+                  {rule.last_modified_at && (
+                    <span style={{ fontSize: 10.5, color: "#94a3b8" }} title={`Last modified on ${formatAuditDate(rule.last_modified_at)} by ${rule.last_modified_by || "User"}`}>
+                      (Edited {formatAuditDate(rule.last_modified_at)})
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Expanded Ancillary Drawer */}
+              {isExpanded && (
+                <div className="v2-rule-expanded-drawer" onClick={(e) => e.stopPropagation()}>
+                  {/* Top of Drawer: Description, Canonical Concept, Explain Rule Button */}
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
+                    <div>
+                      <p style={{ fontSize: 13, color: "#475569", margin: "0 0 4px 0", lineHeight: 1.45 }}>
+                        {rule.description}
+                      </p>
+                      {rule.canonical_concept && (
+                        <span style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>
+                          Canonical concept: <code>{rule.canonical_concept}</code>
+                        </span>
+                      )}
+                    </div>
 
                     <button
                       type="button"
@@ -607,15 +978,15 @@ export const RulesWikiV2: React.FC = () => {
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 6,
-                        padding: "6px 12px",
+                        padding: "5px 12px",
                         fontSize: 12,
                         fontWeight: 600,
                         color: "#1d4ed8",
                         background: "#eff6ff",
                         border: "1px solid #bfdbfe",
-                        borderRadius: 8,
+                        borderRadius: 7,
                         cursor: "pointer",
-                        marginLeft: 8,
+                        flexShrink: 0,
                       }}
                       title="Click to view plain-English explanation, target columns & accounting rationale"
                     >
@@ -624,175 +995,138 @@ export const RulesWikiV2: React.FC = () => {
                     </button>
                   </div>
 
-                  {/* Display actual match count & percentage below Explain Rule button AFTER simulation */}
-                  {simulationResult && rule.is_enabled && stat && (
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "4px 10px",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "#047857",
-                        background: "#ecfdf5",
-                        border: "1px solid #a7f3d0",
-                        borderRadius: 8,
-                      }}
-                      title="Actual 1-to-1 matches and percentage for this rule"
-                    >
-                      <CheckCircle2 size={13} color="#10b981" />
-                      <span>
-                        <strong>{stat.individual_satisfied_count.toLocaleString()} matches</strong> ({stat.individual_satisfied_percentage}%)
-                      </span>
+                  {/* Unified 2 Sections */}
+                  <div className="v2-rule-sections-wrapper">
+                    {/* SECTION 1: NORMALISERS */}
+                    <div className="v2-rule-section-block">
+                      <div className="v2-rule-section-header">
+                        <span className="v2-rule-section-title">
+                          Section 1: Normalisers
+                        </span>
+                        <span className="v2-rule-section-count">
+                          {rule.normalizers.length} active
+                        </span>
+                      </div>
+                      <div className="v2-norm-chips-wrap">
+                        {ALL_NORMALIZERS.map((norm) => {
+                          const isActive = rule.normalizers.includes(norm.type);
+                          return (
+                            <button
+                              key={norm.type}
+                              type="button"
+                              className={`v2-norm-chip ${isActive ? "is-active" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleNormalizer(rule.id, norm.type);
+                              }}
+                              title={norm.description}
+                            >
+                              {isActive && <CheckCircle2 size={12} />}
+                              <span>{norm.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  )}
-                  {simulationResult && !rule.is_enabled && (
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "4px 10px",
-                        fontSize: 11.5,
-                        fontWeight: 500,
-                        color: "#64748b",
-                        background: "#f1f5f9",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 8,
-                      }}
-                    >
-                      <span>Excluded from simulation run</span>
-                    </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Middle Row: Column Binding Pill */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-                <span className="v2-source-pill">
-                  Government: <strong>{rule.gstr_column}</strong>
-                </span>
-                <span style={{ color: "#94a3b8", fontWeight: 700 }}>⟷</span>
-                <span className="v2-source-pill pr">
-                  Purchase Register: <strong>{rule.pr_column}</strong>
-                </span>
-                {rule.canonical_concept && (
-                  <span style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>
-                    ({rule.canonical_concept})
-                  </span>
-                )}
-              </div>
+                    {/* SECTION 2: EXACT MATCH & TOLERANCE MATCH */}
+                    <div className="v2-rule-section-block">
+                      <div className="v2-rule-section-header">
+                        <span className="v2-rule-section-title">
+                          Section 2: Exact match & Tolerance match
+                        </span>
+                      </div>
 
-              {/* Bottom Row: Dynamic Inline Option Controls */}
-              <div style={{ marginTop: 14 }}>
-                {/* 1. Date Tolerance Control */}
-                {isDate && (
-                  <div className="v2-tolerance-row">
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: "#334155" }}>
-                      Allowed Date Lag:
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      className="v2-input-number"
-                      value={rule.date_tolerance_value}
-                      onChange={(e) => handleUpdateDateTol(rule.id, parseInt(e.target.value) || 0)}
-                      onBlur={() => runSimulation()}
-                    />
-                    <select
-                      className="v2-select-unit"
-                      value={rule.date_tolerance_unit}
-                      onChange={(e) => {
-                        handleUpdateDateTol(rule.id, rule.date_tolerance_value, e.target.value as DateToleranceUnit);
-                        runSimulation();
-                      }}
-                    >
-                      <option value="DAYS">Days</option>
-                      <option value="MONTHS">Months</option>
-                      <option value="YEARS">Years</option>
-                    </select>
-                    <span style={{ fontSize: 12, color: "#64748b", fontStyle: "italic" }}>
-                      (Matches if invoice dates are within ± {rule.date_tolerance_value} {rule.date_tolerance_unit.toLowerCase()})
-                    </span>
-                  </div>
-                )}
-
-                {/* 2. Numeric Tolerance Control */}
-                {isNumeric && (
-                  <div className="v2-tolerance-row">
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: "#334155" }}>
-                      Allowed Variance:
-                    </span>
-                    <select
-                      className="v2-select-mode"
-                      value={rule.tolerance_mode}
-                      onChange={(e) => {
-                        handleUpdateNumericTol(rule.id, rule.tolerance_value, e.target.value as NumericToleranceMode);
-                        runSimulation();
-                      }}
-                    >
-                      <option value="ABSOLUTE_INR">₹ Absolute INR</option>
-                      <option value="PERCENTAGE">% Percentage</option>
-                    </select>
-                    <input
-                      type="number"
-                      step={rule.tolerance_mode === "PERCENTAGE" ? 0.1 : 1}
-                      min={0}
-                      className="v2-input-number"
-                      value={rule.tolerance_value}
-                      onChange={(e) => handleUpdateNumericTol(rule.id, parseFloat(e.target.value) || 0)}
-                      onBlur={() => runSimulation()}
-                    />
-                    <span style={{ fontSize: 12, color: "#64748b", fontStyle: "italic" }}>
-                      (Matches if amount variance does not exceed{" "}
-                      {rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹ ${rule.tolerance_value}`})
-                    </span>
-                  </div>
-                )}
-
-                {/* 3. Text Normalization Pills */}
-                {isNormalized && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>
-                      Active Normalizers:
-                    </span>
-                    {ALL_NORMALIZERS.map((norm) => {
-                      const isActive = rule.normalizers.includes(norm.type);
-                      return (
+                      <div className="v2-match-mode-selector">
                         <button
-                          key={norm.type}
                           type="button"
-                          onClick={() => handleToggleNormalizer(rule.id, norm.type)}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 5,
-                            padding: "4px 10px",
-                            borderRadius: 6,
-                            fontSize: 11.5,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            border: isActive ? "1px solid #3b82f6" : "1px solid #e2e8f0",
-                            background: isActive ? "#eff6ff" : "#f8fafc",
-                            color: isActive ? "#1e40af" : "#64748b",
+                          className={`v2-mode-pill ${isExactMatch ? "is-active" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetMatchMode(rule.id, "EXACT");
                           }}
                         >
-                          {isActive && <CheckCircle2 size={12} />}
-                          <span>{norm.label}</span>
+                          <CheckCircle2 size={13} />
+                          <span>Exact Match</span>
                         </button>
-                      );
-                    })}
-                  </div>
-                )}
+                        <button
+                          type="button"
+                          className={`v2-mode-pill ${!isExactMatch ? "is-active" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetMatchMode(rule.id, "TOLERANCE");
+                          }}
+                        >
+                          <Sliders size={13} />
+                          <span>Tolerance Match</span>
+                        </button>
+                      </div>
 
-                {/* 4. Value Guard */}
-                {rule.strategy === "VALUE_GUARD" && (
-                  <div style={{ fontSize: 12.5, color: "#475569", background: "#f8fafc", padding: "8px 12px", borderRadius: 6 }}>
-                    Strict Value Equality Guard: Verifies that categorical classification flags match exactly across both workbooks.
+                      {isExactMatch ? (
+                        <div className="v2-exact-mode-info">
+                          <CheckCircle2 size={14} color="#059669" />
+                          <span>Strict 1-to-1 Equality: Permitting 0.00 variance after normalisation.</span>
+                        </div>
+                      ) : (
+                        <div className="v2-tolerance-control-group">
+                          <span className="v2-tolerance-input-label">Permitted Variance:</span>
+                          <div className="v2-tolerance-inputs-row">
+                            <input
+                              type="number"
+                              min={0}
+                              step={!isDate && rule.tolerance_mode === "PERCENTAGE" ? 0.1 : 1}
+                              className="v2-input-number"
+                              value={isDate ? rule.date_tolerance_value : rule.tolerance_value}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                const val = parseFloat(e.target.value) || 0;
+                                if (isDate) {
+                                  handleUpdateDateTol(rule.id, Math.round(val));
+                                } else {
+                                  handleUpdateNumericTol(rule.id, val);
+                                }
+                              }}
+                            />
+
+                            {isDate ? (
+                              <select
+                                className="v2-select-mode"
+                                value={rule.date_tolerance_unit}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateDateTol(rule.id, rule.date_tolerance_value, e.target.value as DateToleranceUnit);
+                                }}
+                              >
+                                <option value="DAYS">Absolute Days</option>
+                                <option value="MONTHS">Months</option>
+                                <option value="YEARS">Years</option>
+                              </select>
+                            ) : (
+                              <select
+                                className="v2-select-mode"
+                                value={rule.tolerance_mode}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateNumericTol(rule.id, rule.tolerance_value, e.target.value as NumericToleranceMode);
+                                }}
+                              >
+                                <option value="ABSOLUTE_INR">Absolute Amount</option>
+                                <option value="PERCENTAGE">Percentage</option>
+                              </select>
+                            )}
+
+                            <span className="v2-tolerance-formula-hint">
+                              {isDate
+                                ? `(Matches if date difference does not exceed ± ${rule.date_tolerance_value} ${rule.date_tolerance_unit.toLowerCase()})`
+                                : `(Matches if |GSTR - PR| does not exceed ${rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹${rule.tolerance_value}`})`}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           );
         })}
@@ -898,130 +1232,264 @@ export const RulesWikiV2: React.FC = () => {
         </div>
       )}
 
-      {/* --- MAKE RULES WITH AI MODAL --- */}
-      {showAiModal && (
-        <div className="v2-modal-backdrop" onClick={() => setShowAiModal(false)}>
-          <div className="v2-modal-card" onClick={(e) => e.stopPropagation()}>
-            <div className="v2-modal-header">
+      {/* --- EDIT RULE MODAL --- */}
+      {editingRule && editForm && (
+        <div className="v2-delete-modal-overlay" onClick={() => { setEditingRule(null); setEditForm(null); }}>
+          <div className="v2-edit-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 24px", borderBottom: "1px solid #e2e8f0" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <Sparkles size={20} color="#2563eb" />
-                <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", margin: 0 }}>
-                  Make Rules with AI
+                <Edit3 size={18} color="#2563eb" />
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                  Edit Reconciliation Rule
                 </h2>
               </div>
               <button
                 type="button"
-                onClick={() => setShowAiModal(false)}
+                onClick={() => { setEditingRule(null); setEditForm(null); }}
                 style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}
               >
                 <X size={20} />
               </button>
             </div>
 
-            <div className="v2-modal-body">
-              <p style={{ fontSize: 13.5, color: "#475569", margin: 0 }}>
-                Describe your reconciliation policy in plain English. The agent will compile your instruction into a validated declarative rule.
-              </p>
+            <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div className="v2-edit-form-grid">
+                <div className="v2-edit-form-group">
+                  <label>Rule Name</label>
+                  <input
+                    type="text"
+                    className="v2-edit-input"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  />
+                </div>
 
+                <div className="v2-edit-form-group">
+                  <label>Category</label>
+                  <input
+                    type="text"
+                    className="v2-edit-input"
+                    value={editForm.category}
+                    onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                  />
+                </div>
+
+                <div className="v2-edit-form-group">
+                  <label>GSTR-2B Target Column</label>
+                  <input
+                    type="text"
+                    className="v2-edit-input"
+                    value={editForm.gstr_column}
+                    onChange={(e) => setEditForm({ ...editForm, gstr_column: e.target.value })}
+                  />
+                </div>
+
+                <div className="v2-edit-form-group">
+                  <label>Purchase Register Target Column</label>
+                  <input
+                    type="text"
+                    className="v2-edit-input"
+                    value={editForm.pr_column}
+                    onChange={(e) => setEditForm({ ...editForm, pr_column: e.target.value })}
+                  />
+                </div>
+
+                <div className="v2-edit-form-group full">
+                  <label>Plain-English Description</label>
+                  <textarea
+                    rows={2}
+                    className="v2-edit-input"
+                    value={editForm.description}
+                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  />
+                </div>
+
+                <div className="v2-edit-form-group full">
+                  <label>Accounting & Regulatory Rationale</label>
+                  <textarea
+                    rows={2}
+                    className="v2-edit-input"
+                    value={editForm.why_it_matters}
+                    onChange={(e) => setEditForm({ ...editForm, why_it_matters: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              {/* Normalizers Checklist */}
               <div>
-                <textarea
-                  rows={3}
-                  value={aiPrompt}
-                  onChange={(e) => setAiPrompt(e.target.value)}
-                  placeholder="e.g. Allow invoice date variance of up to 15 days, or allow 1% tolerance on taxable value..."
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: 8,
-                    border: "1px solid #cbd5e1",
-                    fontSize: 13.5,
-                    fontFamily: "inherit",
-                    outline: "none",
-                  }}
-                />
+                <label style={{ fontSize: 12, fontWeight: 600, color: "#475569", textTransform: "uppercase", display: "block", marginBottom: 8 }}>
+                  Active Normalizers
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {ALL_NORMALIZERS.map((norm) => {
+                    const checked = editForm.normalizers.includes(norm.type);
+                    return (
+                      <button
+                        key={norm.type}
+                        type="button"
+                        className={`v2-norm-chip ${checked ? "is-active" : ""}`}
+                        onClick={() => {
+                          const updated = checked
+                            ? editForm.normalizers.filter((n) => n !== norm.type)
+                            : [...editForm.normalizers, norm.type];
+                          setEditForm({ ...editForm, normalizers: updated });
+                        }}
+                      >
+                        {checked && <CheckCircle2 size={12} />}
+                        <span>{norm.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              {/* Prompt Suggestions */}
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: "#94a3b8", alignSelf: "center" }}>
-                  Try:
+              {/* Tolerance Parameters */}
+              <div style={{ background: "#f8fafc", padding: "14px 16px", borderRadius: 10, border: "1px solid #e2e8f0" }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#334155", textTransform: "uppercase", display: "block", marginBottom: 8 }}>
+                  Comparison Tolerances
                 </span>
-                {[
-                  "Invoice date must match exactly in both excels",
-                  "Invoice amount should match",
-                  "Allow invoice date variance of 15 days",
-                  "Allow 2% tolerance on taxable value",
-                  "Strict reverse charge mechanism alignment",
-                ].map((suggestion) => (
-                  <button
-                    key={suggestion}
-                    type="button"
-                    onClick={() => setAiPrompt(suggestion)}
-                    style={{
-                      background: "#f1f5f9",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: 6,
-                      padding: "4px 8px",
-                      fontSize: 11.5,
-                      color: "#334155",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {suggestion}
-                  </button>
-                ))}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 12, color: "#64748b" }}>Numeric Tol:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="v2-input-number"
+                      style={{ width: 85 }}
+                      value={editForm.tolerance_value}
+                      onChange={(e) => setEditForm({ ...editForm, tolerance_value: parseFloat(e.target.value) || 0 })}
+                    />
+                    <select
+                      className="v2-select-mode"
+                      value={editForm.tolerance_mode}
+                      onChange={(e) => setEditForm({ ...editForm, tolerance_mode: e.target.value as NumericToleranceMode })}
+                    >
+                      <option value="ABSOLUTE_INR">Absolute INR</option>
+                      <option value="PERCENTAGE">Percentage (%)</option>
+                    </select>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 12, color: "#64748b" }}>Date Tol:</span>
+                    <input
+                      type="number"
+                      min={0}
+                      className="v2-input-number"
+                      style={{ width: 75 }}
+                      value={editForm.date_tolerance_value}
+                      onChange={(e) => setEditForm({ ...editForm, date_tolerance_value: parseInt(e.target.value, 10) || 0 })}
+                    />
+                    <select
+                      className="v2-select-mode"
+                      value={editForm.date_tolerance_unit}
+                      onChange={(e) => setEditForm({ ...editForm, date_tolerance_unit: e.target.value as DateToleranceUnit })}
+                    >
+                      <option value="DAYS">Days</option>
+                      <option value="MONTHS">Months</option>
+                      <option value="YEARS">Years</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-
-              {aiError && (
-                <div style={{ color: "#ef4444", fontSize: 12.5, background: "#fef2f2", padding: "8px 12px", borderRadius: 6 }}>
-                  {aiError}
-                </div>
-              )}
-
-              {/* Preview of Compiled Rule */}
-              {compiledPreview && (
-                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#166534", fontWeight: 700, fontSize: 13 }}>
-                    <CheckCircle2 size={16} />
-                    <span>Compiled Declarative Rule: {compiledPreview.name}</span>
-                  </div>
-                  <p style={{ fontSize: 12.5, color: "#166534", marginTop: 4, marginBottom: 8 }}>
-                    {compiledPreview.plain_english_explanation}
-                  </p>
-                  <div style={{ fontSize: 11.5, color: "#15803d" }}>
-                    Columns: <strong>{compiledPreview.gstr_column}</strong> ⟷ <strong>{compiledPreview.pr_column}</strong>
-                  </div>
-                </div>
-              )}
             </div>
 
-            <div className="v2-modal-footer">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "14px 24px", borderTop: "1px solid #e2e8f0", background: "#f8fafc" }}>
               <button
                 type="button"
                 className="btn-secondary-v2"
-                onClick={() => setShowAiModal(false)}
+                onClick={() => { setEditingRule(null); setEditForm(null); }}
               >
                 Cancel
               </button>
+              <button
+                type="button"
+                className="btn-primary-v2"
+                onClick={handleSaveEdit}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-              {!compiledPreview ? (
-                <button
-                  type="button"
-                  className="btn-primary-v2"
-                  disabled={isAiCompiling || !aiPrompt.trim()}
-                  onClick={handleCompileAi}
-                >
-                  {isAiCompiling ? "Compiling with AI..." : "Compile Rule"}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="btn-primary-v2"
-                  onClick={handleAddCompiledRule}
-                >
-                  Add Rule to Catalog
-                </button>
-              )}
+      {/* --- IRREVERSIBLE CAUTION DELETE CONFIRMATION MODAL --- */}
+      {deleteModalState && deleteModalState.isOpen && (
+        <div className="v2-delete-modal-overlay" onClick={() => setDeleteModalState(null)}>
+          <div className="v2-delete-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="v2-delete-modal-header">
+              <div className="v2-delete-icon-wrap">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: "#991b1b", margin: 0 }}>
+                  {deleteModalState.ruleIds.length === 1
+                    ? "Permanently Delete Rule?"
+                    : `Permanently Delete ${deleteModalState.ruleIds.length} Rules?`}
+                </h2>
+                <span style={{ fontSize: 12, color: "#7f1d1d" }}>
+                  Authoritative Reconciliation Catalog Governance
+                </span>
+              </div>
+            </div>
+
+            <div className="v2-delete-modal-body">
+              {/* Mandatory Irreversible Caution Banner */}
+              <div className="v2-irreversible-caution-box">
+                <AlertTriangle size={24} color="#dc2626" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div className="v2-caution-text-wrap">
+                  <span className="v2-caution-headline">
+                    CAUTION: THIS ACTION IS IRREVERSIBLE AND CANNOT BE REVERSED
+                  </span>
+                  <p className="v2-caution-message">
+                    Once deleted, {deleteModalState.ruleIds.length === 1 ? "this rule" : "these rules"} will be permanently removed from the Master Catalog. All associated parameters, normalizers, and execution logic cannot be recovered.
+                  </p>
+                </div>
+              </div>
+
+              {/* Items to be deleted list */}
+              <div>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#475569", display: "block", marginBottom: 6 }}>
+                  Rules designated for permanent deletion:
+                </span>
+                <div className="v2-delete-item-list">
+                  {deleteModalState.ruleIds.map((id) => {
+                    const item = rules.find((r) => r.id === id);
+                    return (
+                      <div key={id} className="v2-delete-item-row">
+                        <span style={{ fontWeight: 600, color: "#0f172a" }}>
+                          {item ? item.name : id}
+                        </span>
+                        <span style={{ fontSize: 11, color: "#64748b" }}>
+                          {item?.category}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <p style={{ fontSize: 12.5, color: "#64748b", margin: 0, lineHeight: 1.4 }}>
+                Please confirm that you have audited these reconciliation rules and want to proceed with permanent deletion.
+              </p>
+            </div>
+
+            <div className="v2-delete-modal-footer">
+              <button
+                type="button"
+                className="btn-secondary-v2"
+                onClick={() => setDeleteModalState(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-danger-confirm"
+                onClick={handleConfirmDelete}
+              >
+                <Trash2 size={14} />
+                <span>Yes, Permanently Delete</span>
+              </button>
             </div>
           </div>
         </div>

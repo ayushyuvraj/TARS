@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   apiV2,
   DirectColumnCorrelation,
@@ -27,6 +27,7 @@ import {
   StopCircle,
   Activity,
 } from "lucide-react";
+import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import "./rules_v2.css";
 
 interface Props {
@@ -37,13 +38,277 @@ interface Props {
   onProceedToResults: (selectedRuleIds: string[], executionOrder: string[]) => void;
 }
 
-const ALL_NORMALIZERS: { type: NormalizationType; label: string }[] = [
-  { type: "TRIM_WHITESPACE", label: "Clean Spaces" },
-  { type: "STRIP_SPECIAL_CHARS", label: "Strip Symbols (+, -, /, _)" },
-  { type: "REMOVE_PREFIXES", label: "Strip Prefixes (INV, BILL)" },
-  { type: "TRIM_LEADING_ZEROS", label: "Trim Leading Zeros (0042 → 42)" },
-  { type: "UPPERCASE", label: "Case Fold (A-Z)" },
+const ALL_NORMALIZERS: { type: NormalizationType; label: string; description?: string }[] = [
+  { type: "TRIM_WHITESPACE", label: "Clean Spaces", description: "Trim leading and trailing whitespace" },
+  { type: "STRIP_SPECIAL_CHARS", label: "Strip Symbols (+, -, /, _)", description: "Strip punctuation and delimiter symbols" },
+  { type: "REMOVE_PREFIXES", label: "Strip Prefixes (INV, BILL)", description: "Strip standard document prefixes like INV or BILL" },
+  { type: "TRIM_LEADING_ZEROS", label: "Trim Leading Zeros (0042 → 42)", description: "Remove leading zeroes from numeric identifiers" },
+  { type: "UPPERCASE", label: "Case Fold (A-Z)", description: "Normalize letters to uppercase" },
 ];
+
+const DEFAULT_RULES_CATALOG: Rule2Item[] = [
+  {
+    id: "RW2-001",
+    name: "Supplier GSTIN Identity Match",
+    description: "Matches vendor GST identification numbers between Government portal and Client Purchase Register.",
+    category: "CORE_IDENTITY",
+    gstr_column: "BillFromGstin",
+    pr_column: "BillFromGstin",
+    canonical_concept: "gstin",
+    strategy: "NORMALIZED_TEXT",
+    normalizers: ["TRIM_WHITESPACE", "STRIP_SPECIAL_CHARS", "UPPERCASE"],
+    tolerance_value: 0,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: true,
+    execution_order: 1,
+    plain_english_explanation: "Verifies that the Supplier GSTIN reported in Government GSTR-2B exactly matches the Supplier GSTIN in your ERP ledger, after stripping spaces and punctuation.",
+    why_it_matters: "Under Section 16(2)(aa) of the CGST Act, Input Tax Credit (ITC) can only be claimed if the supplier has filed their tax return under their exact registered GSTIN.",
+    column_status: "AVAILABLE",
+  },
+  {
+    id: "RW2-002",
+    name: "Invoice / Document Number Canonical Match",
+    description: "Matches invoice, debit note, and credit note numbers across ledgers with smart prefix stripping.",
+    category: "DOCUMENT_REFERENCE",
+    gstr_column: "DocumentNumber",
+    pr_column: "DocumentNumber",
+    canonical_concept: "document_number",
+    strategy: "NORMALIZED_TEXT",
+    normalizers: ["TRIM_WHITESPACE", "STRIP_SPECIAL_CHARS", "REMOVE_PREFIXES", "TRIM_LEADING_ZEROS", "UPPERCASE"],
+    tolerance_value: 0,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: true,
+    execution_order: 2,
+    plain_english_explanation: "Matches invoice numbers even when ERP stores '00042' or 'INV/2026/42' while Government portal shows '42' by stripping standard prefixes and leading zeroes.",
+    why_it_matters: "Vendors and ERP systems format document numbers differently. Stripping standard prefixes unlocks up to 35% of otherwise unmatched invoices without audit risk.",
+    column_status: "AVAILABLE",
+  },
+  {
+    id: "RW2-003",
+    name: "Invoice Date Proximity Window",
+    description: "Allows a flexible calendar window between the invoice issue date and accounting booking date.",
+    category: "TEMPORAL_WINDOW",
+    gstr_column: "DocumentDate",
+    pr_column: "DocumentDate",
+    canonical_concept: "document_date",
+    strategy: "DATE_PROXIMITY",
+    normalizers: ["TRIM_WHITESPACE"],
+    tolerance_value: 0,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 30,
+    date_tolerance_unit: "DAYS",
+    is_enabled: true,
+    execution_order: 3,
+    plain_english_explanation: "Allows the document date between Government GSTR-2B and Purchase Register to vary by up to 30 days (or 1 month).",
+    why_it_matters: "Suppliers frequently issue bills at month-end while corporate accounts payable teams record them in the subsequent month after physical goods receipt.",
+    column_status: "AVAILABLE",
+  },
+  {
+    id: "RW2-004",
+    name: "Taxable Value Commercial Tolerance",
+    description: "Absorbs rounding fractions and commercial differences in base taxable supply amounts.",
+    category: "FINANCIAL_VALUE",
+    gstr_column: "TaxableValue",
+    pr_column: "TaxableValue",
+    canonical_concept: "taxable_value",
+    strategy: "NUMERIC_TOLERANCE",
+    normalizers: ["TRIM_WHITESPACE"],
+    tolerance_value: 10,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: true,
+    execution_order: 4,
+    plain_english_explanation: "Considers taxable amounts matching if the variance between Government and Purchase Register is within ± ₹10.00.",
+    why_it_matters: "Small discrepancies typically arise from item-level vs header-level rounding algorithms and fractional packaging charges.",
+    column_status: "AVAILABLE",
+  },
+  {
+    id: "RW2-005",
+    name: "Total Invoice Value (Gross Amount) Match",
+    description: "Verifies the grand total invoice value inclusive of all taxes and cess charges.",
+    category: "FINANCIAL_VALUE",
+    gstr_column: "DocumentValue",
+    pr_column: "DocumentValue",
+    canonical_concept: "total_value",
+    strategy: "NUMERIC_TOLERANCE",
+    normalizers: ["TRIM_WHITESPACE"],
+    tolerance_value: 10,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: true,
+    execution_order: 5,
+    plain_english_explanation: "Ensures the total invoice value (taxable + GST + cess) matches within ± ₹10.00.",
+    why_it_matters: "Protects against under-claiming or over-claiming gross purchase register balances submitted for financial audit sign-off.",
+    column_status: "AVAILABLE",
+  },
+  {
+    id: "RW2-006",
+    name: "Payment Date Compliance (180-Day Rule)",
+    description: "Evaluates payment date lag against statutory 180-day ITC reversal mandate.",
+    category: "TEMPORAL_WINDOW",
+    gstr_column: "PaymentDate",
+    pr_column: "PaymentDate",
+    canonical_concept: "payment_date",
+    strategy: "DATE_PROXIMITY",
+    normalizers: ["TRIM_WHITESPACE"],
+    tolerance_value: 0,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 180,
+    date_tolerance_unit: "DAYS",
+    is_enabled: false,
+    execution_order: 6,
+    plain_english_explanation: "Checks that the payment date is within 180 days of the invoice date.",
+    why_it_matters: "Second proviso to Section 16(2) requires recipient taxpayers to reverse ITC if payment is not made to the supplier within 180 days from invoice issue.",
+    column_status: "MISSING",
+    missing_reason: "Column 'PaymentDate' not found or unmapped in Client Purchase Register.",
+  },
+  {
+    id: "RW2-007",
+    name: "Reverse Charge Mechanism (RCM) Alignment",
+    description: "Ensures both workbooks agree on whether tax is payable under forward charge or reverse charge.",
+    category: "COMPLIANCE_GUARD",
+    gstr_column: "ReverseCharge",
+    pr_column: "ReverseCharge",
+    canonical_concept: "reverse_charge",
+    strategy: "VALUE_GUARD",
+    normalizers: ["TRIM_WHITESPACE", "UPPERCASE"],
+    tolerance_value: 0,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: true,
+    execution_order: 7,
+    plain_english_explanation: "Verifies that if an invoice is marked as Reverse Charge ('Y') in Government GSTR-2B, it is also flagged as Reverse Charge in your ERP.",
+    why_it_matters: "Mismatched RCM flags lead to erroneous cash tax liability payments under GSTR-3B Table 3.1(d).",
+    column_status: "AVAILABLE",
+  },
+];
+
+const DEFAULT_AI_SUGGESTED_RULES: Rule2Item[] = [
+  {
+    id: "AI-SUGG-POS",
+    name: "Place of Supply (POS) State Code Alignment",
+    description: "Validates that recipient State Code matches between GSTR-2B and ERP to prevent inter-state vs intra-state mismatch.",
+    category: "AI_SUGGESTED",
+    gstr_column: "PlaceOfSupply",
+    pr_column: "PlaceOfSupply",
+    canonical_concept: "place_of_supply",
+    strategy: "NORMALIZED_TEXT",
+    normalizers: ["TRIM_WHITESPACE", "STRIP_SPECIAL_CHARS", "UPPERCASE"],
+    tolerance_value: 0,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: false,
+    execution_order: 21,
+    plain_english_explanation: "Verifies that Place of Supply state codes agree between Government portal and Purchase Register after normalising punctuation.",
+    why_it_matters: "Input tax credit eligibility depends on correct supply classification (IGST vs CGST/SGST) under Section 12 of IGST Act.",
+    column_status: "AVAILABLE",
+    ai_rationale: "AI Data Study: Detected Place of Supply / State Code data in workbooks. Normalization prevents false rejects from state code naming prefixes.",
+    is_ai_suggested: true,
+  },
+  {
+    id: "AI-SUGG-HSN",
+    name: "HSN / SAC Code Canonical Classification Match",
+    description: "Matches goods and services tariff classification codes between Government portal and Purchase Register.",
+    category: "AI_SUGGESTED",
+    gstr_column: "HsnSac",
+    pr_column: "HsnSac",
+    canonical_concept: "hsn",
+    strategy: "NORMALIZED_TEXT",
+    normalizers: ["TRIM_WHITESPACE", "STRIP_SPECIAL_CHARS", "TRIM_LEADING_ZEROS"],
+    tolerance_value: 0,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: false,
+    execution_order: 22,
+    plain_english_explanation: "Validates HSN/SAC tariff classification across records after stripping leading zeroes and punctuation.",
+    why_it_matters: "Mandatory HSN reporting under Rule 46(d) requires correct 4, 6, or 8 digit classification depending on aggregate turnover.",
+    column_status: "AVAILABLE",
+    ai_rationale: "AI Data Study: Both workbooks contain HSN/SAC tariff fields. Canonical trimming prevents 6-digit vs 8-digit classification mismatches.",
+    is_ai_suggested: true,
+  },
+  {
+    id: "AI-SUGG-VNDR",
+    name: "Supplier Legal / Trade Name Secondary Verification",
+    description: "Secondary identity verification validating vendor trading names after stripping punctuation and entity abbreviations.",
+    category: "AI_SUGGESTED",
+    gstr_column: "TradeName",
+    pr_column: "VendorName",
+    canonical_concept: "vendor_name",
+    strategy: "NORMALIZED_TEXT",
+    normalizers: ["TRIM_WHITESPACE", "STRIP_SPECIAL_CHARS", "UPPERCASE"],
+    tolerance_value: 0,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: false,
+    execution_order: 23,
+    plain_english_explanation: "Verifies supplier entity name across books with case folding and punctuation stripping.",
+    why_it_matters: "Helps detect circular invoicing and misallocated vendor ledger entries where GSTIN was keyed with typographical errors.",
+    column_status: "AVAILABLE",
+    ai_rationale: "AI Data Study: Detected supplier trade/legal name columns. Normalization strips entity suffixes like 'PVT LTD' vs 'PRIVATE LIMITED'.",
+    is_ai_suggested: true,
+  },
+  {
+    id: "AI-SUGG-CESS",
+    name: "Compensation Cess Commercial Tolerance",
+    description: "Verifies GST compensation cess amounts with commercial fractional rounding tolerance.",
+    category: "AI_SUGGESTED",
+    gstr_column: "CessAmount",
+    pr_column: "CessAmount",
+    canonical_concept: "cess",
+    strategy: "NUMERIC_TOLERANCE",
+    normalizers: ["TRIM_WHITESPACE"],
+    tolerance_value: 5,
+    tolerance_mode: "ABSOLUTE_INR",
+    date_tolerance_value: 0,
+    date_tolerance_unit: "DAYS",
+    is_enabled: false,
+    execution_order: 24,
+    plain_english_explanation: "Verifies compensation cess matches within ± ₹5.00 commercial rounding variance.",
+    why_it_matters: "Cess credit can only be offset against output Cess liability under Section 11 of GST (Compensation to States) Act.",
+    column_status: "AVAILABLE",
+    ai_rationale: "AI Data Study: Identified Compensation Cess tax columns in both datasets. Suggests ₹5 commercial variance guard to absorb rounding fractions.",
+    is_ai_suggested: true,
+  },
+];
+
+const getInitialRules = (corrs: DirectColumnCorrelation[] = []): Rule2Item[] => {
+  const corrGstrSet = new Set(corrs.map((c) => (c.gstr_column || "").trim().toLowerCase()));
+  const corrPrSet = new Set(corrs.map((c) => (c.selected_pr_column || "").trim().toLowerCase()));
+
+  return DEFAULT_RULES_CATALOG.map((rule) => {
+    // Only Payment Date (RW2-006) requires a special payment column check
+    if (rule.id === "RW2-006") {
+      const hasPaymentDate =
+        corrGstrSet.has("paymentdate") ||
+        corrPrSet.has("paymentdate") ||
+        corrGstrSet.has("payment_date") ||
+        corrPrSet.has("payment_date");
+      return {
+        ...rule,
+        is_enabled: hasPaymentDate,
+        column_status: hasPaymentDate ? "AVAILABLE" : "MISSING",
+        missing_reason: hasPaymentDate ? null : "Column 'PaymentDate' not found or unmapped in Client Purchase Register.",
+      };
+    }
+    // All other core rules: GSTIN, Doc No, Doc Date, Taxable Value, Total Amount, RCM are ENABLED by default
+    return {
+      ...rule,
+      is_enabled: true,
+      column_status: "AVAILABLE",
+      missing_reason: null,
+    };
+  });
+};
 
 export const ReconciliationV2RulesStage: React.FC<Props> = ({
   sessionId,
@@ -52,12 +317,47 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
   onBackToMapping,
   onProceedToResults,
 }) => {
-  const [rules, setRules] = useState<Rule2Item[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [rules, setRules] = useState<Rule2Item[]>(() => {
+    try {
+      const saved = localStorage.getItem(`tars_v2_rules_${sessionId || "active"}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {}
+    return getInitialRules(correlations);
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [simulationResult, setSimulationResult] = useState<SimulationResultV2 | null>(null);
   const [isConfirming, setIsConfirming] = useState<boolean>(false);
   const [simulationAborted, setSimulationAborted] = useState<boolean>(false);
+
+  // Dedicated AI Suggestions State - Filter out any rule already in initial pipeline
+  const [aiSuggestedRules, setAiSuggestedRules] = useState<Rule2Item[]>(() => {
+    let initialPipeline = getInitialRules(correlations);
+    try {
+      const saved = localStorage.getItem(`tars_v2_rules_${sessionId || "active"}`);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          initialPipeline = parsed;
+        }
+      }
+    } catch {}
+    return DEFAULT_AI_SUGGESTED_RULES.filter(
+      (s) =>
+        !initialPipeline.some(
+          (r) =>
+            r.id === s.id ||
+            (s.canonical_concept && r.canonical_concept === s.canonical_concept) ||
+            (r.gstr_column && s.gstr_column && r.gstr_column.toLowerCase() === s.gstr_column.toLowerCase())
+        )
+    );
+  });
+  const [isAiSuggesting, setIsAiSuggesting] = useState<boolean>(false);
 
   // Modal states
   const [explainingRule, setExplainingRule] = useState<Rule2Item | null>(null);
@@ -71,38 +371,96 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
+  // Expanded Rule details state
+  const [expandedRuleIds, setExpandedRuleIds] = useState<Set<string>>(new Set());
+
+  const toggleRuleExpand = (ruleId: string) => {
+    setExpandedRuleIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(ruleId)) {
+        next.delete(ruleId);
+      } else {
+        next.add(ruleId);
+      }
+      return next;
+    });
+  };
+
   // Agentic Simulation HUD telemetry state
   const [simStep, setSimStep] = useState<number>(1);
   const [simElapsedMs, setSimElapsedMs] = useState<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isExplicitAbortRef = useRef<boolean>(false);
 
-  // Load session & catalog rules (Without auto-simulation)
+  // Load session rules (evaluated for column availability & AI suggestions)
   useEffect(() => {
     let isMounted = true;
-    setIsLoading(true);
 
-    apiV2
-      .getSession(sessionId)
-      .then((session) => {
-        if (!isMounted) return;
-        if (session.rules_v2 && session.rules_v2.length > 0) {
-          setRules(session.rules_v2);
-        } else {
-          apiV2.getRules2Catalog().then((catalog) => {
-            if (!isMounted) return;
-            setRules(catalog);
-          });
+    const loadRules = async () => {
+      if (!sessionId) return;
+      try {
+        const data = await apiV2.getSessionRules(sessionId);
+        if (isMounted) {
+          if (data.pipeline_rules && data.pipeline_rules.length > 0) {
+            // Read local storage to preserve any user-accepted AI rules
+            let localCustomRules: Rule2Item[] = [];
+            try {
+              const saved = localStorage.getItem(`tars_v2_rules_${sessionId || "active"}`);
+              if (saved) {
+                const parsed = JSON.parse(saved);
+                if (Array.isArray(parsed)) {
+                  localCustomRules = parsed.filter((r) => r.is_ai_suggested || r.id.startsWith("AI-"));
+                }
+              }
+            } catch {}
+
+            // Normalize rules
+            const normalizedRules = data.pipeline_rules.map((r) => {
+              if (r.id !== "RW2-006") {
+                return {
+                  ...r,
+                  is_enabled: r.is_enabled !== undefined ? r.is_enabled : true,
+                  column_status: "AVAILABLE",
+                  missing_reason: null,
+                };
+              }
+              return r;
+            });
+
+            // Merge localCustomRules that aren't yet in normalizedRules
+            const mergedRules = [...normalizedRules];
+            for (const lcr of localCustomRules) {
+              if (!mergedRules.some((mr) => mr.id === lcr.id || (lcr.canonical_concept && mr.canonical_concept === lcr.canonical_concept))) {
+                mergedRules.push(lcr);
+              }
+            }
+
+            setRules(mergedRules);
+            try {
+              localStorage.setItem(`tars_v2_rules_${sessionId || "active"}`, JSON.stringify(mergedRules));
+            } catch {}
+
+            // Filter suggestions against merged rules so already-accepted rules are never shown
+            if (data.ai_suggested_rules) {
+              const filtered = data.ai_suggested_rules.filter(
+                (s) =>
+                  !mergedRules.some(
+                    (r) =>
+                      r.id === s.id ||
+                      (s.canonical_concept && r.canonical_concept === s.canonical_concept) ||
+                      (r.gstr_column && s.gstr_column && r.gstr_column.toLowerCase() === s.gstr_column.toLowerCase())
+                  )
+              );
+              setAiSuggestedRules(filtered);
+            }
+          }
         }
-      })
-      .catch(() => {
-        apiV2.getRules2Catalog().then((catalog) => {
-          if (!isMounted) return;
-          setRules(catalog);
-        });
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
+      } catch (err) {
+        console.warn("Could not fetch session rules from API, keeping default catalog with local gating:", err);
+      }
+    };
+
+    loadRules();
 
     return () => {
       isMounted = false;
@@ -112,7 +470,104 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     };
   }, [sessionId]);
 
+  // Continuously persist active rules state so custom & accepted AI rules survive reloads
+  useEffect(() => {
+    if (rules.length > 0) {
+      try {
+        localStorage.setItem(`tars_v2_rules_${sessionId || "active"}`, JSON.stringify(rules));
+      } catch {}
+    }
+  }, [rules, sessionId]);
+
+  // Re-run AI analysis on sample rows (supports identifyMore)
+  const handleRefreshAiSuggestions = async (identifyMore: boolean = false) => {
+    setIsAiSuggesting(true);
+    try {
+      const res: any = await apiV2.refreshAiSuggestedRules(sessionId, identifyMore);
+      const items = Array.isArray(res) ? res : (res?.ai_suggested_rules || []);
+      const unmapped = (items || []).filter(
+        (s: Rule2Item) =>
+          !rules.some(
+            (r) =>
+              r.id === s.id ||
+              (s.canonical_concept && r.canonical_concept === s.canonical_concept) ||
+              (r.gstr_column && s.gstr_column && r.gstr_column.toLowerCase() === s.gstr_column.toLowerCase())
+          )
+      );
+      setAiSuggestedRules(unmapped);
+    } catch (e) {
+      console.error("Failed to refresh AI suggestions:", e);
+    } finally {
+      setIsAiSuggesting(false);
+    }
+  };
+
+  // User accepts an AI suggested rule into the active reconciliation pipeline PERMANENTLY
+  const handleAcceptAiSuggestedRule = async (suggestedRule: Rule2Item) => {
+    const acceptedRule: Rule2Item = {
+      ...suggestedRule,
+      is_enabled: true,
+      is_ai_suggested: true,
+      category: "AI_SUGGESTED",
+      execution_order: rules.length + 1,
+    };
+    const nextRules = [...rules, acceptedRule];
+    setRules(nextRules);
+
+    // Remove from suggestions list immediately
+    setAiSuggestedRules((prev) =>
+      prev.filter(
+        (r) =>
+          r.id !== suggestedRule.id &&
+          (!suggestedRule.canonical_concept || r.canonical_concept !== suggestedRule.canonical_concept)
+      )
+    );
+    setExpandedRuleIds((prev) => new Set(prev).add(acceptedRule.id));
+
+    // 1. Immediately persist to session localStorage and master Rules Wiki 2.0 catalog
+    try {
+      localStorage.setItem(`tars_v2_rules_${sessionId || "active"}`, JSON.stringify(nextRules));
+      const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
+      let masterRules: Rule2Item[] = masterSaved ? JSON.parse(masterSaved) : [];
+      if (!masterRules.some((m) => m.id === acceptedRule.id || (acceptedRule.canonical_concept && m.canonical_concept === acceptedRule.canonical_concept))) {
+        masterRules.push(acceptedRule);
+        localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(masterRules));
+      }
+    } catch {}
+
+    // 2. Immediately post to backend session and mirror to persistent master catalog
+    try {
+      if (sessionId) {
+        await apiV2.acceptRuleV2(sessionId, acceptedRule);
+        await apiV2.confirmRulesV2(sessionId, nextRules);
+      }
+    } catch (e) {
+      console.warn("Could not sync accepted rule to backend session:", e);
+    }
+  };
+
+  // User dismisses an AI suggested rule
+  const handleDismissAiSuggestedRule = (ruleId: string) => {
+    setAiSuggestedRules((prev) => prev.filter((r) => r.id !== ruleId));
+  };
+
+  // Memoized unmapped suggestions: strictly deduplicated against active pipeline rules
+  const unmappedSuggestions = useMemo(() => {
+    return aiSuggestedRules.filter(
+      (s) =>
+        !rules.some(
+          (r) =>
+            r.id === s.id ||
+            (s.canonical_concept && r.canonical_concept && r.canonical_concept.toLowerCase().trim() === s.canonical_concept.toLowerCase().trim()) ||
+            (r.gstr_column && s.gstr_column && r.gstr_column.toLowerCase().trim() === s.gstr_column.toLowerCase().trim() &&
+             r.pr_column && s.pr_column && r.pr_column.toLowerCase().trim() === s.pr_column.toLowerCase().trim()) ||
+            (r.name && s.name && r.name.toLowerCase().trim() === s.name.toLowerCase().trim())
+        )
+    );
+  }, [aiSuggestedRules, rules]);
+
   const handleAbortSimulation = () => {
+    isExplicitAbortRef.current = true;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -122,6 +577,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
   };
 
   const runSimulation = async (rulesToSimulate = rules) => {
+    isExplicitAbortRef.current = false;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
@@ -141,10 +597,13 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     try {
       const res = await apiV2.simulateRulesV2(sessionId, rulesToSimulate, controller.signal);
       setSimulationResult(res);
+      setSimulationAborted(false);
     } catch (err: any) {
       if (err.name === "AbortError" || err.message?.includes("aborted")) {
-        console.log("Simulation aborted by user.");
-        setSimulationAborted(true);
+        if (isExplicitAbortRef.current) {
+          console.log("Simulation explicitly aborted by user.");
+          setSimulationAborted(true);
+        }
       } else {
         console.error("Simulation failed:", err);
       }
@@ -256,6 +715,33 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     setRules(updated);
   };
 
+  const handleSetMatchMode = (id: string, mode: "EXACT" | "TOLERANCE") => {
+    const updated = rules.map((r) => {
+      if (r.id === id) {
+        const isDateRule = r.strategy === "DATE_PROXIMITY" || r.id === "RW2-003" || r.id === "RW2-006";
+        if (mode === "EXACT") {
+          return {
+            ...r,
+            tolerance_value: 0,
+            date_tolerance_value: 0,
+          };
+        } else {
+          return {
+            ...r,
+            tolerance_value: r.tolerance_value > 0 ? r.tolerance_value : 10.0,
+            date_tolerance_value: r.date_tolerance_value > 0 ? r.date_tolerance_value : 30,
+            tolerance_mode: r.tolerance_mode || "ABSOLUTE_INR",
+            date_tolerance_unit: r.date_tolerance_unit || "DAYS",
+            strategy: isDateRule ? "DATE_PROXIMITY" : (r.strategy === "VALUE_GUARD" ? "VALUE_GUARD" : "NUMERIC_TOLERANCE"),
+          };
+        }
+      }
+      return r;
+    });
+    setRules(updated);
+  };
+
+
   // AI Rule Compilation (NO auto-simulation)
   const handleCompileAi = async () => {
     if (!aiPrompt.trim()) return;
@@ -273,8 +759,27 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
 
   const handleAddCompiledRule = () => {
     if (!compiledPreview) return;
-    const updated = [...rules, { ...compiledPreview, execution_order: rules.length + 1 }];
+    const newRule: Rule2Item = {
+      ...compiledPreview,
+      is_enabled: true,
+      is_custom: true,
+      execution_order: rules.length + 1,
+    };
+    const updated = [...rules, newRule];
     setRules(updated);
+    try {
+      localStorage.setItem(`tars_v2_rules_${sessionId || "active"}`, JSON.stringify(updated));
+      const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
+      let masterRules: Rule2Item[] = masterSaved ? JSON.parse(masterSaved) : [];
+      if (!masterRules.some((m) => m.id === newRule.id || (newRule.canonical_concept && m.canonical_concept === newRule.canonical_concept))) {
+        masterRules.push(newRule);
+        localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(masterRules));
+      }
+    } catch {}
+    if (sessionId) {
+      apiV2.acceptRuleV2(sessionId, newRule).catch(console.error);
+      apiV2.confirmRulesV2(sessionId, updated).catch(console.error);
+    }
     setCompiledPreview(null);
     setAiPrompt("");
     setShowAiModal(false);
@@ -285,6 +790,21 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     setIsConfirming(true);
     try {
       await apiV2.confirmRulesV2(sessionId, rules);
+
+      // Sync active rules into master Rules Wiki 2.0 catalog storage
+      try {
+        const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
+        let masterRules: Rule2Item[] = masterSaved ? JSON.parse(masterSaved) : [];
+        for (const r of rules) {
+          if (r.is_custom || r.is_ai_suggested) {
+            if (!masterRules.some((m) => m.id === r.id || (r.canonical_concept && m.canonical_concept === r.canonical_concept))) {
+              masterRules.push(r);
+            }
+          }
+        }
+        localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(masterRules));
+      } catch {}
+
       const activeIds = rules.filter((r) => r.is_enabled).map((r) => r.id);
       const orderIds = rules.map((r) => r.id);
       onProceedToResults(activeIds, orderIds);
@@ -302,7 +822,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         <div className="v2-rules-header__info">
           <span className="v2-rules-eyebrow">
             <Sliders size={13} />
-            Stage 3 of 4: Reconciliation Rules Engine
+            Stage 3 of 8: Reconciliation Rules Engine
           </span>
           <h1 className="v2-rules-title">Configure Reconciliation Rules</h1>
           <p className="v2-rules-subtitle">
@@ -312,6 +832,26 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         </div>
 
         <div className="v2-rules-header__actions">
+          <button
+            type="button"
+            className="btn-ai-sparkle"
+            style={{
+              background: "linear-gradient(135deg, #4338ca, #6366f1)",
+              color: "#ffffff",
+              boxShadow: "0 2px 6px rgba(67, 56, 202, 0.3)",
+            }}
+            onClick={() => {
+              const el = document.getElementById("v2-ai-suggestions-anchor");
+              if (el) {
+                el.scrollIntoView({ behavior: "smooth", block: "start" });
+              }
+            }}
+            title="View AI Suggested Rules synthesized from workbook data nuances"
+          >
+            <Sparkles size={16} />
+            <span>AI Suggested Rules ({aiSuggestedRules.length})</span>
+          </button>
+
           <button
             type="button"
             className="btn-ai-sparkle"
@@ -333,10 +873,25 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
             onClick={() => runSimulation()}
           >
             <Play size={15} fill="currentColor" />
-            <span>{isSimulating ? "Simulating..." : "Simulate Pipeline"}</span>
+            <span>{isSimulating ? "Simulating..." : "Simulate"}</span>
           </button>
         </div>
-      </header>      {/* Agentic Simulation Deep Dive Console HUD */}
+      </header>
+
+      {/* Top Stage Action Bar */}
+      <ReconciliationV2ActionBar
+        position="top"
+        stageNumber={3}
+        backLabel="Back to Schema Mapping"
+        onBack={onBackToMapping}
+        nextLabel={isConfirming ? "Confirming Rules…" : "Confirm & Run Reconciliation"}
+        onNext={handleProceed}
+        nextDisabled={isConfirming || rules.filter((r) => r.is_enabled).length === 0}
+        isNextLoading={isConfirming}
+        nextLoadingText="Confirming & Running…"
+      />
+
+      {/* Agentic Simulation Deep Dive Console HUD */}
       {isSimulating && (
         <div className="v2-agentic-loading-screen" style={{ margin: "16px 0" }}>
           <div className="v2-agentic-loading-hud">
@@ -439,9 +994,19 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
 
       {/* Aborted Banner */}
       {simulationAborted && (
-        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 12, padding: "12px 18px", color: "#991b1b", display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600 }}>
-          <AlertTriangle size={18} />
-          <span>Simulation run was aborted by user. Click "Simulate Pipeline" to run a new simulation when ready.</span>
+        <div style={{ background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 12, padding: "12px 18px", color: "#991b1b", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, fontSize: 13, fontWeight: 600 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <AlertTriangle size={18} />
+            <span>Simulation run was aborted. Click "Simulate" to run a new simulation when ready.</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSimulationAborted(false)}
+            style={{ background: "none", border: "none", cursor: "pointer", color: "#991b1b", padding: 2 }}
+            title="Dismiss"
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
 
@@ -539,6 +1104,176 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         </section>
       )}
 
+      {/* 2.5 Dedicated Section: AI Suggested Rules (Contextual Intelligence) - Always Visible */}
+      <section id="v2-ai-suggestions-anchor" className="v2-ai-suggestions-section">
+        <div className="v2-ai-suggestions-header">
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 34,
+                height: 34,
+                borderRadius: 9,
+                background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
+                color: "#ffffff",
+                boxShadow: "0 2px 6px rgba(124, 58, 237, 0.3)",
+                flexShrink: 0,
+              }}
+            >
+              <Sparkles size={18} />
+            </span>
+            <div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 700, color: "#1e1b4b" }}>
+                  ✨ AI Suggested Rules (Contextual Intelligence)
+                </h3>
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: unmappedSuggestions.length > 0 ? "#6d28d9" : "#059669",
+                    background: unmappedSuggestions.length > 0 ? "#ede9fe" : "#d1fae5",
+                    padding: "2px 8px",
+                    borderRadius: 12,
+                  }}
+                >
+                  {unmappedSuggestions.length > 0 ? `${unmappedSuggestions.length} Available` : "All Columns Identified"}
+                </span>
+              </div>
+              <p style={{ margin: "3px 0 0 0", fontSize: 12.5, color: "#4b5563" }}>
+                {unmappedSuggestions.length > 0
+                  ? `TARS studied sample rows from both workbooks and synthesized ${unmappedSuggestions.length} contextual rule recommendations based on your data schema. Review each rule and choose whether to accept it into your active reconciliation pipeline.`
+                  : "All standard and contextual columns detected in your uploaded dataset are actively mapped to rules in your pipeline."}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleRefreshAiSuggestions(unmappedSuggestions.length === 0)}
+            disabled={isAiSuggesting}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: "#6d28d9",
+              background: "#ffffff",
+              border: "1.5px solid #ddd6fe",
+              padding: "7px 15px",
+              borderRadius: 8,
+              cursor: isAiSuggesting ? "not-allowed" : "pointer",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+              flexShrink: 0,
+            }}
+          >
+            <Sparkles size={14} className={isAiSuggesting ? "spin" : ""} />
+            {isAiSuggesting ? "Analyzing Sample Rows..." : unmappedSuggestions.length > 0 ? "Re-Analyze Sample Rows" : "Scan Deep with AI"}
+          </button>
+        </div>
+
+        {unmappedSuggestions.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
+            {unmappedSuggestions.map((sugRule) => (
+              <div key={sugRule.id} className="v2-ai-suggestion-card">
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 280 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                      <span
+                        style={{
+                          fontSize: 10.5,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          color: "#6d28d9",
+                          background: "#ede9fe",
+                          padding: "2px 8px",
+                          borderRadius: 4,
+                          letterSpacing: "0.03em",
+                        }}
+                      >
+                        {sugRule.category.replaceAll("_", " ")}
+                      </span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: "#1e1b4b" }}>
+                        {sugRule.name}
+                      </span>
+                      <span className="v2-source-pill-compact" style={{ margin: 0 }}>
+                        <strong className="gov">{sugRule.gstr_column}</strong>
+                        <span style={{ color: "#94a3b8" }}>⟷</span>
+                        <strong className="pr">{sugRule.pr_column}</strong>
+                      </span>
+                    </div>
+
+                    <p style={{ margin: "0 0 8px 0", fontSize: 12.5, color: "#374151", lineHeight: 1.5 }}>
+                      {sugRule.description}
+                    </p>
+
+                    {/* AI Rationale / Observation callout */}
+                    {sugRule.ai_rationale && (
+                      <div className="v2-ai-rationale-box">
+                        <Sparkles size={14} style={{ color: "#7c3aed", marginTop: 2, flexShrink: 0 }} />
+                        <div style={{ fontSize: 12, lineHeight: 1.45 }}>
+                          <strong style={{ color: "#5b21b6" }}>AI Contextual Observation: </strong>
+                          <span>{sugRule.ai_rationale}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, alignSelf: "center", flexShrink: 0 }}>
+                    <button
+                      type="button"
+                      className="btn-add-ai-rule"
+                      onClick={() => handleAcceptAiSuggestedRule(sugRule)}
+                      title="Adopt this AI rule into the active reconciliation pipeline"
+                    >
+                      <Check size={14} /> Accept & Add to Pipeline
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-dismiss-ai-rule"
+                      onClick={() => handleDismissAiSuggestedRule(sugRule.id)}
+                      title="Dismiss this suggestion"
+                    >
+                      <X size={14} /> Dismiss
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="v2-all-identified-card">
+            <div className="v2-all-identified-content">
+              <div className="v2-all-identified-icon-badge">
+                <CheckCircle2 size={22} />
+              </div>
+              <div>
+                <h4 className="v2-all-identified-heading">
+                  The columns you are trying to identify are already there. Would you like to identify more?
+                </h4>
+                <p className="v2-all-identified-text">
+                  All standard and contextual columns detected in your uploaded dataset (such as GSTIN, Document Number, Date, Values, Place of Supply, HSN/SAC, Trade Name, and Cess) are actively mapped to rules in your pipeline.
+                </p>
+              </div>
+            </div>
+            <div className="v2-all-identified-actions">
+              <button
+                type="button"
+                className="btn-identify-more"
+                onClick={() => handleRefreshAiSuggestions(true)}
+                disabled={isAiSuggesting}
+              >
+                <Sparkles size={15} className={isAiSuggesting ? "spin" : ""} />
+                {isAiSuggesting ? "Scanning Sample Data with AI..." : "✨ Identify More with AI"}
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* 3. Rules List */}
       <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -551,71 +1286,183 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         </div>
 
         {rules.map((rule, idx) => {
-          const isDate = rule.strategy === "DATE_PROXIMITY";
-          const isNumeric = rule.strategy === "NUMERIC_TOLERANCE";
-          const isNormalized = rule.strategy === "NORMALIZED_TEXT" || rule.strategy === "EXACT";
+          const isDate = rule.strategy === "DATE_PROXIMITY" || rule.id === "RW2-003" || rule.id === "RW2-006";
+          const isExactMatch = isDate ? rule.date_tolerance_value === 0 : rule.tolerance_value === 0;
           const stat = simulationResult?.rule_breakdowns.find((b) => b.rule_id === rule.id);
+
+          const isExpanded = expandedRuleIds.has(rule.id);
 
           return (
             <div
               key={rule.id}
+              id={`v2-rule-card-${rule.id}`}
               draggable
               onDragStart={(e) => handleDragStart(e, idx)}
               onDragOver={(e) => handleDragOver(e, idx)}
               onDrop={(e) => handleDrop(e, idx)}
               onDragEnd={handleDragEnd}
-              className={`v2-rule-item-card ${!rule.is_enabled ? "disabled" : ""} ${draggedIdx === idx ? "dragging" : ""}`}
+              className={`v2-rule-item-card ${!rule.is_enabled ? "disabled" : ""} ${isExpanded ? "is-expanded" : ""} ${rule.is_ai_suggested ? "is-ai-suggested-rule" : ""} ${draggedIdx === idx ? "dragging" : ""}`}
               style={{
-                background: rule.is_enabled ? "#ffffff" : "#f8fafc",
-                borderColor: dragOverIdx === idx ? "#2563eb" : rule.is_enabled ? "#cbd5e1" : "#e2e8f0",
-                opacity: draggedIdx === idx ? 0.4 : rule.is_enabled ? 1 : 0.75,
-                transition: "all 0.15s ease",
+                background: !rule.is_enabled ? "#f8fafc" : "#ffffff",
+                borderColor: dragOverIdx === idx ? "#2563eb" : isExpanded ? "#93c5fd" : rule.is_enabled ? "#cbd5e1" : "#e2e8f0",
+                opacity: draggedIdx === idx ? 0.4 : rule.is_enabled ? 1 : 0.78,
               }}
             >
-              {/* Top Row: Drag Handle, Checkbox, Order, Title, Individual Value Badge, Explain Button */}
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  {/* Drag Handle */}
-                  <div className="v2-drag-grip" title="Drag to reorder rule execution sequence">
-                    <GripVertical size={18} />
+              {/* Compact Main Row */}
+              <div
+                className="v2-rule-compact-row"
+                onClick={() => toggleRuleExpand(rule.id)}
+                title={isExpanded ? "Click to collapse details" : "Click to expand configuration & details"}
+              >
+                {/* Left: Drag Grip, Checkbox, Priority, Category, Name */}
+                <div className="v2-rule-compact-left">
+                  <div
+                    className="v2-drag-grip"
+                    title="Drag to reorder rule execution sequence"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <GripVertical size={16} />
                   </div>
 
                   <input
                     type="checkbox"
                     checked={rule.is_enabled}
                     onChange={() => handleToggleRule(rule.id)}
-                    style={{ width: 18, height: 18, cursor: "pointer", marginTop: 3 }}
+                    onClick={(e) => e.stopPropagation()}
+                    style={{ width: 17, height: 17, cursor: "pointer" }}
                     title={rule.is_enabled ? "Click to exclude rule" : "Click to include rule"}
                   />
 
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                      <span className="v2-wf-tier-tag">Priority #{idx + 1}</span>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          color: "#475569",
-                          background: "#f1f5f9",
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                        }}
-                      >
-                        {rule.category.replaceAll("_", " ")}
-                      </span>
-                      <h3 style={{ fontSize: 15, fontWeight: 700, color: "#0f172a", margin: 0 }}>
-                        {rule.name}
-                      </h3>
-                    </div>
-                    <p style={{ fontSize: 13, color: "#475569", margin: 0, lineHeight: 1.4 }}>
-                      {rule.description}
-                    </p>
-                  </div>
+                  <span className="v2-wf-tier-tag" style={{ fontSize: 10.5, padding: "2px 7px" }}>
+                    #{idx + 1}
+                  </span>
+
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      textTransform: "uppercase",
+                      color: "#475569",
+                      background: "#f1f5f9",
+                      padding: "2px 7px",
+                      borderRadius: 4,
+                      letterSpacing: "0.02em",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {rule.category.replaceAll("_", " ")}
+                  </span>
+
+                  <h3 className="v2-rule-name-text">
+                    {rule.name}
+                  </h3>
                 </div>
 
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 8 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                {/* Middle: Column Mapping & Parameter Summary */}
+                <div className="v2-rule-compact-mid">
+                  <span className="v2-source-pill-compact" title={`Matched columns: ${rule.gstr_column} ⟷ ${rule.pr_column}`}>
+                    <strong className="gov">{rule.gstr_column}</strong>
+                    <span style={{ color: "#94a3b8" }}>⟷</span>
+                    <strong className="pr">{rule.pr_column}</strong>
+                  </span>
+
+                  {/* Missing Column Notice Badge */}
+                  {rule.column_status === "MISSING" && (
+                    <span
+                      className="v2-missing-col-badge"
+                      title={rule.missing_reason || "Required column missing in dataset"}
+                    >
+                      <AlertTriangle size={11} style={{ flexShrink: 0 }} />
+                      <span>{rule.missing_reason || "Missing Column"}</span>
+                    </span>
+                  )}
+
+                  {/* AI Suggested Rule Origin Tag */}
+                  {rule.is_ai_suggested && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "#6d28d9",
+                        background: "#f3e8ff",
+                        border: "1px solid #d8b4fe",
+                        padding: "2px 7px",
+                        borderRadius: 999,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                      title="Adopted from AI Suggested Rules"
+                    >
+                      <Sparkles size={11} /> AI Suggested
+                    </span>
+                  )}
+
+                  {/* Parameter Summary Badge */}
+                  {isExactMatch ? (
+                    <span className="v2-param-badge" style={{ background: "#ecfdf5", color: "#065f46", borderColor: "#a7f3d0" }} title="Exact match (0 variance)">
+                      Exact Match
+                    </span>
+                  ) : isDate ? (
+                    <span className="v2-param-badge date" title="Date tolerance parameter">
+                      ± {rule.date_tolerance_value} {rule.date_tolerance_unit.toLowerCase()}
+                    </span>
+                  ) : (
+                    <span className="v2-param-badge numeric" title="Numeric tolerance parameter">
+                      ± {rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹${rule.tolerance_value}`}
+                    </span>
+                  )}
+                  <span className="v2-param-badge" title="Active normalization rules count">
+                    {rule.normalizers.length} normalizer{rule.normalizers.length === 1 ? "" : "s"}
+                  </span>
+                </div>
+
+                {/* Right: Simulation Match Stats, Reorder buttons, Expand Chevron */}
+                <div className="v2-rule-compact-right">
+                  {simulationResult && rule.is_enabled && stat && (
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 5,
+                        padding: "3px 8px",
+                        fontSize: 11.5,
+                        fontWeight: 600,
+                        color: "#047857",
+                        background: "#ecfdf5",
+                        border: "1px solid #a7f3d0",
+                        borderRadius: 6,
+                        whiteSpace: "nowrap",
+                      }}
+                      title="Actual 1-to-1 matches and percentage for this rule"
+                    >
+                      <CheckCircle2 size={12} color="#10b981" />
+                      <span>
+                        <strong>{stat.individual_satisfied_count.toLocaleString()}</strong> ({stat.individual_satisfied_percentage}%)
+                      </span>
+                    </div>
+                  )}
+                  {simulationResult && !rule.is_enabled && (
+                    <div
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        padding: "3px 8px",
+                        fontSize: 11,
+                        fontWeight: 500,
+                        color: "#64748b",
+                        background: "#f1f5f9",
+                        border: "1px solid #e2e8f0",
+                        borderRadius: 6,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      <span>Excluded</span>
+                    </div>
+                  )}
+
+                  {/* Up / Down Reorder */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 3 }} onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
                       className="v2-rule-card-order-btn"
@@ -623,7 +1470,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                       onClick={() => handleMoveRule(idx, "up")}
                       title="Move up in execution priority"
                     >
-                      <ChevronUp size={16} />
+                      <ChevronUp size={14} />
                     </button>
                     <button
                       type="button"
@@ -632,8 +1479,74 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                       onClick={() => handleMoveRule(idx, "down")}
                       title="Move down in execution priority"
                     >
-                      <ChevronDown size={16} />
+                      <ChevronDown size={14} />
                     </button>
+                  </div>
+
+                  {/* Expand/Collapse Chevron Button */}
+                  <button
+                    type="button"
+                    className={`v2-expand-chevron-btn ${isExpanded ? "expanded" : ""}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleRuleExpand(rule.id);
+                    }}
+                    title={isExpanded ? "Collapse ancillary details" : "Expand ancillary details"}
+                  >
+                    <ChevronDown size={15} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Expanded Ancillary Drawer */}
+              {isExpanded && (
+                <div className="v2-rule-expanded-drawer" onClick={(e) => e.stopPropagation()}>
+                  {/* Missing Column Notice Banner */}
+                  {rule.column_status === "MISSING" && (
+                    <div
+                      style={{
+                        background: "#fffbeb",
+                        border: "1px solid #fcd34d",
+                        borderRadius: 8,
+                        padding: "9px 14px",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 10,
+                        fontSize: 12.5,
+                        color: "#92400e",
+                        marginBottom: 12,
+                      }}
+                    >
+                      <AlertTriangle size={16} style={{ flexShrink: 0 }} />
+                      <span>
+                        <strong>Column Availability Notice:</strong> {rule.missing_reason || "This rule has been deselected by default because required column(s) were missing or unpopulated in your uploaded workbook."}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* AI Contextual Observation Banner */}
+                  {rule.ai_rationale && (
+                    <div className="v2-ai-rationale-box" style={{ marginBottom: 12 }}>
+                      <Sparkles size={14} style={{ color: "#7c3aed", marginTop: 2, flexShrink: 0 }} />
+                      <div style={{ fontSize: 12.5, lineHeight: 1.45 }}>
+                        <strong style={{ color: "#5b21b6" }}>AI Contextual Observation: </strong>
+                        <span>{rule.ai_rationale}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Top of Drawer: Description, Canonical Concept, Explain Rule Button */}
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
+                    <div>
+                      <p style={{ fontSize: 13, color: "#475569", margin: "0 0 4px 0", lineHeight: 1.45 }}>
+                        {rule.description}
+                      </p>
+                      {rule.canonical_concept && (
+                        <span style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>
+                          Canonical concept: <code>{rule.canonical_concept}</code>
+                        </span>
+                      )}
+                    </div>
 
                     <button
                       type="button"
@@ -643,15 +1556,15 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 6,
-                        padding: "6px 12px",
+                        padding: "5px 12px",
                         fontSize: 12,
                         fontWeight: 600,
                         color: "#1d4ed8",
                         background: "#eff6ff",
                         border: "1px solid #bfdbfe",
-                        borderRadius: 8,
+                        borderRadius: 7,
                         cursor: "pointer",
-                        marginLeft: 8,
+                        flexShrink: 0,
                       }}
                       title="View plain-English explanation, target columns & accounting rationale"
                     >
@@ -660,213 +1573,157 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                     </button>
                   </div>
 
-                  {/* Display actual match count & percentage below Explain Rule button AFTER simulation */}
-                  {simulationResult && rule.is_enabled && stat && (
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "4px 10px",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "#047857",
-                        background: "#ecfdf5",
-                        border: "1px solid #a7f3d0",
-                        borderRadius: 8,
-                      }}
-                      title="Actual 1-to-1 matches and percentage for this rule"
-                    >
-                      <CheckCircle2 size={13} color="#10b981" />
-                      <span>
-                        <strong>{stat.individual_satisfied_count.toLocaleString()} matches</strong> ({stat.individual_satisfied_percentage}%)
-                      </span>
+                  {/* Unified 2 Sections */}
+                  <div className="v2-rule-sections-wrapper">
+                    {/* SECTION 1: NORMALISERS */}
+                    <div className="v2-rule-section-block">
+                      <div className="v2-rule-section-header">
+                        <span className="v2-rule-section-title">
+                          Section 1: Normalisers
+                        </span>
+                        <span className="v2-rule-section-count">
+                          {rule.normalizers.length} active
+                        </span>
+                      </div>
+                      <div className="v2-norm-chips-wrap">
+                        {ALL_NORMALIZERS.map((norm) => {
+                          const isActive = rule.normalizers.includes(norm.type);
+                          return (
+                            <button
+                              key={norm.type}
+                              type="button"
+                              className={`v2-norm-chip ${isActive ? "is-active" : ""}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleToggleNormalizer(rule.id, norm.type);
+                              }}
+                              title={norm.description}
+                            >
+                              {isActive && <CheckCircle2 size={12} />}
+                              <span>{norm.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
-                  )}
-                  {simulationResult && !rule.is_enabled && (
-                    <div
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "4px 10px",
-                        fontSize: 11.5,
-                        fontWeight: 500,
-                        color: "#64748b",
-                        background: "#f1f5f9",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 8,
-                      }}
-                    >
-                      <span>Excluded from simulation run</span>
-                    </div>
-                  )}
-                </div>
-              </div>
 
-              {/* Middle Row: Column Binding Pill */}
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12 }}>
-                <span className="v2-source-pill">
-                  Government: <strong>{rule.gstr_column}</strong>
-                </span>
-                <span style={{ color: "#94a3b8", fontWeight: 700 }}>⟷</span>
-                <span className="v2-source-pill pr">
-                  Purchase Register: <strong>{rule.pr_column}</strong>
-                </span>
-                {rule.canonical_concept && (
-                  <span style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>
-                    ({rule.canonical_concept})
-                  </span>
-                )}
-              </div>
+                    {/* SECTION 2: EXACT MATCH & TOLERANCE MATCH */}
+                    <div className="v2-rule-section-block">
+                      <div className="v2-rule-section-header">
+                        <span className="v2-rule-section-title">
+                          Section 2: Exact match & Tolerance match
+                        </span>
+                      </div>
 
-              {/* Bottom Row: Dynamic Inline Option Controls */}
-              <div style={{ marginTop: 14 }}>
-                {/* 1. Date Tolerance Control */}
-                {isDate && (
-                  <div className="v2-tolerance-row">
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: "#334155" }}>
-                      Allowed Date Lag:
-                    </span>
-                    <input
-                      type="number"
-                      min={0}
-                      className="v2-input-number"
-                      value={rule.date_tolerance_value}
-                      onChange={(e) => handleUpdateDateTol(rule.id, parseInt(e.target.value) || 0)}
-                      onBlur={() => runSimulation()}
-                    />
-                    <select
-                      className="v2-select-unit"
-                      value={rule.date_tolerance_unit}
-                      onChange={(e) => {
-                        handleUpdateDateTol(rule.id, rule.date_tolerance_value, e.target.value as DateToleranceUnit);
-                        runSimulation();
-                      }}
-                    >
-                      <option value="DAYS">Days</option>
-                      <option value="MONTHS">Months</option>
-                      <option value="YEARS">Years</option>
-                    </select>
-                    <span style={{ fontSize: 12, color: "#64748b", fontStyle: "italic" }}>
-                      (Matches if invoice dates are within ± {rule.date_tolerance_value} {rule.date_tolerance_unit.toLowerCase()})
-                    </span>
-                  </div>
-                )}
-
-                {/* 2. Numeric Tolerance Control */}
-                {isNumeric && (
-                  <div className="v2-tolerance-row">
-                    <span style={{ fontSize: 12.5, fontWeight: 600, color: "#334155" }}>
-                      Allowed Variance:
-                    </span>
-                    <select
-                      className="v2-select-mode"
-                      value={rule.tolerance_mode}
-                      onChange={(e) => {
-                        handleUpdateNumericTol(rule.id, rule.tolerance_value, e.target.value as NumericToleranceMode);
-                        runSimulation();
-                      }}
-                    >
-                      <option value="ABSOLUTE_INR">₹ Absolute INR</option>
-                      <option value="PERCENTAGE">% Percentage</option>
-                    </select>
-                    <input
-                      type="number"
-                      step={rule.tolerance_mode === "PERCENTAGE" ? 0.1 : 1}
-                      min={0}
-                      className="v2-input-number"
-                      value={rule.tolerance_value}
-                      onChange={(e) => handleUpdateNumericTol(rule.id, parseFloat(e.target.value) || 0)}
-                      onBlur={() => runSimulation()}
-                    />
-                    <span style={{ fontSize: 12, color: "#64748b", fontStyle: "italic" }}>
-                      (Matches if amount variance does not exceed{" "}
-                      {rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹ ${rule.tolerance_value}`})
-                    </span>
-                  </div>
-                )}
-
-                {/* 3. Text Normalization Pills */}
-                {isNormalized && (
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: "#64748b" }}>
-                      Active Normalizers:
-                    </span>
-                    {ALL_NORMALIZERS.map((norm) => {
-                      const isActive = rule.normalizers.includes(norm.type);
-                      return (
+                      <div className="v2-match-mode-selector">
                         <button
-                          key={norm.type}
                           type="button"
-                          onClick={() => handleToggleNormalizer(rule.id, norm.type)}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 5,
-                            padding: "4px 10px",
-                            borderRadius: 6,
-                            fontSize: 11.5,
-                            fontWeight: 600,
-                            cursor: "pointer",
-                            border: isActive ? "1px solid #3b82f6" : "1px solid #e2e8f0",
-                            background: isActive ? "#eff6ff" : "#f8fafc",
-                            color: isActive ? "#1e40af" : "#64748b",
+                          className={`v2-mode-pill ${isExactMatch ? "is-active" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetMatchMode(rule.id, "EXACT");
                           }}
                         >
-                          {isActive && <CheckCircle2 size={12} />}
-                          <span>{norm.label}</span>
+                          <CheckCircle2 size={13} />
+                          <span>Exact Match</span>
                         </button>
-                      );
-                    })}
-                  </div>
-                )}
+                        <button
+                          type="button"
+                          className={`v2-mode-pill ${!isExactMatch ? "is-active" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSetMatchMode(rule.id, "TOLERANCE");
+                          }}
+                        >
+                          <Sliders size={13} />
+                          <span>Tolerance Match</span>
+                        </button>
+                      </div>
 
-                {/* 4. Value Guard */}
-                {rule.strategy === "VALUE_GUARD" && (
-                  <div style={{ fontSize: 12.5, color: "#475569", background: "#f8fafc", padding: "8px 12px", borderRadius: 6 }}>
-                    Strict Value Equality Guard: Verifies that categorical flags match exactly across both workbooks.
+                      {isExactMatch ? (
+                        <div className="v2-exact-mode-info">
+                          <CheckCircle2 size={14} color="#059669" />
+                          <span>Strict 1-to-1 Equality: Permitting 0.00 variance after normalisation.</span>
+                        </div>
+                      ) : (
+                        <div className="v2-tolerance-control-group">
+                          <span className="v2-tolerance-input-label">Permitted Variance:</span>
+                          <div className="v2-tolerance-inputs-row">
+                            {/* Small text box in front to input the value */}
+                            <input
+                              type="number"
+                              min={0}
+                              step={!isDate && rule.tolerance_mode === "PERCENTAGE" ? 0.1 : 1}
+                              className="v2-input-number"
+                              value={isDate ? rule.date_tolerance_value : rule.tolerance_value}
+                              onChange={(e) => {
+                                e.stopPropagation();
+                                const val = parseFloat(e.target.value) || 0;
+                                if (isDate) {
+                                  handleUpdateDateTol(rule.id, Math.round(val));
+                                } else {
+                                  handleUpdateNumericTol(rule.id, val);
+                                }
+                              }}
+                            />
+
+                            {/* Dropdown with options */}
+                            {isDate ? (
+                              <select
+                                className="v2-select-mode"
+                                value={rule.date_tolerance_unit}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateDateTol(rule.id, rule.date_tolerance_value, e.target.value as DateToleranceUnit);
+                                }}
+                              >
+                                <option value="DAYS">Absolute Days</option>
+                                <option value="MONTHS">Months</option>
+                                <option value="YEARS">Years</option>
+                              </select>
+                            ) : (
+                              <select
+                                className="v2-select-mode"
+                                value={rule.tolerance_mode}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateNumericTol(rule.id, rule.tolerance_value, e.target.value as NumericToleranceMode);
+                                }}
+                              >
+                                <option value="ABSOLUTE_INR">Absolute Amount</option>
+                                <option value="PERCENTAGE">Percentage</option>
+                              </select>
+                            )}
+
+                            <span className="v2-tolerance-formula-hint">
+                              {isDate
+                                ? `(Matches if date difference does not exceed ± ${rule.date_tolerance_value} ${rule.date_tolerance_unit.toLowerCase()})`
+                                : `(Matches if |GSTR - PR| does not exceed ${rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹${rule.tolerance_value}`})`}
+                            </span>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
           );
         })}
       </section>
 
       {/* 4. Bottom Action Bar */}
-      <footer
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "16px 20px",
-          background: "#ffffff",
-          borderRadius: 12,
-          border: "1px solid #e2e8f0",
-          marginTop: 12,
-        }}
-      >
-        <button
-          type="button"
-          className="btn-secondary-v2"
-          onClick={onBackToMapping}
-        >
-          <ArrowLeft size={16} />
-          <span>Back to Schema Mapping</span>
-        </button>
-
-        <button
-          type="button"
-          className="btn-primary-v2"
-          disabled={isConfirming || rules.filter((r) => r.is_enabled).length === 0}
-          onClick={handleProceed}
-          style={{ padding: "10px 24px", fontSize: 14 }}
-        >
-          <span>{isConfirming ? "Confirming Rules..." : "Confirm & Run Reconciliation"}</span>
-          <ArrowRight size={16} />
-        </button>
-      </footer>
+      <ReconciliationV2ActionBar
+        position="bottom"
+        stageNumber={3}
+        backLabel="Back to Schema Mapping"
+        onBack={onBackToMapping}
+        nextLabel={isConfirming ? "Confirming Rules…" : "Confirm & Run Reconciliation"}
+        onNext={handleProceed}
+        nextDisabled={isConfirming || rules.filter((r) => r.is_enabled).length === 0}
+        isNextLoading={isConfirming}
+        nextLoadingText="Confirming & Running…"
+      />
 
       {/* --- PLAIN ENGLISH EXPLANATION MODAL --- */}
       {explainingRule && (

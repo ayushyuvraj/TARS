@@ -27,6 +27,8 @@ from app.services.matching_engine_v2 import (
     build_default_rules_wiki_v2,
     build_default_waterfall,
     compile_rule_from_nl,
+    evaluate_rule_column_availability,
+    generate_ai_suggested_rules,
 )
 from app.workflows.schema_mapping_v2 import SchemaMappingV2Workflow
 
@@ -103,6 +105,7 @@ def create_v2_session() -> ReconciliationV2Session:
     import datetime
 
     session_id = str(uuid4())
+    default_rules = build_default_rules_wiki_v2()
     session_data = {
         "id": session_id,
         "status": "setup",
@@ -112,30 +115,94 @@ def create_v2_session() -> ReconciliationV2Session:
         "gstr_path": None,
         "pr_path": None,
         "correlation": None,
+        "rules_v2": default_rules,
     }
     _V2_SESSIONS[session_id] = session_data
     return ReconciliationV2Session(
         id=session_id,
         status="setup",
         created_at=session_data["created_at"],
+        rules_v2=default_rules,
     )
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 SAMPLE_GOV = PROJECT_ROOT / "sample_data" / "POC_Government_GST_Aug2026.xlsx"
 SAMPLE_PR = PROJECT_ROOT / "sample_data" / "POC_Purchase_Register_Aug2026.xlsx"
-SAMPLE_223_GOV = PROJECT_ROOT / "sample_data" / "TARS_Government_GSTR2B_223cols_1k_rows.xlsx"
-SAMPLE_223_PR = PROJECT_ROOT / "sample_data" / "TARS_Purchase_Register_223cols_1500_rows.xlsx"
+SAMPLE_223_GOV = PROJECT_ROOT / "sample_data" / "TARS_Government_GSTR2B_223cols_10000rows.xlsx"
+SAMPLE_223_PR = PROJECT_ROOT / "sample_data" / "TARS_Purchase_Register_223cols_10500rows.xlsx"
+DATA_CATALOG_PATH = PROJECT_ROOT / "data" / "rules_wiki_v2_catalog.json"
 
 
-def _load_df_safely(path: Path) -> pd.DataFrame:
+def load_master_rules_v2_catalog() -> list[Rule2Item]:
+    """Loads master Rules Wiki 2.0 catalog from disk, initializing from defaults if missing."""
+    if DATA_CATALOG_PATH.exists():
+        try:
+            import json
+            with open(DATA_CATALOG_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, list):
+                rules = []
+                for item in data:
+                    try:
+                        rules.append(Rule2Item(**item))
+                    except Exception:
+                        pass
+                if rules:
+                    return rules
+        except Exception as exc:
+            logger.warning(f"Could not load master rules catalog from {DATA_CATALOG_PATH}: {exc}")
+    defaults = build_default_rules_wiki_v2()
+    save_master_rules_v2_catalog(defaults)
+    return defaults
+
+
+def save_master_rules_v2_catalog(rules: list[Rule2Item]) -> None:
+    """Atomically persists master Rules Wiki 2.0 catalog to disk."""
+    try:
+        import json
+        DATA_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(DATA_CATALOG_PATH, "w", encoding="utf-8") as f:
+            json.dump([r.model_dump() for r in rules], f, indent=2, default=str)
+    except Exception as exc:
+        logger.error(f"Failed to save master rules catalog to {DATA_CATALOG_PATH}: {exc}")
+
+
+def add_rule_to_master_catalog(rule: Rule2Item) -> list[Rule2Item]:
+    """Merges a newly created or accepted rule into the master Rules Wiki 2.0 catalog."""
+    catalog = load_master_rules_v2_catalog()
+    updated = False
+    for i, r in enumerate(catalog):
+        if r.id == rule.id or (
+            rule.canonical_concept and r.canonical_concept and r.canonical_concept.lower().strip() == rule.canonical_concept.lower().strip()
+        ) or (
+            rule.gstr_column and rule.pr_column and
+            r.gstr_column and r.pr_column and
+            r.gstr_column.lower().strip() == rule.gstr_column.lower().strip() and
+            r.pr_column.lower().strip() == rule.pr_column.lower().strip()
+        ):
+            catalog[i] = rule.model_copy(update={"execution_order": r.execution_order})
+            updated = True
+            break
+    if not updated:
+        rule_to_append = rule.model_copy(update={
+            "execution_order": len(catalog) + 1,
+            "is_enabled": True,
+            "is_custom": True,
+        })
+        catalog.append(rule_to_append)
+    save_master_rules_v2_catalog(catalog)
+    return catalog
+
+
+def _load_df_safely(path: Path, nrows: int | None = None) -> pd.DataFrame:
     try:
         if path.suffix.lower() == ".csv":
-            return pd.read_csv(path)
-        df = pd.read_excel(path)
+            return pd.read_csv(path, nrows=nrows)
+        df = pd.read_excel(path, nrows=nrows)
         unnamed = [c for c in df.columns if str(c).startswith("Unnamed")]
         if len(unnamed) > len(df.columns) / 2:
-            df_h1 = pd.read_excel(path, header=1)
+            df_h1 = pd.read_excel(path, header=1, nrows=nrows)
             unnamed_h1 = [c for c in df_h1.columns if str(c).startswith("Unnamed")]
             if len(unnamed_h1) < len(unnamed):
                 return df_h1
@@ -160,7 +227,7 @@ def _ensure_session(session_id: str) -> dict[str, Any]:
             "selected_rule_ids": [],
             "rule_execution_order": [],
             "waterfall_passes": [],
-            "rules_v2": build_default_rules_wiki_v2(),
+            "rules_v2": load_master_rules_v2_catalog(),
             "gstr_filename": gov_name,
             "pr_filename": pr_name,
             "gstr_path": default_gov,
@@ -381,17 +448,338 @@ def confirm_v2_rules(
 
 @router_v2.get("/rules-v2/catalog", response_model=list[Rule2Item])
 def get_rules_wiki_v2_catalog() -> list[Rule2Item]:
-    """Returns the master Rules Wiki 2.0 catalog tailored for 223-column enterprise reconciliations."""
-    return build_default_rules_wiki_v2()
+    """Returns the persistent master Rules Wiki 2.0 catalog tailored for enterprise GST reconciliations."""
+    return load_master_rules_v2_catalog()
+
+
+@router_v2.post("/rules-v2/catalog", response_model=list[Rule2Item])
+def save_rules_wiki_v2_catalog(rules: list[Rule2Item]) -> list[Rule2Item]:
+    """Persistently updates the master Rules Wiki 2.0 catalog on disk."""
+    save_master_rules_v2_catalog(rules)
+    return load_master_rules_v2_catalog()
+
+
+class BatchDeleteRulesRequest(BaseModel):
+    rule_ids: list[str]
+
+
+@router_v2.delete("/rules-v2/catalog/{rule_id}", response_model=list[Rule2Item])
+def delete_rule_from_catalog_endpoint(rule_id: str) -> list[Rule2Item]:
+    """Permanently deletes a rule from the master Rules Wiki 2.0 catalog on disk."""
+    catalog = load_master_rules_v2_catalog()
+    catalog = [r for r in catalog if r.id != rule_id]
+    save_master_rules_v2_catalog(catalog)
+    return catalog
+
+
+@router_v2.post("/rules-v2/catalog/delete-batch", response_model=list[Rule2Item])
+def batch_delete_rules_from_catalog_endpoint(req: BatchDeleteRulesRequest) -> list[Rule2Item]:
+    """Permanently deletes multiple selected rules from the master Rules Wiki 2.0 catalog on disk."""
+    ids_to_del = set(req.rule_ids)
+    catalog = load_master_rules_v2_catalog()
+    catalog = [r for r in catalog if r.id not in ids_to_del]
+    save_master_rules_v2_catalog(catalog)
+    return catalog
+
+
+class CompileAiRuleRequest(BaseModel):
+    prompt: str
+    available_columns: list[str] = Field(default_factory=list)
 
 
 @router_v2.post("/rules-v2/compile-ai", response_model=Rule2Item)
+@router_v2.post("/{session_id}/rules-v2/compile-ai", response_model=Rule2Item)
 def compile_ai_rule_endpoint(
     req: CompileAiRuleRequest,
     settings: Annotated[Settings, Depends(get_settings)],
+    session_id: str | None = None,
 ) -> Rule2Item:
-    """Compiles a user natural language rule specification into an executable declarative Rule2Item."""
-    return compile_rule_from_nl(req.prompt, req.available_columns)
+    """
+    Compiles a natural language reconciliation policy into a validated declarative Rule2Item.
+    Supports LLM translation with immediate deterministic fallback.
+    """
+    cleaned_prompt = (req.prompt or "").strip()
+    if not cleaned_prompt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Rule description prompt cannot be empty.",
+        )
+
+    # 1. Compile declarative rule using the deterministic engine first
+    compiled_rule = compile_rule_from_nl(cleaned_prompt, req.available_columns)
+
+    # 2. Attempt LLM enhancement if provider is configured and reachable
+    try:
+        llm = create_llm_provider(settings)
+        if llm:
+            sys_prompt = (
+                "You are an expert Indian GST reconciliation rules compiler for enterprise tax teams. "
+                "The user gave the following natural language matching rule:\n"
+                f"'{cleaned_prompt}'\n\n"
+                "In 1 concise sentence, explain why this rule matters for GST compliance, ITC safety, or audit readiness."
+            )
+            resp = llm.invoke(sys_prompt)
+            if resp and resp.content and len(resp.content.strip()) > 5:
+                compiled_rule.why_it_matters = resp.content.strip()
+    except Exception as exc:
+        logger.debug(f"LLM compilation enrichment fallback: {exc}")
+
+    return compiled_rule
+
+
+class SessionRulesResponse(BaseModel):
+    pipeline_rules: list[Rule2Item]
+    ai_suggested_rules: list[Rule2Item] = Field(default_factory=list)
+
+
+@router_v2.get("/{session_id}/rules-v2", response_model=SessionRulesResponse)
+def get_session_rules_v2_endpoint(
+    session_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> SessionRulesResponse:
+    """
+    Returns pipeline rules for this session with intelligent column-availability gating
+    (rules missing corresponding columns are deselected by default), plus AI-suggested rules
+    discovered by analyzing sample data rows from both workbooks.
+    """
+    try:
+        session = _ensure_session(session_id)
+        gov_path_str = session.get("gstr_path")
+        pr_path_str = session.get("pr_path")
+
+        pref_gov = SAMPLE_223_GOV if SAMPLE_223_GOV.exists() else SAMPLE_GOV
+        pref_pr = SAMPLE_223_PR if SAMPLE_223_PR.exists() else SAMPLE_PR
+
+        def _resolve_file(p_str: str | None, fallback: Path) -> Path:
+            if p_str:
+                p = Path(p_str)
+                if p.exists():
+                    return p
+                p_rel = PROJECT_ROOT / p_str
+                if p_rel.exists():
+                    return p_rel
+            return fallback
+
+        gov_path = _resolve_file(gov_path_str, pref_gov)
+        pr_path = _resolve_file(pr_path_str, pref_pr)
+
+        gstr_df = _load_df_safely(gov_path, nrows=100)
+        pr_df = _load_df_safely(pr_path, nrows=100)
+
+        # 1. Base candidate rules
+        raw_rules = session.get("rules_v2")
+        if not raw_rules:
+            raw_rules = build_default_rules_wiki_v2()
+        else:
+            parsed = []
+            for r in raw_rules:
+                if isinstance(r, dict):
+                    try:
+                        parsed.append(Rule2Item(**r))
+                    except Exception:
+                        pass
+                elif isinstance(r, Rule2Item):
+                    parsed.append(r)
+            raw_rules = parsed or build_default_rules_wiki_v2()
+
+        correlations_list: list[Any] = []
+        corr_obj = session.get("correlation")
+        if corr_obj:
+            if isinstance(corr_obj, dict):
+                correlations_list = corr_obj.get("correlations") or []
+            elif hasattr(corr_obj, "correlations"):
+                correlations_list = getattr(corr_obj, "correlations", []) or []
+
+        # 2. Intelligent column availability gating (deterministic + semantic)
+        pipeline_rules = evaluate_rule_column_availability(raw_rules, gstr_df, pr_df, correlations_list)
+        if not pipeline_rules:
+            pipeline_rules = raw_rules
+
+        # 3. AI Suggested Rules (LLM sample study)
+        ai_suggested = session.get("ai_suggested_rules")
+        llm: LLMProvider | None = None
+        try:
+            llm = create_llm_provider(settings)
+        except Exception:
+            pass
+
+        if ai_suggested is None:
+            try:
+                ai_suggested = generate_ai_suggested_rules(
+                    gstr_df,
+                    pr_df,
+                    correlations=correlations_list,
+                    existing_rules=pipeline_rules,
+                    identify_more=False,
+                    llm_provider=llm,
+                    model_name=settings.effective_openai_model,
+                )
+            except Exception as e:
+                logger.warning(f"AI suggested rules generation failed: {e}")
+                ai_suggested = []
+            session["ai_suggested_rules"] = ai_suggested
+        else:
+            # Filter against current pipeline rules so already-accepted rules are never re-suggested!
+            ai_suggested = [
+                s for s in ai_suggested
+                if not any(
+                    r.id == s.id or
+                    (s.canonical_concept and r.canonical_concept == s.canonical_concept) or
+                    (r.gstr_column and s.gstr_column and r.gstr_column.lower() == s.gstr_column.lower())
+                    for r in pipeline_rules
+                )
+            ]
+            session["ai_suggested_rules"] = ai_suggested
+
+        return SessionRulesResponse(
+            pipeline_rules=pipeline_rules,
+            ai_suggested_rules=ai_suggested or [],
+        )
+    except Exception as exc:
+        logger.error(f"Error in get_session_rules_v2_endpoint: {exc}", exc_info=True)
+        default_rules = build_default_rules_wiki_v2()
+        return SessionRulesResponse(
+            pipeline_rules=default_rules,
+            ai_suggested_rules=[],
+        )
+
+
+@router_v2.post("/{session_id}/rules-v2/accept", response_model=SessionRulesResponse)
+def accept_rule_v2_endpoint(
+    session_id: str,
+    rule: Rule2Item,
+) -> SessionRulesResponse:
+    """Permanently adds an accepted AI rule to the session pipeline and removes it from suggestions."""
+    session = _ensure_session(session_id)
+    raw_rules = session.get("rules_v2")
+    if not raw_rules:
+        current_rules = build_default_rules_wiki_v2()
+    else:
+        parsed = []
+        for r in raw_rules:
+            if isinstance(r, dict):
+                try:
+                    parsed.append(Rule2Item(**r))
+                except Exception:
+                    pass
+            elif isinstance(r, Rule2Item):
+                parsed.append(r)
+        current_rules = parsed or build_default_rules_wiki_v2()
+
+    import datetime
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    audit_patch = {}
+    if not rule.created_at:
+        audit_patch["created_at"] = now_iso
+    if not rule.created_by:
+        audit_patch["created_by"] = "AI Data Engine (GPT-5.4-mini)" if rule.is_ai_suggested else "Tax Operations Team"
+    if not rule.created_in_run:
+        audit_patch["created_in_run"] = f"Run #{session_id}"
+    if not rule.version:
+        audit_patch["version"] = "1.0.0"
+    if audit_patch:
+        rule = rule.model_copy(update=audit_patch)
+
+    # Add or update the rule in pipeline
+    exists = False
+    for i, r in enumerate(current_rules):
+        if r.id == rule.id or (rule.canonical_concept and r.canonical_concept == rule.canonical_concept):
+            current_rules[i] = rule
+            exists = True
+            break
+    if not exists:
+        rule_to_add = rule.model_copy(update={"execution_order": len(current_rules) + 1, "is_enabled": True})
+        current_rules.append(rule_to_add)
+
+    session["rules_v2"] = current_rules
+    session["selected_rule_ids"] = [r.id for r in current_rules if r.is_enabled]
+    session["rule_execution_order"] = [r.id for r in current_rules]
+
+    # Remove from session suggestions
+    current_sugg = session.get("ai_suggested_rules") or []
+    filtered_sugg = [
+        s for s in current_sugg
+        if s.id != rule.id and (not rule.canonical_concept or s.canonical_concept != rule.canonical_concept)
+    ]
+    session["ai_suggested_rules"] = filtered_sugg
+
+    # Persistently mirror accepted rule into master Rules Wiki 2.0 catalog
+    add_rule_to_master_catalog(rule)
+
+    return SessionRulesResponse(
+        pipeline_rules=current_rules,
+        ai_suggested_rules=filtered_sugg,
+    )
+
+
+class RefreshAiSuggestionsRequest(BaseModel):
+    identify_more: bool = False
+
+
+@router_v2.post("/{session_id}/rules-v2/suggest-ai", response_model=list[Rule2Item])
+def refresh_ai_suggestions_endpoint(
+    session_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+    req: RefreshAiSuggestionsRequest | None = None,
+) -> list[Rule2Item]:
+    """Forces re-running sample data analysis to generate fresh AI rule suggestions (or identify more columns)."""
+    session = _ensure_session(session_id)
+    gov_path_str = session.get("gstr_path")
+    pr_path_str = session.get("pr_path")
+
+    pref_gov = SAMPLE_223_GOV if SAMPLE_223_GOV.exists() else SAMPLE_GOV
+    pref_pr = SAMPLE_223_PR if SAMPLE_223_PR.exists() else SAMPLE_PR
+
+    def _resolve_file(p_str: str | None, fallback: Path) -> Path:
+        if p_str:
+            p = Path(p_str)
+            if p.exists():
+                return p
+            p_rel = PROJECT_ROOT / p_str
+            if p_rel.exists():
+                return p_rel
+        return fallback
+
+    gov_path = _resolve_file(gov_path_str, pref_gov)
+    pr_path = _resolve_file(pr_path_str, pref_pr)
+
+    gstr_df = _load_df_safely(gov_path, nrows=100)
+    pr_df = _load_df_safely(pr_path, nrows=100)
+
+    correlations_list: list[Any] = []
+    if session.get("correlation") and session["correlation"].correlations:
+        correlations_list = session["correlation"].correlations
+
+    llm: LLMProvider | None = None
+    try:
+        llm = create_llm_provider(settings)
+    except Exception:
+        pass
+
+    raw_rules = session.get("rules_v2") or build_default_rules_wiki_v2()
+    pipeline_rules = []
+    for r in raw_rules:
+        if isinstance(r, dict):
+            try:
+                pipeline_rules.append(Rule2Item(**r))
+            except Exception:
+                pass
+        elif isinstance(r, Rule2Item):
+            pipeline_rules.append(r)
+    pipeline_rules = pipeline_rules or build_default_rules_wiki_v2()
+
+    identify_more = req.identify_more if req else False
+    ai_suggested = generate_ai_suggested_rules(
+        gstr_df,
+        pr_df,
+        correlations=correlations_list,
+        existing_rules=pipeline_rules,
+        identify_more=identify_more,
+        llm_provider=llm,
+        model_name=settings.effective_openai_model,
+    )
+    session["ai_suggested_rules"] = ai_suggested
+    return ai_suggested
 
 
 @router_v2.post("/{session_id}/rules-v2/simulate", response_model=SimulationResultV2)
@@ -436,6 +824,12 @@ def confirm_rules_v2_endpoint(
     session = _ensure_session(session_id)
     session["rules_v2"] = req.rules
     session["status"] = "rules_confirmed"
+
+    # Persistently mirror custom or AI suggested rules into the master Rules Wiki 2.0 catalog
+    for r in req.rules:
+        if r.is_custom or r.is_ai_suggested or r.category in ("AI_SUGGESTED", "CUSTOM"):
+            add_rule_to_master_catalog(r)
+
     return ReconciliationV2Session(
         id=session["id"],
         status=session["status"],
