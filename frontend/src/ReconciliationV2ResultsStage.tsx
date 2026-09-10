@@ -58,6 +58,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
   const [activeTab, setActiveTab] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
+  const [isWaterfallExpanded, setIsWaterfallExpanded] = useState<boolean>(false);
 
   // Ambiguity Resolution Modal
   const [selectedCluster, setSelectedCluster] = useState<AmbiguityCluster | null>(null);
@@ -614,8 +615,20 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
 
       {/* 3. WATERFALL RETENTION FUNNEL */}
       {summary && summary.waterfall_passes && summary.waterfall_passes.length > 0 && (
-        <div className="v2-waterfall-funnel-card">
-          <div className="v2-funnel-header">
+        <div className={`v2-waterfall-funnel-card ${isWaterfallExpanded ? "is-expanded" : "is-collapsed"}`}>
+          <div
+            className="v2-funnel-header"
+            onClick={() => setIsWaterfallExpanded(!isWaterfallExpanded)}
+            role="button"
+            tabIndex={0}
+            aria-expanded={isWaterfallExpanded}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setIsWaterfallExpanded(!isWaterfallExpanded);
+              }
+            }}
+          >
             <div className="v2-funnel-title-row">
               <Layers size={18} color="#00338d" />
               <div>
@@ -625,42 +638,62 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                 </span>
               </div>
             </div>
+
+            <div className="v2-funnel-toggle-wrap">
+              <button
+                type="button"
+                className="v2-funnel-toggle-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsWaterfallExpanded(!isWaterfallExpanded);
+                }}
+              >
+                <span>{isWaterfallExpanded ? "Hide Flow" : "View Flow"}</span>
+                <ChevronDown
+                  size={15}
+                  className={`v2-funnel-chevron ${isWaterfallExpanded ? "is-rotated" : ""}`}
+                />
+              </button>
+            </div>
           </div>
 
-          <div className="v2-funnel-tiers-track">
-            {summary.waterfall_passes.map((pass) => (
-              <div
-                key={pass.tier}
-                className={`v2-funnel-tier-item tier-${pass.tier}`}
-                onClick={() => {
-                  if (pass.tier === 1) setActiveTab("EXACT_MATCH");
-                  if (pass.tier === 2) setActiveTab("TOLERANCE_MATCH");
-                  if (pass.tier === 3) setActiveTab("NEAR_MATCH");
-                  if (pass.tier === 4) setActiveTab("AMBIGUOUS");
-                  if (pass.tier === 5) setActiveTab("GSTR_ONLY");
-                }}
-                style={{ cursor: "pointer" }}
-              >
-                <div className="v2-funnel-tier-top">
-                  <span className={`v2-funnel-tier-badge tier-${pass.tier}`}>Tier {pass.tier}</span>
-                  <span className="v2-funnel-tier-itc">
-                    ₹{pass.matched_itc.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-                  </span>
+          {isWaterfallExpanded && (
+            <div className="v2-funnel-tiers-track v2-funnel-animated-content">
+              {summary.waterfall_passes.map((pass) => (
+                <div
+                  key={pass.tier}
+                  className={`v2-funnel-tier-item tier-${pass.tier}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (pass.tier === 1) setActiveTab("EXACT_MATCH");
+                    if (pass.tier === 2) setActiveTab("TOLERANCE_MATCH");
+                    if (pass.tier === 3) setActiveTab("NEAR_MATCH");
+                    if (pass.tier === 4) setActiveTab("AMBIGUOUS");
+                    if (pass.tier === 5) setActiveTab("GSTR_ONLY");
+                  }}
+                  style={{ cursor: "pointer" }}
+                >
+                  <div className="v2-funnel-tier-top">
+                    <span className={`v2-funnel-tier-badge tier-${pass.tier}`}>Tier {pass.tier}</span>
+                    <span className="v2-funnel-tier-itc">
+                      ₹{pass.matched_itc.toLocaleString("en-IN", { maximumFractionDigits: 0 })}
+                    </span>
+                  </div>
+                  <h4 className="v2-funnel-tier-name">{pass.name}</h4>
+                  <div className="v2-funnel-tier-stat">
+                    <span className="num">{(pass.matched_count || 0).toLocaleString()}</span>
+                    <span className="pct">({pass.retention_percentage}%)</span>
+                  </div>
+                  <div className="v2-funnel-progress-rail">
+                    <div
+                      className="v2-funnel-progress-bar"
+                      style={{ width: `${Math.min(100, Math.max(5, pass.retention_percentage))}%` }}
+                    />
+                  </div>
                 </div>
-                <h4 className="v2-funnel-tier-name">{pass.name}</h4>
-                <div className="v2-funnel-tier-stat">
-                  <span className="num">{(pass.matched_count || 0).toLocaleString()}</span>
-                  <span className="pct">({pass.retention_percentage}%)</span>
-                </div>
-                <div className="v2-funnel-progress-rail">
-                  <div
-                    className="v2-funnel-progress-bar"
-                    style={{ width: `${Math.min(100, Math.max(5, pass.retention_percentage))}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
