@@ -510,6 +510,40 @@
   transform: translateY(0);
 }
 
+/* KPMG Complete CTA Button */
+.v2-btn-complete-kpmg {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #00338d;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 9px 18px;
+  border-radius: 8px;
+  border: 1px solid #00225d;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 2px 5px rgba(0, 51, 141, 0.2);
+}
+
+.v2-btn-complete-kpmg:hover {
+  background: #00225d;
+  border-color: #001740;
+  box-shadow: 0 4px 10px rgba(0, 51, 141, 0.3);
+  transform: translateY(-1px);
+}
+
+.v2-btn-complete-kpmg:active {
+  transform: translateY(0);
+}
+
+.v2-btn-complete-kpmg:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+  transform: none;
+}
+
 /* =========================================================================
    STAGE 6: VISUAL EXPORT STUDIO & DYNAMIC LEDGER DESIGNER
    ========================================================================= */

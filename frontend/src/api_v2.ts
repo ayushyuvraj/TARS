@@ -642,6 +642,18 @@ export const apiV2 = {
     includeAuxiliary: boolean = true
   ): string {
     return `${API_BASE}/${sessionId}/export/download?format=${format}&color_coded=${colorCoded}&include_auxiliary=${includeAuxiliary}`;
+  },
+
+  completeSession: async (sessionId: string): Promise<ReconciliationV2Session> => {
+    const res = await fetch(`${API_BASE}/${sessionId}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Failed to mark session complete." }));
+      throw new Error(err.detail || "Failed to mark session complete.");
+    }
+    return res.json();
   }
 };
 
@@ -926,6 +938,7 @@ export interface V2SessionAuditLifecycle {
       format: string;
       timestamp: string;
       filesize_bytes: number;
+      sha256?: string;
     }>;
   };
 }

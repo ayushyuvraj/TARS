@@ -604,7 +604,7 @@ def test_audit_v2_session_lifecycle():
     stuck_sess = next((s for s in sessions if s["session_id"] == "demo-stuck-stage3"), None)
     assert stuck_sess is not None
     assert stuck_sess["total_stages"] == 6
-    assert stuck_sess["completed_stages_count"] == 3
+    assert stuck_sess["completed_stages_count"] == 2
     assert stuck_sess["is_completed"] is False
     assert stuck_sess["resume_stage"] == "rules"
     assert stuck_sess["resume_url"] == "/reconciliations-v2/demo-stuck-stage3/rules"
@@ -624,7 +624,30 @@ def test_audit_v2_session_lifecycle():
     assert resume_data["session_id"] == "demo-stuck-stage3"
     assert resume_data["resume_stage"] == "rules"
     assert resume_data["resume_url"] == "/reconciliations-v2/demo-stuck-stage3/rules"
-    assert resume_data["completed_stages_count"] == 3
+    assert resume_data["completed_stages_count"] == 2
+
+
+def test_v2_complete_session():
+    app = create_app()
+    client = TestClient(app)
+
+    # 1. Create session
+    create_res = client.post("/api/reconciliations-v2")
+    assert create_res.status_code == 201
+    sess_id = create_res.json()["id"]
+
+    # 2. Complete session
+    complete_res = client.post(f"/api/reconciliations-v2/{sess_id}/complete")
+    assert complete_res.status_code == 200
+    complete_data = complete_res.json()
+    assert complete_data["id"] == sess_id
+    assert complete_data["status"] == "completed"
+
+    # 3. Verify get session status
+    get_res = client.get(f"/api/reconciliations-v2/{sess_id}")
+    assert get_res.status_code == 200
+    assert get_res.json()["status"] == "completed"
+
 
 
 

@@ -29,6 +29,7 @@ import {
   Bookmark,
   BookmarkCheck,
   Check,
+  CheckCircle2,
   ChevronDown,
   Filter,
   Layers,
@@ -38,17 +39,36 @@ import {
 interface ReconciliationV2ExportStageProps {
   sessionId: string;
   onBack: () => void;
+  onComplete?: () => void;
 }
 
 export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStageProps> = ({
   sessionId,
   onBack,
+  onComplete,
 }) => {
+  const [isCompleting, setIsCompleting] = useState<boolean>(false);
   // State: Export Format & Dropdown
   const [isExportMenuOpen, setIsExportMenuOpen] = useState<boolean>(false);
   const [dsvDelimiter, setDsvDelimiter] = useState<string>("|");
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const handleComplete = async () => {
+    setIsCompleting(true);
+    try {
+      if (sessionId) {
+        await apiV2.completeSession(sessionId);
+      }
+    } catch (err: any) {
+      console.warn("Error marking session complete:", err);
+    } finally {
+      setIsCompleting(false);
+      if (onComplete) {
+        onComplete();
+      }
+    }
+  };
 
   // State: Columns Catalog & Active Designer
   const [availableColumns, setAvailableColumns] = useState<{
@@ -360,6 +380,18 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
         onBack={onBack}
         nextLabel={isDownloading ? "Exporting..." : "Quick Export (.xlsx)"}
         onNext={() => handleCustomExport("xlsx")}
+        extraRight={
+          <button
+            type="button"
+            className="v2-btn-complete-kpmg"
+            onClick={handleComplete}
+            disabled={isCompleting}
+            title="Complete Reconciliation & Return to Reconciliation 2.0"
+          >
+            {isCompleting ? <RefreshCw className="animate-spin" size={15} /> : <CheckCircle2 size={16} />}
+            <span>Complete</span>
+          </button>
+        }
       />
 
       {/* TOP BAR CONTROLS: Presets + Format Dropdown */}
@@ -1084,6 +1116,18 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
         onBack={onBack}
         nextLabel={isDownloading ? "Exporting..." : "Export Excel Ledger"}
         onNext={() => handleCustomExport("xlsx")}
+        extraRight={
+          <button
+            type="button"
+            className="v2-btn-complete-kpmg"
+            onClick={handleComplete}
+            disabled={isCompleting}
+            title="Complete Reconciliation & Return to Reconciliation 2.0"
+          >
+            {isCompleting ? <RefreshCw className="animate-spin" size={15} /> : <CheckCircle2 size={16} />}
+            <span>Complete</span>
+          </button>
+        }
       />
     </div>
   );

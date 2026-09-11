@@ -1,18 +1,17 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 2.0 Balanced Pipeline Stepper & Audit 2.0 Sovereign Compact Header (11th September 2026)
+## Reconciliation 2.0 Stage 6 KPMG Complete Flow & Session Persistence (11th September 2026)
 
-- **Checkpoint Name**: `Reconciliation 2.0 Balanced Pipeline Stepper & Audit 2.0 Sovereign Compact Header`
+- **Checkpoint Name**: `Reconciliation 2.0 Stage 6 KPMG Complete Flow & Session Persistence`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-recon-v2-stepper-kpmg-blue-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-audit-2-sovereign-workbench-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-11-stage-6-complete-kpmg-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-recon-v2-stepper-kpmg-blue-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
-  1. *Reconciliation 2.0 Full-Bleed Equal Stage Distribution*: Configured `.v2-pipeline-track` with `justify-content: space-between` and removed the artificial 36px connector limit (`flex: 1 1 0%`), spreading stages 1 through 6 uniformly from edge to edge with zero trailing whitespace or left-centering.
-  2. *KPMG Blue Completed Stage Indicators*: Replaced the green tick mark and green badge (`#15803d` / `#dcfce7` / `#86efac`) on completed pipeline stages with official **KPMG Blue (`#00338d`)**, soft sky tint, and KPMG Blue filled connector lines.
-  3. *Audit 2.0 Compact 2-Tier Session Header*: Streamlined `.v2-audit-detail-header` by ~45% into an executive primary bar (title + badges + action buttons) and a full-width bottom meta bar (session ID badge + full-length initiated and last mutation timestamps), completely eliminating timestamp truncation.
-  4. *Eliminated Stepper Horizontal Scroll in Audit 2.0*: Made `.v2-pipeline-step` flexibly proportional (`flex: 1; min-width: 0`), allowing all 6 statutory stages to fit seamlessly on a single line across any viewport without a horizontal scrollbar.
-  5. *Zero Logic/Computation Regressions*: Changes are 100% confined to presentation CSS and JSX layout; deterministic matching logic, financial contracts, and test suites remain untouched.
+  1. *Stage 6 KPMG Complete Button*: Integrated a prominent **"Complete"** button (`.v2-btn-complete-kpmg`) featuring KPMG Navy Blue (`#00338d`) styling, `<CheckCircle2 />` icon, and hover micro-interactions in both the top and bottom action bars of Stage 6 (`ReconciliationV2ExportStage.tsx`).
+  2. *Backend Session Finalization*: Added `POST /api/reconciliations-v2/{session_id}/complete` endpoint in `reconciliations_v2.py` to persist session status as `"completed"`, log audit step `"Stage 6 Export Session Finalized"`, and update durable `sessions_v2.json` state.
+  3. *Seamless Navigation & Reset*: Clicking "Complete" invokes `apiV2.completeSession()`, clears active session state in `localStorage`, and navigates the user back to the `/reconciliations-v2` landing screen for fresh ingestion setup.
+  4. *Comprehensive Testing*: Validated with automated unit test (`test_v2_complete_session`) and full test suite passing 100% cleanly (11/11 tests), alongside zero-error TypeScript frontend build (`tsc -b && vite build`).
 
 ---
 

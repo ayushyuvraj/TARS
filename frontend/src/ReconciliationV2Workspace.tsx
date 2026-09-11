@@ -963,6 +963,10 @@ export const ReconciliationV2Workspace: React.FC = () => {
               setCurrentStage("summary");
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/summary`);
             }}
+            onComplete={() => {
+              localStorage.removeItem("tars_v2_active_session_id");
+              navigate("/reconciliations-v2");
+            }}
           />
         )}
       </main>

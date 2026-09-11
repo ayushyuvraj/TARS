@@ -1775,6 +1775,52 @@ def download_v2_export(
         raise HTTPException(status_code=500, detail=f"Failed to generate export package: {exc}") from exc
 
 
+@router_v2.post("/{session_id}/complete", response_model=ReconciliationV2Session)
+def complete_v2_session(session_id: str) -> ReconciliationV2Session:
+    """Finalizes Stage 6 Export and marks the Reconciliation 2.0 session as completed."""
+    import datetime
+
+    session = _ensure_session(session_id)
+    session["status"] = "completed"
+    session["current_stage"] = "export"
+    session["completed_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    _V2_SESSIONS[session_id] = session
+
+    try:
+        session_to_save = dict(session)
+        if session_to_save.get("rules_v2"):
+            session_to_save["rules_v2"] = [
+                r.model_dump() if isinstance(r, Rule2Item) else r
+                for r in session_to_save["rules_v2"]
+            ]
+        if session_to_save.get("correlation") and hasattr(session_to_save["correlation"], "model_dump"):
+            session_to_save["correlation"] = session_to_save["correlation"].model_dump()
+        audit_v2_service.save_session(session_to_save)
+
+        audit_v2_service.log_step(
+            session_id=session_id,
+            stage_key="export",
+            name="Stage 6 Export Session Finalized",
+            description="Reconciliation 2.0 session officially marked completed by user.",
+            actor="USER",
+            output_summary={"status": "completed", "finalized_at": session["completed_at"]},
+        )
+    except Exception as exc:
+        logger.warning(f"Could not persist completion for V2 session {session_id}: {exc}")
+
+    return ReconciliationV2Session(
+        id=session_id,
+        status="completed",
+        created_at=session.get("created_at", ""),
+        gstr_filename=session.get("gstr_filename"),
+        pr_filename=session.get("pr_filename"),
+        correlation=session.get("correlation") if isinstance(session.get("correlation"), DirectCorrelationResult) else None,
+        selected_rule_ids=session.get("selected_rule_ids", []),
+        rule_execution_order=session.get("rule_execution_order", []),
+        waterfall_passes=session.get("waterfall_passes", []),
+        rules_v2=session.get("rules_v2", []),
+    )
+
 
 # =========================================================================
 # AUDIT 2.0 REST ENDPOINTS
