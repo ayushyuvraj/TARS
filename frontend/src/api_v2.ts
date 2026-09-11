@@ -494,8 +494,18 @@ export const apiV2 = {
     return request<V2RunRecord>(`${API_BASE}/audit/runs/${encodeURIComponent(runId)}`);
   },
 
-  async listAuditSessions(): Promise<ReconciliationV2Session[]> {
-    return request<ReconciliationV2Session[]>(`${API_BASE}/audit/sessions`);
+  async listAuditSessions(): Promise<V2SessionAuditLifecycle[]> {
+    return request<V2SessionAuditLifecycle[]>(`${API_BASE}/audit/sessions`);
+  },
+
+  async getAuditSession(sessionId: string): Promise<V2SessionAuditLifecycle> {
+    return request<V2SessionAuditLifecycle>(`${API_BASE}/audit/sessions/${encodeURIComponent(sessionId)}`);
+  },
+
+  async resumeAuditSession(sessionId: string): Promise<ResumeSessionResponse> {
+    return request<ResumeSessionResponse>(`${API_BASE}/audit/sessions/${encodeURIComponent(sessionId)}/resume`, {
+      method: "POST"
+    });
   },
 
   async resumeSessionFromRun(runId: string): Promise<{ session_id: string; target_stage: string; resume_url: string }> {
@@ -705,5 +715,147 @@ export interface V2RunRecord {
   error_count: number;
   warning_count: number;
   error_summary?: string | null;
+}
+
+export interface V2StageAuditItem {
+  stage_number: number;
+  stage_key: string;
+  label: string;
+  subtitle: string;
+  status: "COMPLETED" | "IN_PROGRESS" | "NOT_STARTED" | "FAILED";
+  [key: string]: any;
+}
+
+export interface CryptographicFileHash {
+  filename: string;
+  sha256: string;
+  format?: string;
+  filesize_bytes?: number;
+  rows?: number;
+  columns?: number;
+}
+
+export interface MathematicalConservation {
+  gstr_input_rows: number;
+  pr_input_rows: number;
+  total_input_rows: number;
+  resolved_pairs: number;
+  open_gstr_rows: number;
+  open_pr_rows: number;
+  total_accounted_rows: number;
+  delta: number;
+  is_conserved: boolean;
+  attestation: string;
+}
+
+export interface EnvironmentFingerprint {
+  python_runtime: string;
+  kernel_engine: string;
+  random_seed: number;
+  is_deterministic: boolean;
+  determinism_attestation: string;
+  rule_snapshot_hash: string;
+}
+
+export interface CryptographicAuditManifest {
+  manifest_version: string;
+  session_id: string;
+  session_title: string;
+  certified_at: string;
+  statutory_mandate: string;
+  input_hashes: Record<string, CryptographicFileHash>;
+  output_hashes: Record<string, CryptographicFileHash>;
+  mathematical_conservation: MathematicalConservation;
+  environment_fingerprint: EnvironmentFingerprint;
+}
+
+export interface UnifiedAuditChapter {
+  chapter_number: number;
+  stage_key: string;
+  title: string;
+  status: "COMPLETED" | "IN_PROGRESS" | "NOT_STARTED" | "FAILED";
+  actor: string;
+  timestamp: string;
+  duration_ms: number;
+  story_narrative: string;
+  what_happened: string[];
+  why_statutory_mandate: string;
+  how_internal_mechanics: string;
+  agent_thought_summary: string;
+  user_intervention: string;
+  key_metrics: Record<string, any>;
+  stage_data: Record<string, any>;
+}
+
+export interface V2SessionAuditLifecycle {
+  session_id: string;
+  session_title: string;
+  created_at: string;
+  updated_at: string;
+  total_stages: number;
+  completed_stages_count: number;
+  current_stage: string;
+  current_stage_number: number;
+  overall_status: "COMPLETED" | "IN_PROGRESS" | "NOT_STARTED" | "FAILED";
+  is_completed: boolean;
+  resume_stage: string;
+  resume_url: string;
+  statutory_compliance_badge: string;
+  executive_story?: string;
+  chronological_chapters?: UnifiedAuditChapter[];
+  cryptographic_manifest?: CryptographicAuditManifest;
+  stages: {
+    setup: V2StageAuditItem;
+    mapping: V2StageAuditItem;
+    rules: V2StageAuditItem;
+    results: V2StageAuditItem;
+    summary: V2StageAuditItem;
+    export: V2StageAuditItem;
+    [key: string]: V2StageAuditItem;
+  };
+  thought_process: Array<{
+    stage: string;
+    step: string;
+    message: string;
+    timestamp_ms: number;
+    model?: string | null;
+    duration_ms?: number;
+  }>;
+  internal_functioning: Array<{
+    component: string;
+    action: string;
+    duration_ms: number;
+    algorithm: string;
+    status: string;
+  }>;
+  user_changes: Array<{
+    timestamp: string;
+    stage_key: string;
+    action_type: string;
+    summary: string;
+    details?: Record<string, any>;
+  }>;
+  export_customization: {
+    columns_configured_count: number;
+    header_colors_applied: Record<string, string>;
+    fill_colors_applied: Record<string, string>;
+    conditional_formatting_rules_count: number;
+    conditional_rules: any[];
+    dispatched_files: Array<{
+      filename: string;
+      format: string;
+      timestamp: string;
+      filesize_bytes: number;
+    }>;
+  };
+}
+
+export interface ResumeSessionResponse {
+  session_id: string;
+  current_stage: string;
+  resume_stage: string;
+  resume_url: string;
+  completed_stages_count: number;
+  total_stages: number;
 }
 

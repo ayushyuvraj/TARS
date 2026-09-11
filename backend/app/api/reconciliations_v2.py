@@ -572,6 +572,10 @@ def confirm_v2_mapping(
         if session.get("rules_v2"):
             to_save["rules_v2"] = [r.model_dump() if hasattr(r, "model_dump") else r for r in session["rules_v2"]]
         audit_v2_service.save_session(to_save)
+        try:
+            audit_v2_service.record_mapping_confirmation(session_id, update_req.correlations)
+        except Exception:
+            pass
     except Exception as exc:
         logger.warning(f"Error saving confirmed mapping to audit_v2_service: {exc}")
 
@@ -1189,6 +1193,10 @@ def confirm_rules_v2_endpoint(
             to_save["correlation"] = session["correlation"].model_dump()
         to_save["rules_v2"] = [r.model_dump() if hasattr(r, "model_dump") else r for r in req.rules]
         audit_v2_service.save_session(to_save)
+        try:
+            audit_v2_service.record_rules_confirmation(session_id, req.rules)
+        except Exception:
+            pass
     except Exception as exc:
         logger.warning(f"Error saving confirmed rules to audit_v2_service: {exc}")
 
@@ -1593,6 +1601,16 @@ def download_v2_custom_export(session_id: str, request: CustomExportRequest):
             session_id=session_id,
             request=request,
         )
+        try:
+            audit_v2_service.record_export_event(
+                session_id=session_id,
+                request=request.model_dump() if hasattr(request, "model_dump") else dict(request),
+                filename=filename,
+                filesize=len(content) if content else 0,
+            )
+        except Exception as e_err:
+            logger.warning(f"Failed to record export event to audit_v2_service: {e_err}")
+
         return Response(
             content=content,
             media_type=media_type,
@@ -1696,8 +1714,33 @@ def get_audit_v2_run(run_id: str):
 
 @router_v2.get("/audit/sessions")
 def list_audit_v2_sessions():
-    """Returns all persisted sessions."""
-    return audit_v2_service.list_sessions()
+    """Returns all persisted sessions with full 6-stage lifecycle, progress, and thoughts."""
+    return audit_v2_service.list_session_lifecycles()
+
+
+@router_v2.get("/audit/sessions/{session_id}")
+def get_audit_v2_session(session_id: str):
+    """Returns complete 6-stage lifecycle audit record for a single reconciliation session."""
+    lifecycle = audit_v2_service.get_session_lifecycle(session_id)
+    if not lifecycle:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found in audit ledger.")
+    return lifecycle
+
+
+@router_v2.post("/audit/sessions/{session_id}/resume")
+def resume_session_lifecycle(session_id: str):
+    """Returns destination workspace route to resume an incomplete or paused session at its active stage."""
+    lifecycle = audit_v2_service.get_session_lifecycle(session_id)
+    if not lifecycle:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found in audit ledger.")
+    return {
+        "session_id": session_id,
+        "current_stage": lifecycle["current_stage"],
+        "resume_stage": lifecycle["resume_stage"],
+        "resume_url": lifecycle["resume_url"],
+        "completed_stages_count": lifecycle["completed_stages_count"],
+        "total_stages": 6,
+    }
 
 
 @router_v2.post("/audit/runs/{run_id}/resume")
@@ -1708,8 +1751,8 @@ def resume_session_from_run(run_id: str):
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
     session_id = run.get("session_id")
     target_stage = run.get("current_stage") or "rules"
-    # Ensure stage is valid in 7-stage workflow
-    if target_stage == "audit":
+    # Ensure stage is valid in 6-stage workflow
+    if target_stage in ("audit", "near-matches", "exceptions", "policy"):
         target_stage = "rules"
     return {
         "session_id": session_id,

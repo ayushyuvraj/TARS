@@ -1,19 +1,19 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 2.0 Stage 6 Microsoft Excel Authentic Color Picker & Entire Column Formatting (11th September 2026)
+## Audit 2.0 Sovereign Statutory Workbench & Full-Bleed KPMG Experience (11th September 2026)
 
-- **Checkpoint Name**: `Reconciliation 2.0 Stage 6 Microsoft Excel Authentic Color Picker & Entire Column Formatting`
+- **Checkpoint Name**: `Audit 2.0 Sovereign Statutory Workbench & Full-Bleed KPMG Experience`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-stage-6-excel-color-picker-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-stage-6-visual-export-studio-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-11-audit-2-sovereign-workbench-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-audit-conversation-lifecycle-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
-- **Current Objective**: Optimizing Stage 1 dual ingestion and schema mapping from 25–30 seconds down to split seconds (<1.5s for 10k rows and sub-5s for 500k rows):
-  1. *Sub-30ms Streaming XLSX Extraction*: Replaced full-workbook openpyxl parsing in `FastExcelParser` with a zero-dependency `zipfile` streaming XML parser reading strictly top ~60 sample rows and `<dimension>` row bounds, dropping probe time from 4,200ms to 357ms on 10k x 223 column workbooks.
-  2. *Single-Pass Workflow Pipeline*: Eliminated duplicate file parsing in `SchemaMappingV2Workflow._direct_schema_correlation` by reconstructing profiles directly from state.
-  3. *Expanded Statutory & ERP Canonical Dictionary*: Added 28 comprehensive concepts across SAP, Oracle, Tally, Zoho, and statutory fields with C++ `rapidfuzz` token ratio matching, matching 98%+ of columns deterministically in <10ms.
-  4. *Parallel Context-Filtered LLM Correlation*: Concurrently processes any unresolved column chunks via `ThreadPoolExecutor` while scoping PR candidates to top conceptual matches to eliminate prompt token bloat.
-  5. *Optimized Background Pre-Caching*: Header probe in `_load_df_safely` uses streaming extraction to eliminate openpyxl duplicate full-file reads.
-  6. *Frontend Fluid Dynamics*: Removed hardcoded 5200ms minimum floor and artificial timeouts in `ReconciliationV2Workspace.tsx`, syncing UI animations to authentic agent thought timestamps for immediate split-second transition to Stage 2 (`Mapping 2.0`).
+- **Current Implementation Summary**:
+  1. *Full-Bleed Edge-to-Edge Architecture*: Eliminated the 1600px width constraint and massive 128px+ side gutters on `/audit-v2` by assigning `.workspace--audit-v2` in `App.tsx` and adding zero-gutter styling in `audit_v2.css`, allowing the workbench to expand smoothly to full monitor width.
+  2. *Two-Tier Executive Session Header*: Restructured `.v2-audit-detail-header` with a clean monospace Session ID badge (`SESSION demo-completed-6stages`) featuring 1-click clipboard copy, completion status badges, Section 16(2) statutory compliance stamp, and fixed-height `white-space: nowrap !important; flex-shrink: 0 !important;` action buttons (`Download Audit Manifest (JSON)` and `Re-open in Workspace`) completely eliminating vertical squashing and button line-wrapping.
+  3. *Statutory 6-Stage Milestone Ledger Matrix*: Integrated high-density accounting table directly below Executive Briefing showing all 6 stages simultaneously with statutory assertions, engine latencies, row conservation metrics, cryptographic proofs, and 1-click smooth jump scroll inspection.
+  4. *KPMG Sovereign Palette Integration*: Replaced neon green card borders with official KPMG Deep Navy (`#00338d`) and Cobalt (`#005eb8`), updated milestone indicators to KPMG Navy/Cobalt gradients, and aligned 4-pillar cards with KPMG brand tokens.
+  5. *Populated Developer Trace & Raw State JSON Drawer*: Verified rich, genuine state JSON payloads across all 6 stages with copy and search capabilities.
+  6. *Passive Event Hooks & Test Suite*: Preserved passive telemetry recorders in `reconciliations_v2.py` and `audit_v2_service.py` with 100% passing tests.
 
 ---
 

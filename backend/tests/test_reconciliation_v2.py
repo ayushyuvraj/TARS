@@ -569,5 +569,64 @@ def test_v2_export_endpoints():
     assert "Custom_Rec_ID|Status_Badge|Supplier_GSTIN|Tax_Disparity_INR" in dsv_text
 
 
+def test_audit_v2_session_lifecycle():
+    app = create_app()
+    client = TestClient(app)
+
+    # 1. Test listing session lifecycles
+    sessions_res = client.get("/api/reconciliations-v2/audit/sessions")
+    assert sessions_res.status_code == 200
+    sessions = sessions_res.json()
+    assert len(sessions) >= 2
+
+    # Check for completed session (6 of 6)
+    completed_sess = next((s for s in sessions if s["session_id"] == "demo-completed-6stages"), None)
+    assert completed_sess is not None
+    assert completed_sess["total_stages"] == 6
+    assert completed_sess["completed_stages_count"] == 6
+    assert completed_sess["is_completed"] is True
+    assert completed_sess["overall_status"] == "COMPLETED"
+    assert "SECTION 16(2)" in completed_sess["statutory_compliance_badge"]
+
+    # Verify Stage 1 Setup
+    stg1 = completed_sess["stages"]["setup"]
+    assert stg1["status"] == "COMPLETED"
+    assert "files" in stg1
+
+    # Verify Stage 6 Export & Excel Colors
+    stg6 = completed_sess["stages"]["export"]
+    assert stg6["status"] == "COMPLETED"
+    assert completed_sess["export_customization"]["header_colors_applied"]["LocationGstin"] == "#1F4E78"
+    assert completed_sess["export_customization"]["fill_colors_applied"]["LocationGstin"] == "#D9E1F2"
+    assert len(completed_sess["export_customization"]["dispatched_files"]) >= 1
+
+    # Check for incomplete session stuck at Stage 3 (3 of 6)
+    stuck_sess = next((s for s in sessions if s["session_id"] == "demo-stuck-stage3"), None)
+    assert stuck_sess is not None
+    assert stuck_sess["total_stages"] == 6
+    assert stuck_sess["completed_stages_count"] == 3
+    assert stuck_sess["is_completed"] is False
+    assert stuck_sess["resume_stage"] == "rules"
+    assert stuck_sess["resume_url"] == "/reconciliations-v2/demo-stuck-stage3/rules"
+
+    # 2. Test fetching single session lifecycle
+    single_res = client.get("/api/reconciliations-v2/audit/sessions/demo-completed-6stages")
+    assert single_res.status_code == 200
+    single_data = single_res.json()
+    assert single_data["session_id"] == "demo-completed-6stages"
+    assert len(single_data["thought_process"]) >= 3
+    assert len(single_data["internal_functioning"]) >= 4
+
+    # 3. Test resuming session lifecycle
+    resume_res = client.post("/api/reconciliations-v2/audit/sessions/demo-stuck-stage3/resume")
+    assert resume_res.status_code == 200
+    resume_data = resume_res.json()
+    assert resume_data["session_id"] == "demo-stuck-stage3"
+    assert resume_data["resume_stage"] == "rules"
+    assert resume_data["resume_url"] == "/reconciliations-v2/demo-stuck-stage3/rules"
+    assert resume_data["completed_stages_count"] == 3
+
+
+
 
 

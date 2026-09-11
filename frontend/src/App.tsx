@@ -1559,6 +1559,8 @@ export default function App() {
               ? "workspace workspace--dashboard"
               : loc.pathname.startsWith("/reconciliations-v2")
               ? "workspace workspace--v2"
+              : loc.pathname.startsWith("/audit-v2")
+              ? "workspace workspace--audit-v2"
               : "workspace"
           }
         >
