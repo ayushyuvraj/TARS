@@ -1117,7 +1117,11 @@ class ExportV2Service:
 
                     try:
                         op = cr.operator.upper()
-                        if op == "CONTAINS":
+                        if op in ("ENTIRE_COLUMN", "ALWAYS"):
+                            formula = ["TRUE"]
+                            rule = FormulaRule(formula=formula, stopIfTrue=True, fill=rule_fill, font=rule_font)
+                            ws_ledger.conditional_formatting.add(cell_range, rule)
+                        elif op == "CONTAINS":
                             # openpyxl FormulaRule for substring contains
                             formula = [f'ISNUMBER(SEARCH("{cr.value1}",{col_letter}2))']
                             rule = FormulaRule(formula=formula, stopIfTrue=True, fill=rule_fill, font=rule_font)

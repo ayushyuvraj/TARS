@@ -9,6 +9,7 @@ import {
   CustomExportRequest,
 } from "./api_v2";
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
+import { ExcelColorPicker } from "./ExcelColorPicker";
 import "./summary_export_v2.css";
 import {
   Sparkles,
@@ -66,6 +67,7 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
   // State: Conditional Formatting Rules
   const [conditionalRules, setConditionalRules] = useState<ConditionalFormattingRule[]>([]);
   const [showRuleModal, setShowRuleModal] = useState<boolean>(false);
+  const [isEntireColumn, setIsEntireColumn] = useState<boolean>(false);
   const [newRule, setNewRule] = useState<ConditionalFormattingRule>({
     id: "",
     column_id: "calc_tax_variance",
@@ -231,13 +233,30 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
   const handleAddRule = () => {
     const ruleToAdd: ConditionalFormattingRule = {
       ...newRule,
+      operator: isEntireColumn ? "ENTIRE_COLUMN" : newRule.operator,
+      value1: isEntireColumn ? "ALL" : newRule.value1,
       id: `rule_${Date.now()}`,
     };
     setConditionalRules((prev) => [...prev, ruleToAdd]);
+    if (isEntireColumn) {
+      setActiveColumns((prev) =>
+        prev.map((c) =>
+          c.id === newRule.column_id ? { ...c, fill_color: newRule.bg_color } : c
+        )
+      );
+    }
     setShowRuleModal(false);
   };
 
   const removeRule = (ruleId: string) => {
+    const ruleToRemove = conditionalRules.find((r) => r.id === ruleId);
+    if (ruleToRemove && ruleToRemove.operator === "ENTIRE_COLUMN") {
+      setActiveColumns((prev) =>
+        prev.map((c) =>
+          c.id === ruleToRemove.column_id ? { ...c, fill_color: undefined } : c
+        )
+      );
+    }
     setConditionalRules((prev) => prev.filter((r) => r.id !== ruleId));
   };
 
@@ -294,6 +313,9 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
   const evaluateCellHighlight = (colId: string, cellVal: any) => {
     for (const rule of conditionalRules) {
       if (rule.column_id === colId) {
+        if (rule.operator === "ENTIRE_COLUMN" || rule.operator === "ALWAYS") {
+          return { backgroundColor: rule.bg_color, color: rule.text_color, fontWeight: rule.is_bold ? "bold" : "normal" };
+        }
         const valStr = String(cellVal ?? "");
         const numVal = parseFloat(valStr.replace(/[^0-9.-]+/g, ""));
         const targetNum = parseFloat(rule.value1);
@@ -634,7 +656,10 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button
-                onClick={() => setShowRuleModal(true)}
+                onClick={() => {
+                  setIsEntireColumn(false);
+                  setShowRuleModal(true);
+                }}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -665,8 +690,12 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
                 {conditionalRules.map((rule) => (
                   <div key={rule.id} className="v2-conditional-rule-row">
                     <span style={{ fontWeight: 700, color: "#00338d" }}>{rule.column_id}</span>
-                    <span style={{ color: "#64748b" }}>{rule.operator}</span>
-                    <strong style={{ color: "#0f172a" }}>"{rule.value1}"</strong>
+                    <span style={{ color: "#64748b" }}>
+                      {rule.operator === "ENTIRE_COLUMN" ? "Entire Column" : rule.operator}
+                    </span>
+                    {rule.operator !== "ENTIRE_COLUMN" && (
+                      <strong style={{ color: "#0f172a" }}>"{rule.value1}"</strong>
+                    )}
                     <div
                       style={{
                         padding: "2px 8px",
@@ -917,6 +946,8 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
             alignItems: "center",
             justifyContent: "center",
             zIndex: 1000,
+            overflowY: "auto",
+            padding: "30px 16px",
           }}
         >
           <div
@@ -939,11 +970,22 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
             </p>
 
             <div>
-              <label style={{ fontSize: 11, fontWeight: 700, color: "#475569" }}>Apply to Column</label>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "#475569" }}>Apply to Column</label>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, fontWeight: 600, color: "#0f172a", cursor: "pointer", userSelect: "none" }}>
+                  <input
+                    type="checkbox"
+                    checked={isEntireColumn}
+                    onChange={(e) => setIsEntireColumn(e.target.checked)}
+                    style={{ cursor: "pointer" }}
+                  />
+                  Entire Column
+                </label>
+              </div>
               <select
                 value={newRule.column_id}
                 onChange={(e) => setNewRule({ ...newRule, column_id: e.target.value })}
-                style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #cbd5e1", marginTop: 4 }}
+                style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #cbd5e1" }}
               >
                 {activeColumns.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -953,13 +995,14 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
               </select>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, opacity: isEntireColumn ? 0.45 : 1 }}>
               <div>
                 <label style={{ fontSize: 11, fontWeight: 700, color: "#475569" }}>Condition</label>
                 <select
+                  disabled={isEntireColumn}
                   value={newRule.operator}
                   onChange={(e: any) => setNewRule({ ...newRule, operator: e.target.value })}
-                  style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #cbd5e1", marginTop: 4 }}
+                  style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #cbd5e1", marginTop: 4, cursor: isEntireColumn ? "not-allowed" : "pointer" }}
                 >
                   <option value="CONTAINS">Contains Text</option>
                   <option value="EQUALS">Exact Equal</option>
@@ -971,52 +1014,47 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
                 <label style={{ fontSize: 11, fontWeight: 700, color: "#475569" }}>Match Value</label>
                 <input
                   type="text"
-                  value={newRule.value1}
+                  disabled={isEntireColumn}
+                  value={isEntireColumn ? "All cells (Entire Column)" : newRule.value1}
                   onChange={(e) => setNewRule({ ...newRule, value1: e.target.value })}
                   placeholder="e.g. 100 or EXACT"
-                  style={{ width: "100%", padding: 8, fontSize: 12, borderRadius: 6, border: "1px solid #cbd5e1", marginTop: 4, boxSizing: "border-box" }}
+                  style={{
+                    width: "100%",
+                    padding: 8,
+                    fontSize: 12,
+                    borderRadius: 6,
+                    border: "1px solid #cbd5e1",
+                    marginTop: 4,
+                    boxSizing: "border-box",
+                    cursor: isEntireColumn ? "not-allowed" : "text",
+                    backgroundColor: isEntireColumn ? "#f1f5f9" : "#ffffff",
+                    color: isEntireColumn ? "#64748b" : "#0f172a",
+                  }}
                 />
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: "#475569" }}>Background Fill</label>
-                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                  {["#FEE2E2", "#DCFCE7", "#FEF3C7", "#EDE9FE", "#DBEAFE"].map((c) => (
-                    <div
-                      key={c}
-                      onClick={() => setNewRule({ ...newRule, bg_color: c })}
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 4,
-                        backgroundColor: c,
-                        border: newRule.bg_color === c ? "2px solid #00338D" : "1px solid #cbd5e1",
-                        cursor: "pointer",
-                      }}
-                    />
-                  ))}
-                </div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "#475569", display: "block", marginBottom: 6 }}>
+                  Background Fill
+                </label>
+                <ExcelColorPicker
+                  label="Background Fill"
+                  color={newRule.bg_color}
+                  onChange={(c) => setNewRule({ ...newRule, bg_color: c })}
+                  allowNoFill
+                />
               </div>
               <div>
-                <label style={{ fontSize: 11, fontWeight: 700, color: "#475569" }}>Text Color</label>
-                <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                  {["#991B1B", "#166534", "#92400E", "#5B21B6", "#1E40AF"].map((c) => (
-                    <div
-                      key={c}
-                      onClick={() => setNewRule({ ...newRule, text_color: c })}
-                      style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 4,
-                        backgroundColor: c,
-                        border: newRule.text_color === c ? "2px solid #000" : "1px solid #cbd5e1",
-                        cursor: "pointer",
-                      }}
-                    />
-                  ))}
-                </div>
+                <label style={{ fontSize: 11, fontWeight: 700, color: "#475569", display: "block", marginBottom: 6 }}>
+                  Text Color
+                </label>
+                <ExcelColorPicker
+                  label="Text Color"
+                  color={newRule.text_color}
+                  onChange={(c) => setNewRule({ ...newRule, text_color: c })}
+                />
               </div>
             </div>
 

@@ -576,7 +576,7 @@ export interface ActiveExportColumn {
 export interface ConditionalFormattingRule {
   id: string;
   column_id: string;
-  operator: "CONTAINS" | "EQUALS" | "GREATER_THAN" | "LESS_THAN" | "BETWEEN" | "IS_EMPTY";
+  operator: "CONTAINS" | "EQUALS" | "GREATER_THAN" | "LESS_THAN" | "BETWEEN" | "IS_EMPTY" | "ENTIRE_COLUMN" | "ALWAYS" | string;
   value1: string;
   value2?: string | null;
   bg_color: string;

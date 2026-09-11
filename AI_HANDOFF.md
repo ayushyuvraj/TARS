@@ -1,11 +1,11 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 2.0 Stage 6 Custom Visual Export Studio & Financial Ledger Designer (11th September 2026)
+## Reconciliation 2.0 Stage 6 Microsoft Excel Authentic Color Picker & Entire Column Formatting (11th September 2026)
 
-- **Checkpoint Name**: `Reconciliation 2.0 Stage 6 Custom Visual Export Studio & Financial Ledger Designer`
+- **Checkpoint Name**: `Reconciliation 2.0 Stage 6 Microsoft Excel Authentic Color Picker & Entire Column Formatting`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-stage-6-visual-export-studio-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-stage-1-subsecond-ingestion-breakthrough`
+- **Checkpoint Tag**: `tars-2026-09-11-stage-6-excel-color-picker-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-stage-6-visual-export-studio-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Objective**: Optimizing Stage 1 dual ingestion and schema mapping from 25–30 seconds down to split seconds (<1.5s for 10k rows and sub-5s for 500k rows):
   1. *Sub-30ms Streaming XLSX Extraction*: Replaced full-workbook openpyxl parsing in `FastExcelParser` with a zero-dependency `zipfile` streaming XML parser reading strictly top ~60 sample rows and `<dimension>` row bounds, dropping probe time from 4,200ms to 357ms on 10k x 223 column workbooks.
