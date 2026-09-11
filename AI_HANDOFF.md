@@ -1,27 +1,24 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 2.0 Copilot Persistent Memory & Cross-Session Transition Continuity (12th September 2026)
+## Reconciliation 2.0 Copilot KPMG Multi-Shade Blue Revamp & Agentic UI (12th September 2026)
 
-- **Checkpoint Name**: `Reconciliation 2.0 Copilot Persistent Memory & Cross-Session Transition Continuity`
+- **Checkpoint Name**: `TARS Copilot KPMG Executive Multi-Shade Blue Revamp & Persistent FAB Architecture`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-12-copilot-persistent-memory-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-recon-v2-actionable-copilot-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-12-kpmg-copilot-revamp-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-12-copilot-persistent-memory-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
-  1. *Actionable Copilot Engine*: Engineered `CopilotActionEngine` (`backend/app/services/copilot_action_engine.py`) with sub-second deterministic intent parsing for conversational commands: `NAVIGATE_STAGE` (forward/backward/direct jumps), `UPDATE_MAPPING` (mapping and unmapping columns), `ADD_RULE` & `TOGGLE_RULE` (live rules injection & activation), and `RUN_RECONCILIATION`.
-  2. *Context-Grounded Explanations & Streaming*: Real-time Server-Sent Events (SSE) with `stream_invoke` streaming on LLM provider boundary, contextual "what is this screen" stage breakdowns, and thinking indicators.
-  3. *Autonomous Reconcile Pipeline*: Added `POST /api/reconciliations-v2/copilot/auto-reconcile` with dual-workbook GST sanity checks, streaming XLSX probe, automated schema coupling, waterfall execution, and zero-intervention handoff to Results Matrix. Hardened runtime imports (`json`, `datetime`, `AsyncGenerator`, `FastExcelParser`), fixed correlation attribute mapping, and wrapped stream in error-resilient exception handlers.
-  4. *Frontend Copilot Bridge*: Created `frontend/src/copilot_v2_bridge.ts` providing reactive telemetry from Stages 1-6 into `CopilotPanel.tsx` and dispatching real-time actions to `DynamicMappingGridV2.tsx`, `ReconciliationV2RulesStage.tsx`, and `ReconciliationV2ResultsStage.tsx`. Added non-blocking error handling to eliminate hanging V1 LLM fallbacks during file upload.
-  5. *Audit 2.0 Integration*: Implemented `record_step` and `get_session_steps` in `AuditV2Service`, recording all Copilot interventions under actor `"AI_COPILOT"` with timestamps, parameters, and results.
-  6. *Multi-Layer Domain Guardrails (Product / GST / Enterprise Scoping)*: Added dual-layer domain protection in `CopilotActionEngine` (`is_out_of_domain` and prompt guardrail injection) and synchronized `CopilotService` (V1) to strictly deflect out-of-domain questions (cooking recipes, entertainment, sports, general trivia, weather, unrelated code) with a fast, zero-token deflection and thought notification (`Domain guardrail engaged`). Implemented strict word-boundary token matching (`\b`) to eliminate false positives on terms like `"pr"` in `"president"`.
-  7. *Dynamic Row Counting & Hardcoding Elimination*: Resolved hardcoded `10,000` / `10,500` fallback constants across `FastExcelParser`, `AuditV2Service`, `reconciliations_v2.py`, `Audit2Workspace.tsx`, and `ReconciliationV2SummaryStage.tsx`. FastExcelParser now performs ultra-fast binary tag scanning (<15ms) when openxml `<dimension>` tags are missing, computing exact row counts for arbitrary workbook sizes (e.g. 1,000 rows GSTR / 1,050 rows PR). Audit 2.0 narrative, manifest, and mathematical conservation now dynamically pull exact row counts from session state and Stage 4 execution results.
-  8. *Rigorous Verification*: Validated with dedicated test suite (`backend/tests/test_copilot_v2_actions.py` - 13/13 passed including cross-session and cross-stage transition tests, out-of-domain refusals, greetings, and in-domain GST/KPMG acceptance), core V2 suite (`test_reconciliation_v2.py` - 11/11 passed, total 24/24 backend tests passed), and zero-error production frontend build (`npm run build` in 1.02s).
-  9. *Persistent Memory & Cross-Session Transition Continuity*:
-     - Implemented unified local storage store `tars_copilot_unified_history_v2` in `CopilotPanel.tsx` ensuring conversation memory persists across drawer open/close (clicking outside backdrop), screen changes, route transitions, and browser reloads until manually cleared via the "Clear" button.
-     - Kept `<CopilotPanel />` mounted in DOM in `App.tsx` with `display: copilotOpen ? "flex" : "none"` and `pointerEvents: copilotOpen ? "auto" : "none"` to eliminate remount latency and preserve draft inputs and scroll position.
-     - Extended `CopilotMessage` with `CopilotMessageContext` (`sessionId`, `stageKey`, `stageLabel`, `stageNumber`, `routePath`, `timestamp`).
-     - Rendered inline visual **Context Switched** dividers in the chat timeline when jumping across sessions or stages, along with subtle message context chips.
-     - Engineered background cross-session and cross-stage transition detection in `CopilotActionEngine.stream_response` to explicitly acknowledge shifts in conversation turns (e.g. *(Noting that your previous question pertained to Session '...' [Stage], we are now analyzing Session '...' [Stage].)*).
+  1. *Circular Floating Action Button (FAB Launcher)*: Replaced horizontal HUD pill with a sleek circular floating action button (56px × 56px, rounded 50%) at `bottom: 24px; right: 24px` with live emerald online beacon (`#10b981`). Workspace stays 100% full width with zero page reflow.
+  2. *Overlapping Floating Card Window (`420px × 640px`)*: Clicking the FAB opens an overlapping floating card window (`z-index: 1500`) with zero workspace reflow, rounded 16px corners, obsidian backdrop (`#070e17`), and subtle Atlantic Blue border.
+  3. *Prominent Action Buttons*: Three prominently styled action buttons in header: `[ 🗑 Clear ]` (thread cleanup), `[ ⛶ Maximize ]` (fullscreen console), and `[ ✕ Close ]` (minimize to FAB). Deduplicated redundant header icons in fullscreen mode.
+  4. *Fullscreen Workstation Sidebar Collapse & Claude Padding*: Added a one-click sidebar collapse button `[ ◫ ]` (`Ctrl+B`) in the telemetry header bar. Built an authentic Claude Code / ChatGPT / Codex layout where messages and bottom input box are centered in an ergonomic reading column (`max-width: 860px`) with generous left/right breathing room.
+  5. *KPMG Executive Multi-Shade Blue Palette*: Replaced harsh monochromatic electric cyan (`#38bdf8`) and blinding cerulean (`#0369a1`) with the official KPMG enterprise color hierarchy:
+     - **KPMG Midnight Navy (`#070E17` / `#0C1626` / `#112035`)**: Eye-friendly, comfortable dark canvas, cards, and elevated toolbars.
+     - **KPMG Heritage Navy (`#00338D`) to Cobalt Blue (`#005EB8`)**: User speech bubble gradient with soft Glacier Sky (`#72CDF4`) rim.
+     - **KPMG Atlantic Blue (`#0091DA`)**: Live telemetry step glyphs (`›`), spinners, and crisp boundary lines.
+     - **KPMG Innovation Violet (`#483698` / `#A855F7`)**: Digital Lighthouse AI companion accent for reasoning glyphs and thought accordions.
+  6. *Strict Invariant Enforcement*: Only `copilot_agentic.css` and inline icon variables in `CopilotPanel.tsx` were modified. No backend logic, reconciliation matching algorithms, database schemas, or other product components were touched.
+  7. *Full Verification*: Verified via browser subagent across floating card, fullscreen console, sidebar collapse, speech bubbles, and keyboard shortcuts. All backend unit tests remain 24/24 passing.
 
 ---
 

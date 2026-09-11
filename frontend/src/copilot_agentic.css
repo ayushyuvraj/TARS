@@ -1,0 +1,1237 @@
+/* ==========================================================================
+   TARS COPILOT — KPMG EXECUTIVE AGENTIC DESIGN SYSTEM
+   Curated Multi-Shade Blue Palette based on KPMG Official Brand Architecture:
+   - KPMG Midnight Navy (#070E17 / #0C1626 / #112035): Deep comfortable canvas
+   - KPMG Heritage Navy (#00338D): Formal brand signature & framing
+   - KPMG Cobalt Blue (#005EB8): Primary user action & speech bubble
+   - KPMG Atlantic Blue (#0091DA): Pinpoint highlight, live telemetry & borders
+   - KPMG Glacier Sky (#72CDF4): Soft pastel blue for code, tags & durations
+   - KPMG Innovation Violet (#483698 / #A855F7): Digital Lighthouse AI accent
+   - KPMG Statutory Emerald (#009A44 / #10B981): Online & integrity indicators
+   ========================================================================== */
+
+:root {
+  /* KPMG Theme Hierarchy */
+  --kpmg-midnight-canvas: #070e17;      /* Primary comfortable dark workspace canvas */
+  --kpmg-midnight-card: #0c1626;        /* Structural header, card, launcher background */
+  --kpmg-midnight-elevated: #112035;    /* Interactive buttons, telemetry bars, toolbars */
+  --kpmg-midnight-recess: #08111e;      /* Recessed textareas, thought details, code blocks */
+  
+  --kpmg-heritage-navy: #00338d;        /* KPMG Brand Signature Heritage Navy */
+  --kpmg-cobalt: #005eb8;               /* KPMG Primary Corporate Blue */
+  --kpmg-cobalt-hover: #0072ce;         /* Active hover state for primary action */
+  --kpmg-atlantic: #0091da;             /* KPMG Atlantic Blue (accents, live glyphs) */
+  --kpmg-glacier: #72cdf4;              /* KPMG Glacier Sky (soft pastel blue) */
+  
+  --kpmg-violet: #483698;               /* KPMG Innovation Violet (Digital Lighthouse) */
+  --kpmg-violet-bright: #a855f7;        /* Soft violet accent for reasoning glyphs */
+  
+  --kpmg-emerald: #009a44;              /* KPMG Statutory Compliance Green */
+  --kpmg-emerald-bright: #10b981;       /* Online indicator */
+  
+  --kpmg-border-subtle: rgba(255, 255, 255, 0.07);
+  --kpmg-border-blue: rgba(0, 145, 218, 0.22);
+  --kpmg-border-blue-focus: rgba(0, 94, 184, 0.55);
+  
+  --kpmg-text-primary: #f8fafc;
+  --kpmg-text-secondary: #cbd5e1;
+  --kpmg-text-muted: #94a3b8;
+}
+
+/* --------------------------------------------------------------------------
+   1. CIRCULAR FLOATING ACTION BUTTON (OpenAI Support Style FAB Launcher)
+   -------------------------------------------------------------------------- */
+.tars-copilot-fab-launcher {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 1000;
+  width: 56px;
+  height: 56px;
+  min-width: 56px !important;
+  min-height: 56px !important;
+  max-width: 56px !important;
+  max-height: 56px !important;
+  border-radius: 50% !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: var(--kpmg-midnight-card, #0c1626) !important;
+  border: 1px solid var(--kpmg-border-blue, rgba(0, 145, 218, 0.35)) !important;
+  box-shadow: 0 12px 32px -4px rgba(0, 12, 28, 0.75), 0 0 18px rgba(0, 94, 184, 0.22) !important;
+  cursor: pointer !important;
+  color: var(--kpmg-text-primary, #f8fafc) !important;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  padding: 0 !important;
+  outline: none;
+}
+
+.tars-copilot-fab-launcher:hover {
+  transform: scale(1.08) translateY(-2px) !important;
+  background: var(--kpmg-midnight-elevated, #112035) !important;
+  border-color: var(--kpmg-atlantic, #0091da) !important;
+  box-shadow: 0 16px 36px -4px rgba(0, 12, 28, 0.85), 0 0 24px rgba(0, 145, 218, 0.35) !important;
+}
+
+.tars-copilot-fab-launcher:active {
+  transform: scale(0.96) !important;
+}
+
+.tars-copilot-fab-launcher svg {
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  min-height: 24px !important;
+  stroke: var(--kpmg-glacier, #72cdf4) !important;
+  display: block !important;
+  transition: stroke 0.18s ease, transform 0.18s ease !important;
+}
+
+.tars-copilot-fab-launcher:hover svg {
+  stroke: #ffffff !important;
+  transform: scale(1.05);
+}
+
+.tars-copilot-fab-pulse {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--kpmg-emerald-bright, #10b981);
+  border: 2px solid var(--kpmg-midnight-card, #0c1626);
+}
+
+.tars-copilot-fab-pulse::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.6;
+  animation: copilot-pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+/* Ambient Floating HUD Pill (Fallback / Legacy) */
+.tars-copilot-pill-launcher {
+  position: fixed;
+  bottom: 22px;
+  right: 24px;
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px 8px 12px;
+  background: rgba(12, 22, 38, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--kpmg-border-blue, rgba(0, 145, 218, 0.25));
+  border-radius: 9999px;
+  box-shadow: 0 12px 32px -4px rgba(0, 12, 28, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+}
+
+.tars-copilot-pill-launcher:hover {
+  transform: translateY(-2px);
+  background: rgba(17, 32, 53, 0.96);
+  border-color: rgba(0, 145, 218, 0.5);
+  box-shadow: 0 16px 36px -4px rgba(0, 51, 141, 0.3), 0 0 16px rgba(0, 145, 218, 0.22);
+}
+
+.tars-copilot-pill-launcher:active {
+  transform: translateY(0);
+}
+
+.tars-copilot-pill-pulse {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--kpmg-emerald-bright, #10b981);
+}
+
+.tars-copilot-pill-pulse.is-busy {
+  background: var(--kpmg-violet-bright, #a855f7);
+}
+
+.tars-copilot-pill-pulse::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: inherit;
+  opacity: 0.5;
+  animation: copilot-pulse 2s infinite cubic-bezier(0.4, 0, 0.6, 1);
+}
+
+@keyframes copilot-pulse {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.6);
+    opacity: 0;
+  }
+}
+
+.tars-copilot-pill-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.tars-copilot-pill-badge {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(0, 94, 184, 0.18);
+  color: var(--kpmg-glacier, #72cdf4);
+  border: 1px solid var(--kpmg-border-blue, rgba(0, 145, 218, 0.25));
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tars-copilot-pill-shortcut {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+  color: var(--kpmg-text-muted, #94a3b8);
+  padding: 2px 5px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* --------------------------------------------------------------------------
+   2. APPLICATION SPLIT VIEW CONTAINER (Parallel Dock Architecture)
+   -------------------------------------------------------------------------- */
+.app-viewport-layout {
+  display: flex;
+  flex: 1;
+  min-height: calc(100vh - 56px);
+  position: relative;
+  overflow: hidden;
+}
+
+.app-viewport-layout.is-parallel {
+  /* Workspace dynamically resizes to share screen with Copilot */
+}
+
+.app-viewport-layout > .workspace {
+  flex: 1;
+  min-width: 0;
+  transition: width 0.25s cubic-bezier(0.16, 1, 0.3, 1), flex 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* --------------------------------------------------------------------------
+   3. COPILOT ROOT PANEL & DISPLAY MODES
+   -------------------------------------------------------------------------- */
+.tars-copilot-container {
+  display: flex;
+  flex-direction: column;
+  background: var(--kpmg-midnight-canvas, #070e17);
+  color: var(--kpmg-text-secondary, #cbd5e1);
+  box-sizing: border-box;
+  z-index: 950;
+  border-left: 1px solid var(--kpmg-border-blue, rgba(0, 145, 218, 0.16));
+  box-shadow: -10px 0 35px -5px rgba(0, 12, 28, 0.6);
+  transition: all 0.26s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Mode: Overlapping Floating Card Window (OpenAI Support Style) */
+.tars-copilot-container.mode-floating {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 420px;
+  height: 640px;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  z-index: 1500;
+  border-radius: 16px;
+  border: 1px solid var(--kpmg-border-blue, rgba(0, 145, 218, 0.28));
+  box-shadow: 0 24px 64px -8px rgba(0, 10, 24, 0.85), 0 0 24px rgba(0, 94, 184, 0.2);
+  overflow: hidden;
+  animation: copilotCardEnter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes copilotCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.mode-floating .tars-copilot-header {
+  border-top-left-radius: 15px;
+  border-top-right-radius: 15px;
+  padding: 11px 16px;
+  background: var(--kpmg-midnight-card, #0c1626);
+}
+
+.mode-floating .tars-copilot-telemetry-sidebar {
+  display: none !important;
+}
+
+.mode-floating .tars-copilot-body {
+  display: flex !important;
+  flex: 1;
+  overflow: hidden;
+}
+
+.mode-floating .tars-copilot-chat-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--kpmg-midnight-canvas, #070e17);
+}
+
+.mode-floating .tars-copilot-messages {
+  padding: 16px;
+  gap: 16px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.mode-floating .tars-copilot-footer {
+  padding: 10px 14px 14px 14px;
+  background: var(--kpmg-midnight-card, #0c1626);
+  border-top: 1px solid rgba(0, 145, 218, 0.12);
+}
+
+/* Mode A: Parallel Side-by-Side Dock (Legacy fallback) */
+.tars-copilot-container.mode-parallel {
+  position: relative;
+  width: 440px;
+  min-width: 380px;
+  max-width: 600px;
+  height: calc(100vh - 56px);
+  flex-shrink: 0;
+}
+
+/* Mode B: Maximized Fullscreen Console Workstation */
+.tars-copilot-container.mode-fullscreen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 2000;
+  border-left: none;
+}
+
+/* Mode C: Classic Slide-out Drawer (with overlay) */
+.tars-copilot-container.mode-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 480px;
+  max-width: 100vw;
+  z-index: 1500;
+}
+
+/* --------------------------------------------------------------------------
+   4. COPILOT HEADER (Claude Code / Codex Minimalist Toolbar)
+   -------------------------------------------------------------------------- */
+.tars-copilot-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  background: var(--kpmg-midnight-card, #0c1626);
+  border-bottom: 1px solid rgba(0, 145, 218, 0.14);
+  flex-shrink: 0;
+}
+
+.tars-copilot-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.tars-copilot-brand-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--kpmg-heritage-navy, #00338d) 0%, var(--kpmg-violet, #483698) 100%);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 51, 141, 0.4);
+}
+
+.tars-copilot-header-title {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--kpmg-text-primary, #f8fafc);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tars-copilot-header-status {
+  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tars-copilot-header-status.is-thinking {
+  background: rgba(168, 85, 247, 0.14);
+  color: #c084fc;
+  border-color: rgba(168, 85, 247, 0.3);
+}
+
+.tars-copilot-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  border: 1px solid #23395d !important;
+  background: var(--kpmg-midnight-elevated, #112035) !important;
+  color: var(--kpmg-text-primary, #f8fafc) !important;
+  cursor: pointer !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn svg {
+  width: 17px !important;
+  height: 17px !important;
+  min-width: 17px !important;
+  min-height: 17px !important;
+  stroke: var(--kpmg-text-primary, #f8fafc) !important;
+  color: var(--kpmg-text-primary, #f8fafc) !important;
+  display: block !important;
+  transition: stroke 0.15s ease !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn:hover {
+  background: #192d4a !important;
+  border-color: var(--kpmg-atlantic, #0091da) !important;
+  color: var(--kpmg-glacier, #72cdf4) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0, 12, 28, 0.6), 0 0 10px rgba(0, 145, 218, 0.25) !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn:hover svg {
+  stroke: var(--kpmg-glacier, #72cdf4) !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn:active {
+  transform: translateY(0) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn.is-active {
+  background: rgba(0, 94, 184, 0.25) !important;
+  color: var(--kpmg-glacier, #72cdf4) !important;
+  border-color: var(--kpmg-atlantic, #0091da) !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn.tars-copilot-btn-clear:hover {
+  border-color: rgba(248, 113, 113, 0.7) !important;
+  color: #fca5a5 !important;
+  background: #7f1d1d !important;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 10px rgba(239, 68, 68, 0.35) !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn.tars-copilot-btn-clear:hover svg {
+  stroke: #ffffff !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn.tars-copilot-btn-close:hover {
+  border-color: var(--kpmg-text-muted, #94a3b8) !important;
+  background: #223758 !important;
+  color: #ffffff !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-icon-btn.tars-copilot-btn-close:hover svg {
+  stroke: #ffffff !important;
+}
+
+/* Sidebar toggle button in Header */
+.tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  border: 1px solid #23395d !important;
+  background: var(--kpmg-midnight-elevated, #112035) !important;
+  color: var(--kpmg-text-primary, #f8fafc) !important;
+  cursor: pointer !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.12) !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  margin-right: 6px;
+}
+
+.tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn svg {
+  width: 17px !important;
+  height: 17px !important;
+  min-width: 17px !important;
+  min-height: 17px !important;
+  stroke: var(--kpmg-text-primary, #f8fafc) !important;
+  color: var(--kpmg-text-primary, #f8fafc) !important;
+  display: block !important;
+  transition: stroke 0.15s ease !important;
+}
+
+.tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn:hover {
+  background: #192d4a !important;
+  border-color: var(--kpmg-atlantic, #0091da) !important;
+  color: var(--kpmg-glacier, #72cdf4) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: 0 4px 12px rgba(0, 12, 28, 0.6), 0 0 10px rgba(0, 145, 218, 0.25) !important;
+}
+
+.tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn:hover svg {
+  stroke: var(--kpmg-glacier, #72cdf4) !important;
+}
+
+.tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn.is-collapsed {
+  background: rgba(0, 94, 184, 0.25) !important;
+  border-color: var(--kpmg-atlantic, #0091da) !important;
+}
+
+.tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn.is-collapsed svg {
+  stroke: var(--kpmg-glacier, #72cdf4) !important;
+}
+
+/* Sidebar inner collapse icon button */
+button.tars-copilot-sidebar-collapse-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  padding: 0 !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: var(--kpmg-text-muted, #94a3b8) !important;
+  cursor: pointer !important;
+  transition: all 0.16s ease !important;
+}
+
+button.tars-copilot-sidebar-collapse-btn svg {
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  stroke: var(--kpmg-text-muted, #94a3b8) !important;
+  display: block !important;
+}
+
+button.tars-copilot-sidebar-collapse-btn:hover {
+  background: rgba(0, 94, 184, 0.25) !important;
+  border-color: var(--kpmg-atlantic, #0091da) !important;
+}
+
+button.tars-copilot-sidebar-collapse-btn:hover svg {
+  stroke: var(--kpmg-glacier, #72cdf4) !important;
+}
+
+/* --------------------------------------------------------------------------
+   5. STAGE TELEMETRY BAR & ACTIVE CONTEXT BANNER
+   -------------------------------------------------------------------------- */
+.tars-copilot-context-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 16px;
+  background: #091322;
+  border-bottom: 1px solid rgba(0, 145, 218, 0.1);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.tars-copilot-stage-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+  font-size: 10.5px;
+  color: var(--kpmg-text-muted, #94a3b8);
+}
+
+.tars-copilot-stage-badge strong {
+  color: var(--kpmg-glacier, #72cdf4);
+  font-weight: 700;
+}
+
+/* --------------------------------------------------------------------------
+   6. CONVERSATION LOG & TIMELINE
+   -------------------------------------------------------------------------- */
+.tars-copilot-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Two-column layout in Fullscreen mode */
+.mode-fullscreen .tars-copilot-body {
+  display: grid;
+  grid-template-columns: 360px 1fr;
+  transition: grid-template-columns 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.mode-fullscreen .tars-copilot-body.is-sidebar-collapsed {
+  display: flex;
+  grid-template-columns: 1fr;
+}
+
+.tars-copilot-telemetry-sidebar {
+  display: none;
+  background: #091322;
+  border-right: 1px solid rgba(0, 145, 218, 0.12);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.mode-fullscreen .tars-copilot-telemetry-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tars-copilot-chat-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.tars-copilot-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  scroll-behavior: smooth;
+}
+
+/* --------------------------------------------------------------------------
+   FULLSCREEN CHAT AREA & AUTHENTIC CLAUDE / CHATGPT / CODEX PADDING
+   -------------------------------------------------------------------------- */
+.mode-fullscreen .tars-copilot-chat-container {
+  background: var(--kpmg-midnight-canvas, #070e17);
+}
+
+.mode-fullscreen .tars-copilot-messages {
+  padding: 32px 48px 40px 48px;
+  align-items: center;
+  gap: 22px;
+}
+
+/* Children within the fullscreen conversation stream are centered within a comfortable reading column */
+.mode-fullscreen .tars-copilot-messages > * {
+  width: 100%;
+  max-width: 860px;
+  box-sizing: border-box;
+}
+
+.mode-fullscreen .tars-msg.is-user {
+  max-width: 860px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.mode-fullscreen .tars-msg.is-user .tars-msg-bubble {
+  max-width: 76%;
+  padding: 12px 18px;
+  font-size: 13.5px;
+  line-height: 1.55;
+  border-radius: 16px 16px 4px 16px;
+}
+
+.mode-fullscreen .tars-msg.is-assistant {
+  max-width: 860px;
+  width: 100%;
+}
+
+.mode-fullscreen .tars-msg.is-assistant .tars-msg-bubble {
+  font-size: 14px;
+  line-height: 1.7;
+}
+
+.mode-fullscreen .tars-copilot-empty-state {
+  max-width: 860px;
+  width: 100%;
+  margin: 36px auto 20px auto;
+  padding: 0;
+}
+
+.mode-fullscreen .tars-copilot-footer {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 18px 48px 28px 48px;
+  box-sizing: border-box;
+  background: var(--kpmg-midnight-canvas, #070e17);
+  border-top: 1px solid rgba(0, 145, 218, 0.1);
+}
+
+.mode-fullscreen .tars-copilot-footer form {
+  width: 100%;
+  max-width: 860px;
+}
+
+.mode-fullscreen .tars-copilot-context-bar {
+  padding: 8px 32px;
+}
+
+/* Empty Welcome State */
+.tars-copilot-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 24px 12px;
+  gap: 14px;
+}
+
+.tars-copilot-empty-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--kpmg-text-primary, #f8fafc);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tars-copilot-empty-desc {
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--kpmg-text-muted, #94a3b8);
+  margin: 0;
+}
+
+.tars-copilot-prompt-pills {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.tars-copilot-prompt-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 9px 13px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: var(--kpmg-text-secondary, #cbd5e1);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.tars-copilot-prompt-btn:hover {
+  background: rgba(0, 94, 184, 0.15);
+  border-color: var(--kpmg-border-blue, rgba(0, 145, 218, 0.3));
+  color: #ffffff;
+  transform: translateX(2px);
+}
+
+/* --------------------------------------------------------------------------
+   7. MESSAGES (KPMG Multi-Shade Blue Executive Styling)
+   -------------------------------------------------------------------------- */
+.tars-msg {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 100%;
+  animation: fadeInMsg 0.18s ease-out;
+}
+
+@keyframes fadeInMsg {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.tars-msg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.tars-msg-author {
+  font-weight: 700;
+  color: var(--kpmg-text-muted, #94a3b8);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tars-msg-author.is-copilot {
+  color: var(--kpmg-atlantic, #0091da);
+}
+
+.tars-msg-badge {
+  font-size: 9.5px;
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--kpmg-text-muted, #94a3b8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* User Message Bubble — KPMG Heritage Navy into Cobalt Blue */
+.tars-msg.is-user {
+  align-self: flex-end;
+  max-width: 88%;
+}
+
+.tars-msg.is-user .tars-msg-bubble {
+  background: linear-gradient(135deg, var(--kpmg-heritage-navy, #00338d) 0%, var(--kpmg-cobalt, #005eb8) 100%);
+  color: #f8fafc;
+  border-radius: 12px 12px 2px 12px;
+  padding: 10px 14px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  box-shadow: 0 4px 16px rgba(0, 51, 141, 0.28);
+  border: 1px solid rgba(114, 205, 244, 0.25);
+}
+
+/* Assistant Message Area */
+.tars-msg.is-assistant {
+  align-self: flex-start;
+  width: 100%;
+}
+
+.tars-msg.is-assistant .tars-msg-bubble {
+  background: transparent;
+  color: var(--kpmg-text-secondary, #cbd5e1);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+/* Markdown formatting inside assistant bubble */
+.tars-copilot-markdown p {
+  margin: 0 0 10px 0;
+}
+
+.tars-copilot-markdown p:last-child {
+  margin-bottom: 0;
+}
+
+.tars-copilot-markdown strong {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.tars-copilot-markdown code {
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+  font-size: 11.5px;
+  padding: 2px 6px;
+  background: #0d1a2d;
+  border-radius: 4px;
+  color: var(--kpmg-glacier, #72cdf4);
+  border: 1px solid rgba(0, 145, 218, 0.22);
+}
+
+.tars-copilot-markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 11.5px;
+  background: rgba(13, 26, 45, 0.6);
+  border-radius: 6px;
+  overflow: hidden;
+  border: 1px solid rgba(0, 145, 218, 0.14);
+}
+
+.tars-copilot-markdown th {
+  background: var(--kpmg-midnight-elevated, #112035);
+  padding: 6px 10px;
+  text-align: left;
+  font-weight: 700;
+  color: #f1f5f9;
+  border-bottom: 1px solid rgba(0, 145, 218, 0.15);
+}
+
+.tars-copilot-markdown td {
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  color: var(--kpmg-text-secondary, #cbd5e1);
+}
+
+/* --------------------------------------------------------------------------
+   8. CLAUDE CODE / CODEX MICRO-THINKING TELEMETRY (The Hero Experience)
+   -------------------------------------------------------------------------- */
+
+/* Live Active Telemetry Container */
+.tars-copilot-telemetry-live {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #0d1a2d;
+  border: 1px solid rgba(0, 145, 218, 0.25);
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+  font-size: 11px;
+}
+
+.tars-copilot-telemetry-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--kpmg-glacier, #72cdf4);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.tars-copilot-cli-spinner {
+  display: inline-block;
+  font-family: monospace;
+  font-weight: 800;
+  color: var(--kpmg-atlantic, #0091da);
+}
+
+.tars-copilot-telemetry-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-left: 6px;
+}
+
+.tars-copilot-telemetry-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--kpmg-text-muted, #94a3b8);
+  font-size: 11px;
+  line-height: 1.4;
+  animation: fadeLine 0.15s ease-out;
+}
+
+@keyframes fadeLine {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.tars-copilot-telemetry-line .step-glyph {
+  color: var(--kpmg-atlantic, #0091da);
+  font-weight: 700;
+}
+
+.tars-copilot-telemetry-line .step-label {
+  flex: 1;
+  color: var(--kpmg-text-secondary, #cbd5e1);
+}
+
+.tars-copilot-telemetry-line .step-ms {
+  font-size: 10px;
+  color: #64748b;
+}
+
+/* Post-Generation Collapsible Thought Accordion */
+.tars-copilot-thought-accordion {
+  margin-bottom: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 145, 218, 0.15);
+  background: rgba(13, 26, 45, 0.45);
+  overflow: hidden;
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+}
+
+.tars-copilot-thought-summary-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  color: var(--kpmg-text-muted, #94a3b8);
+  font-size: 11px;
+  font-family: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.tars-copilot-thought-summary-btn:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #e2e8f0;
+}
+
+.tars-copilot-thought-summary-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tars-copilot-thought-summary-left .glyph {
+  color: var(--kpmg-violet-bright, #a855f7);
+}
+
+.tars-copilot-thought-details {
+  padding: 8px 12px;
+  border-top: 1px solid rgba(0, 145, 218, 0.1);
+  background: var(--kpmg-midnight-recess, #08111e);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+/* --------------------------------------------------------------------------
+   9. INPUT BAR (KPMG Refined Aesthetic)
+   -------------------------------------------------------------------------- */
+.tars-copilot-footer {
+  padding: 12px 16px;
+  background: var(--kpmg-midnight-card, #0c1626);
+  border-top: 1px solid rgba(0, 145, 218, 0.12);
+  flex-shrink: 0;
+}
+
+.tars-copilot-input-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--kpmg-midnight-recess, #08111e);
+  border: 1px solid rgba(0, 145, 218, 0.2);
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: all 0.18s ease;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.tars-copilot-input-box:focus-within {
+  border-color: var(--kpmg-cobalt, #005eb8);
+  box-shadow: 0 0 0 1px rgba(0, 94, 184, 0.5), inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.tars-copilot-textarea {
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--kpmg-text-primary, #f8fafc);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+  outline: none;
+  min-height: 48px;
+  max-height: 160px;
+}
+
+.tars-copilot-textarea::placeholder {
+  color: #64748b;
+}
+
+.tars-copilot-input-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 4px;
+}
+
+.tars-copilot-input-actions-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tars-copilot-attach-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 6px 12px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  border-radius: 6px !important;
+  background: var(--kpmg-midnight-elevated, #112035) !important;
+  border: 1px solid #23395d !important;
+  color: var(--kpmg-text-secondary, #cbd5e1) !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.tars-copilot-attach-btn svg {
+  width: 14px !important;
+  height: 14px !important;
+  stroke: var(--kpmg-text-secondary, #cbd5e1) !important;
+  display: block !important;
+}
+
+.tars-copilot-attach-btn:hover {
+  background: #192d4a !important;
+  color: #f1f5f9 !important;
+  border-color: var(--kpmg-atlantic, #0091da) !important;
+}
+
+.tars-copilot-attach-btn:hover svg {
+  stroke: #ffffff !important;
+}
+
+.tars-copilot-attach-btn.has-files {
+  background: rgba(0, 94, 184, 0.25) !important;
+  color: var(--kpmg-glacier, #72cdf4) !important;
+  border-color: rgba(0, 145, 218, 0.4) !important;
+}
+
+.tars-copilot-attach-btn.has-files svg {
+  stroke: var(--kpmg-glacier, #72cdf4) !important;
+}
+
+.tars-copilot-send-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 34px !important;
+  height: 34px !important;
+  min-height: 34px !important;
+  max-height: 34px !important;
+  padding: 0 !important;
+  border-radius: 8px !important;
+  border: 1px solid var(--kpmg-cobalt-hover, #0072ce) !important;
+  background: var(--kpmg-cobalt, #005eb8) !important;
+  color: #ffffff !important;
+  cursor: pointer !important;
+  box-shadow: 0 2px 8px rgba(0, 51, 141, 0.4) !important;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.tars-copilot-send-btn svg {
+  width: 16px !important;
+  height: 16px !important;
+  min-width: 16px !important;
+  min-height: 16px !important;
+  stroke: #ffffff !important;
+  display: block !important;
+}
+
+.tars-copilot-send-btn:hover:not(:disabled) {
+  background: var(--kpmg-cobalt-hover, #0072ce) !important;
+  border-color: var(--kpmg-atlantic, #0091da) !important;
+  transform: scale(1.04) !important;
+  box-shadow: 0 0 14px rgba(0, 145, 218, 0.4) !important;
+}
+
+.tars-copilot-send-btn:disabled {
+  background: var(--kpmg-midnight-elevated, #112035) !important;
+  border: 1px solid #1f314d !important;
+  color: #64748b !important;
+  cursor: not-allowed !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.tars-copilot-send-btn:disabled svg {
+  stroke: #64748b !important;
+}
+
+/* Attached Workbooks Badge Container */
+.tars-copilot-attached-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 0;
+}
+
+.tars-copilot-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(0, 94, 184, 0.2);
+  border: 1px solid rgba(0, 145, 218, 0.3);
+  color: #f0f7ff;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tars-copilot-chip button {
+  background: transparent;
+  border: none;
+  padding: 0;
+  display: flex;
+  color: var(--kpmg-text-muted, #94a3b8);
+  cursor: pointer;
+}
+
+.tars-copilot-chip button:hover {
+  color: #f87171;
+}

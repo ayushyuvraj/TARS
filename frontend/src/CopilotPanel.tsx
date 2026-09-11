@@ -1,7 +1,41 @@
 import React, { FormEvent, useEffect, useRef, useState } from "react";
-import { api, CopilotMessage, CopilotMessageContext } from "./api";
+import { api, CopilotMessage, CopilotMessageContext, CopilotTelemetryStep } from "./api";
 import { copilotV2Bridge, V2WorkspaceContext } from "./copilot_v2_bridge";
-import { Trash2, Paperclip, FileSpreadsheet, X } from "lucide-react";
+import {
+  Trash2,
+  Paperclip,
+  FileSpreadsheet,
+  X,
+  Maximize2,
+  Minimize2,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  Terminal,
+  Send,
+  Cpu,
+  Layers,
+  Database,
+  ArrowRight,
+  ShieldCheck,
+  CheckCircle2,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
+import "./copilot_agentic.css";
+
+export type CopilotDisplayMode = "closed" | "floating" | "fullscreen" | "pill" | "parallel" | "drawer";
+
+interface CopilotPanelProps {
+  reconciliationId: string | null;
+  selectedRecordId: string | null;
+  currentPage?: string;
+  mode?: CopilotDisplayMode;
+  onModeChange?: (mode: CopilotDisplayMode) => void;
+  onClose?: () => void;
+}
+
+const CLI_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 function renderFormattedContent(text: string) {
   if (!text) return null;
@@ -12,22 +46,167 @@ function renderFormattedContent(text: string) {
     .replaceAll("&amp;", "&")
     .replaceAll("&lt;", "<")
     .replaceAll("&gt;", ">");
-  const paragraphs = cleaned.split("\n\n").filter(p => p.trim());
+
+  // Check for table structure
+  const lines = cleaned.split("\n");
+  const hasTable = lines.some((l) => l.trim().startsWith("|") && l.trim().endsWith("|"));
+
+  if (hasTable) {
+    const tableLines: string[] = [];
+    const nonTableBlocks: string[][] = [];
+    let currentBlock: string[] = [];
+    let inTable = false;
+
+    lines.forEach((line) => {
+      const isTableLine = line.trim().startsWith("|") && line.trim().endsWith("|");
+      if (isTableLine) {
+        if (!inTable && currentBlock.length > 0) {
+          nonTableBlocks.push(currentBlock);
+          currentBlock = [];
+        }
+        inTable = true;
+        tableLines.push(line);
+      } else {
+        if (inTable && tableLines.length > 0) {
+          // parse table
+          inTable = false;
+        }
+        currentBlock.push(line);
+      }
+    });
+    if (currentBlock.length > 0) {
+      nonTableBlocks.push(currentBlock);
+    }
+  }
+
+  // Render paragraphs with bold and inline code formatting
+  const paragraphs = cleaned.split("\n\n").filter((p) => p.trim());
+
+  const formatSpan = (str: string) => {
+    // Basic regex parser for inline code and bold
+    const parts = str.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+    return parts.map((part, i) => {
+      if (part.startsWith("`") && part.endsWith("`")) {
+        return <code key={i}>{part.slice(1, -1)}</code>;
+      }
+      if (part.startsWith("**") && part.endsWith("**")) {
+        return <strong key={i}>{part.slice(2, -2)}</strong>;
+      }
+      return part;
+    });
+  };
+
   return (
-    <div className="copilot-message-text">
-      {paragraphs.map((p, idx) => (
-        <p key={idx}>{p.trim()}</p>
-      ))}
+    <div className="tars-copilot-markdown">
+      {paragraphs.map((p, idx) => {
+        const trimmed = p.trim();
+        if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+          // Table parsing
+          const tRows = trimmed.split("\n").filter((r) => r.trim().startsWith("|"));
+          if (tRows.length >= 2) {
+            const headerCols = tRows[0].split("|").map((c) => c.trim()).filter(Boolean);
+            const dataRows = tRows.slice(1).filter((r) => !r.includes("---")).map((r) =>
+              r.split("|").map((c) => c.trim()).filter(Boolean)
+            );
+            return (
+              <div key={idx} style={{ overflowX: "auto", margin: "8px 0" }}>
+                <table>
+                  <thead>
+                    <tr>
+                      {headerCols.map((col, cIdx) => (
+                        <th key={cIdx}>{formatSpan(col)}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {dataRows.map((row, rIdx) => (
+                      <tr key={rIdx}>
+                        {row.map((cell, cIdx) => (
+                          <td key={cIdx}>{formatSpan(cell)}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          }
+        }
+        if (trimmed.startsWith("* ") || trimmed.startsWith("- ")) {
+          const items = trimmed.split("\n").map((line) => line.replace(/^[\*\-]\s+/, "").trim());
+          return (
+            <ul key={idx} style={{ margin: "6px 0 10px 18px", padding: 0 }}>
+              {items.map((item, iIdx) => (
+                <li key={iIdx} style={{ margin: "3px 0", color: "#cbd5e1" }}>
+                  {formatSpan(item)}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        return <p key={idx}>{formatSpan(trimmed)}</p>;
+      })}
     </div>
   );
 }
 
-export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }: {
-  reconciliationId: string | null;
-  selectedRecordId: string | null;
-  currentPage?: string;
+function ThoughtAccordion({
+  steps,
+  durationMs,
+}: {
+  steps: CopilotTelemetryStep[];
+  durationMs?: number;
 }) {
-  const [v2Context, setV2Context] = useState<V2WorkspaceContext | null>(() => copilotV2Bridge.getContext());
+  const [isOpen, setIsOpen] = useState(false);
+  const totalMs = durationMs || steps.reduce((acc, s) => acc + (s.duration_ms || 15), 0);
+  const seconds = (totalMs / 1000).toFixed(1);
+
+  return (
+    <div className="tars-copilot-thought-accordion">
+      <button
+        type="button"
+        className="tars-copilot-thought-summary-btn"
+        onClick={() => setIsOpen(!isOpen)}
+        title="Toggle agent reasoning trace"
+      >
+        <div className="tars-copilot-thought-summary-left">
+          <span className="glyph">{isOpen ? "▾" : "▸"}</span>
+          <span>
+            Reasoned in {seconds}s · {steps.length} operation{steps.length === 1 ? "" : "s"}
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#64748b" }}>
+          <span>{isOpen ? "Hide trace" : "Show trace"}</span>
+          {isOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+        </div>
+      </button>
+
+      {isOpen && (
+        <div className="tars-copilot-thought-details">
+          {steps.map((step) => (
+            <div key={step.id} className="tars-copilot-telemetry-line">
+              <span className="step-glyph">›</span>
+              <span className="step-label">{step.label}</span>
+              {step.duration_ms && <span className="step-ms">[{step.duration_ms}ms]</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function CopilotPanel({
+  reconciliationId,
+  selectedRecordId,
+  currentPage,
+  mode = "parallel",
+  onModeChange,
+  onClose,
+}: CopilotPanelProps) {
+  const [v2Context, setV2Context] = useState<V2WorkspaceContext | null>(() =>
+    copilotV2Bridge.getContext()
+  );
 
   useEffect(() => {
     return copilotV2Bridge.subscribe((ctx) => {
@@ -36,11 +215,18 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
   }, []);
 
   const effectiveSessionId = v2Context?.sessionId || reconciliationId;
-  const storageKey = effectiveSessionId ? `gst-copilot-${effectiveSessionId}` : "gst-copilot-global";
-  const msgStorageKey = effectiveSessionId ? `gst-copilot-msgs-${effectiveSessionId}` : "gst-copilot-msgs-global";
+  const storageKey = effectiveSessionId
+    ? `gst-copilot-${effectiveSessionId}`
+    : "gst-copilot-global";
+  const msgStorageKey = effectiveSessionId
+    ? `gst-copilot-msgs-${effectiveSessionId}`
+    : "gst-copilot-msgs-global";
   const UNIFIED_STORAGE_KEY = "tars_copilot_unified_history_v2";
 
-  const [conversationId, setConversationId] = useState<string | null>(() => localStorage.getItem(storageKey));
+  const [conversationId, setConversationId] = useState<string | null>(() =>
+    localStorage.getItem(storageKey)
+  );
+
   const [messages, setMessages] = useState<CopilotMessage[]>(() => {
     try {
       const saved = localStorage.getItem(UNIFIED_STORAGE_KEY);
@@ -48,7 +234,6 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
-      // Fallback to legacy key if present
       const legacySaved = localStorage.getItem(msgStorageKey);
       if (legacySaved) {
         const parsedLegacy = JSON.parse(legacySaved);
@@ -57,13 +242,58 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
     } catch {}
     return [];
   });
+
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
+  const [liveSteps, setLiveSteps] = useState<CopilotTelemetryStep[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [spinnerIndex, setSpinnerIndex] = useState(0);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("tars_copilot_sidebar_collapsed") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const toggleSidebar = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("tars_copilot_sidebar_collapsed", String(next));
+      } catch {}
+      return next;
+    });
+  };
+
+  useEffect(() => {
+    const handleGlobalKeys = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "b" || e.key === "B")) {
+        if (mode === "fullscreen") {
+          e.preventDefault();
+          toggleSidebar();
+        }
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeys);
+    return () => window.removeEventListener("keydown", handleGlobalKeys);
+  }, [mode]);
+
+  // Animate Braille CLI spinner when busy (Claude Code / Codex aesthetic)
+  useEffect(() => {
+    if (!busy) return;
+    const timer = setInterval(() => {
+      setSpinnerIndex((prev) => (prev + 1) % CLI_SPINNER_FRAMES.length);
+    }, 85);
+    return () => clearInterval(timer);
+  }, [busy]);
 
   useEffect(() => {
     try {
@@ -73,18 +303,22 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
 
   useEffect(() => {
     if (!conversationId || !effectiveSessionId || v2Context || messages.length > 0) return;
-    api.copilotConversation(effectiveSessionId, conversationId)
-      .then(result => {
+    api
+      .copilotConversation(effectiveSessionId, conversationId)
+      .then((result) => {
         if (result.messages && result.messages.length > 0) {
           setMessages(result.messages);
         }
       })
-      .catch(() => { localStorage.removeItem(storageKey); setConversationId(null); });
+      .catch(() => {
+        localStorage.removeItem(storageKey);
+        setConversationId(null);
+      });
   }, [conversationId, effectiveSessionId, storageKey, v2Context, messages.length]);
 
   useEffect(() => {
-    logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-  }, [messages, thinkingStatus]);
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, thinkingStatus, liveSteps]);
 
   const handleFilesSelected = (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files) {
@@ -113,10 +347,22 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
     const n1 = f1.name.toLowerCase();
     const n2 = f2.name.toLowerCase();
 
-    if (n1.includes("gstr") || n1.includes("gov") || n1.includes("portal") || n2.includes("pr") || n2.includes("purchase")) {
+    if (
+      n1.includes("gstr") ||
+      n1.includes("gov") ||
+      n1.includes("portal") ||
+      n2.includes("pr") ||
+      n2.includes("purchase")
+    ) {
       return { gstr: f1, pr: f2 };
     }
-    if (n2.includes("gstr") || n2.includes("gov") || n2.includes("portal") || n1.includes("pr") || n1.includes("purchase")) {
+    if (
+      n2.includes("gstr") ||
+      n2.includes("gov") ||
+      n2.includes("portal") ||
+      n1.includes("pr") ||
+      n1.includes("purchase")
+    ) {
       return { gstr: f2, pr: f1 };
     }
     return { gstr: f1, pr: f2 };
@@ -126,13 +372,17 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
     const finalMessage = message.trim() || (attachedFiles.length > 0 ? "reconcile" : "");
     if (!finalMessage || busy) return;
 
+    const startTime = Date.now();
     setBusy(true);
     setError(null);
     setThinkingStatus("Processing instruction…");
+    setLiveSteps([]);
 
     const currentContext: CopilotMessageContext = {
       sessionId: v2Context?.sessionId || effectiveSessionId || null,
-      sessionTitle: v2Context?.gstrFilename ? `${v2Context.gstrFilename} vs ${v2Context.prFilename || 'PR'}` : null,
+      sessionTitle: v2Context?.gstrFilename
+        ? `${v2Context.gstrFilename} vs ${v2Context.prFilename || "PR"}`
+        : null,
       stageKey: v2Context?.activeStage || null,
       stageNumber: v2Context?.stageNumber || null,
       stageLabel: v2Context?.stageLabel || (effectiveSessionId ? "Reconciliation Session" : "Global Screen"),
@@ -144,7 +394,10 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
       id: crypto.randomUUID(),
       conversation_id: conversationId ?? "",
       role: "user",
-      content: attachedFiles.length > 0 ? `${finalMessage} (Attached: ${attachedFiles.map(f => f.name).join(", ")})` : finalMessage,
+      content:
+        attachedFiles.length > 0
+          ? `${finalMessage} (Attached: ${attachedFiles.map((f) => f.name).join(", ")})`
+          : finalMessage,
       selected_record_id: selectedRecordId,
       response: null,
       created_at: new Date().toISOString(),
@@ -154,8 +407,7 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
     setMessages(nextMessages);
     setDraft("");
 
-    // Check if we are in Reconciliation v2.0 or have v2 context
-    const isV2 = Boolean(v2Context || (currentPage && currentPage.includes("reconciliations-v2")));
+    const isV2 = Boolean(v2Context || (currentPage && currentPage.includes("reconciliations-v2")) || (currentPage && currentPage.includes("audit-v2")));
 
     if (isV2) {
       const assistantId = crypto.randomUUID();
@@ -168,16 +420,17 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
         response: null,
         created_at: new Date().toISOString(),
         context: currentContext,
+        telemetry_steps: [],
       };
       setMessages([...nextMessages, initialAssistantMsg]);
 
       const hadAttachments = attachedFiles.length > 0;
       let accumulatedContent = "";
+      const collectedSteps: CopilotTelemetryStep[] = [];
 
       try {
         let res: Response;
 
-        // If files are attached, trigger autonomous pipeline endpoint
         if (attachedFiles.length > 0) {
           const filesToProcess = [...attachedFiles];
           setAttachedFiles([]);
@@ -195,8 +448,7 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
             body: formData,
           });
         } else {
-          // Standard text / command stream with context-aware history
-          const historyPayload = nextMessages.slice(-10).map(m => ({
+          const historyPayload = nextMessages.slice(-10).map((m) => ({
             role: m.role,
             content: m.content,
             context: m.context || null,
@@ -238,13 +490,27 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
               const data = JSON.parse(jsonStr);
               if (data.type === "token") {
                 accumulatedContent += data.content;
-                setMessages(current =>
-                  current.map(m =>
+                setMessages((current) =>
+                  current.map((m) =>
                     m.id === assistantId ? { ...m, content: accumulatedContent } : m
                   )
                 );
               } else if (data.type === "thought") {
                 setThinkingStatus(data.message);
+              } else if (data.type === "thought_step") {
+                const newStep: CopilotTelemetryStep = {
+                  id: data.step_id || crypto.randomUUID(),
+                  label: data.label,
+                  duration_ms: data.duration_ms,
+                  status: data.status || "completed",
+                };
+                collectedSteps.push(newStep);
+                setLiveSteps([...collectedSteps]);
+                setMessages((current) =>
+                  current.map((m) =>
+                    m.id === assistantId ? { ...m, telemetry_steps: [...collectedSteps] } : m
+                  )
+                );
               } else if (data.type === "action") {
                 copilotV2Bridge.dispatchAction({
                   action: data.action,
@@ -252,7 +518,19 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
                   status: data.status,
                 });
               } else if (data.type === "done") {
+                const totalDuration = Date.now() - startTime;
                 setThinkingStatus(null);
+                setMessages((current) =>
+                  current.map((m) =>
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          telemetry_steps: [...collectedSteps],
+                          reasoning_duration_ms: totalDuration,
+                        }
+                      : m
+                  )
+                );
               }
             } catch (parseErr) {
               console.warn("SSE JSON parse error:", parseErr);
@@ -263,14 +541,14 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
         console.warn("V2 streaming error, falling back:", reason);
         if (hadAttachments || accumulatedContent.length > 0) {
           setError(reason instanceof Error ? reason.message : "Autonomous reconcile failed.");
-          setMessages(current =>
-            current.map(m =>
+          setMessages((current) =>
+            current.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
                     content:
                       accumulatedContent ||
-                      "❌ **Reconciliation Failed**: Could not complete autonomous reconciliation. Please check server logs or workbook format.",
+                      "❌ **Reconciliation Interrupted**: Could not complete stream processing. Please check server logs or workbook format.",
                   }
                 : m
             )
@@ -285,19 +563,23 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
             conversationId ?? undefined,
             selectedRecordId ?? undefined,
             currentPage,
-            nextMessages.slice(-6).map(m => ({ role: m.role, content: m.content })),
+            nextMessages.slice(-6).map((m) => ({ role: m.role, content: m.content }))
           );
-          setMessages(current =>
-            current.map(m =>
+          setMessages((current) =>
+            current.map((m) =>
               m.id === assistantId ? { ...m, content: response.answer, response } : m
             )
           );
         } catch (fbErr) {
           setError(fbErr instanceof Error ? fbErr.message : "Copilot could not complete the request.");
-          setMessages(current =>
-            current.map(m =>
+          setMessages((current) =>
+            current.map((m) =>
               m.id === assistantId
-                ? { ...m, content: "Could not retrieve response from Copilot server. Please verify backend service connectivity." }
+                ? {
+                    ...m,
+                    content:
+                      "Could not retrieve response from Copilot server. Please verify backend service connectivity.",
+                  }
                 : m
             )
           );
@@ -305,26 +587,27 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
       } finally {
         setBusy(false);
         setThinkingStatus(null);
+        setLiveSteps([]);
       }
       return;
     }
 
-    // Standard V1 flow
+    // Standard V1 fallback
     try {
-      const historyPayload = nextMessages.slice(-8).map(m => ({ role: m.role, content: m.content }));
+      const historyPayload = nextMessages.slice(-8).map((m) => ({ role: m.role, content: m.content }));
       const response = await api.askCopilot(
         reconciliationId,
         finalMessage,
         conversationId ?? undefined,
         selectedRecordId ?? undefined,
         currentPage,
-        historyPayload,
+        historyPayload
       );
       if (!conversationId) {
         setConversationId(response.conversation_id);
         localStorage.setItem(storageKey, response.conversation_id);
       }
-      setMessages(current => [
+      setMessages((current) => [
         ...current,
         {
           id: response.id,
@@ -335,13 +618,14 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
           response,
           created_at: response.created_at,
           context: currentContext,
-        }
+        },
       ]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Copilot could not complete the request.");
     } finally {
       setBusy(false);
       setThinkingStatus(null);
+      setLiveSteps([]);
     }
   };
 
@@ -350,10 +634,18 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
     void ask(draft);
   };
 
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      void ask(draft);
+    }
+  };
+
   const clearChat = () => {
     setMessages([]);
     setError(null);
     setThinkingStatus(null);
+    setLiveSteps([]);
     setConversationId(null);
     setAttachedFiles([]);
     try {
@@ -372,7 +664,7 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
         return [
           "Make sure Vendor Name is mapped to Supplier Legal Name",
           "Ignore mapping for Cess",
-          "Go forward to rules"
+          "Go forward to rules",
         ];
       }
       if (v2Context.activeStage === "rules") {
@@ -380,18 +672,25 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
           "Should I select this rule?",
           "Add rule regarding invoice date within 30 days",
           "Ignore rule R-04",
-          "Go forward to results"
+          "Go forward to results",
         ];
       }
       if (v2Context.activeStage === "results") {
         return [
           "Why is this record near match rather than tolerance?",
           "How many records are unresolved?",
-          "Go forward to summary"
+          "Go forward to summary",
         ];
       }
       if (v2Context.activeStage === "summary" || v2Context.activeStage === "export") {
         return ["What is the total claimable ITC?", "How do I export results?", "Go back to rules"];
+      }
+      if (v2Context.activeStage === "audit") {
+        return [
+          "Verify mathematical conservation across this audit",
+          "Explain the actor breakdown between HUMAN and AI_COPILOT",
+          "Are there any failed steps in this session run?",
+        ];
       }
     }
     if (reconciliationId) {
@@ -416,339 +715,455 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
     if (v2Context) {
       return `Stage ${v2Context.stageNumber} · ${v2Context.activeStage.toUpperCase()}`;
     }
-    return reconciliationId ? "Grounded assistant" : "Application guide";
-  };
-
-  const getHeaderState = () => {
-    if (v2Context) {
-      return `Stage ${v2Context.stageNumber} connected`;
-    }
-    return reconciliationId ? "Session connected" : "Global mode";
+    return reconciliationId ? "Grounded assistant" : "Global intelligence";
   };
 
   const getPlaceholder = () => {
     if (attachedFiles.length > 0) {
-      return "Type 'reconcile' to run automated pre-flight & matching passes…";
+      return "Press Enter or type 'reconcile' to run autonomous pre-flight & matching passes…";
     }
-    if (selectedRecordId) return `Ask about ${selectedRecordId}…`;
+    if (selectedRecordId) return `Ask about record ${selectedRecordId}…`;
     if (v2Context) {
-      return `Ask about Stage ${v2Context.stageNumber} or type 'map X to Y', 'add rule...', 'go forward'…`;
+      return `Ask about ${v2Context.stageLabel} (or 'map X to Y', 'add rule...', 'reconcile')…`;
     }
     if (reconciliationId) return "Ask about this reconciliation…";
-    return "Ask TARS Copilot…";
+    return "Ask TARS Copilot (press Enter to send)…";
   };
 
   return (
-    <aside className="copilot-panel" aria-labelledby="copilot-title">
-      <header>
-        <div>
-          <span className="eyebrow">{getHeaderEyebrow()}</span>
-          <h2 id="copilot-title">TARS Copilot</h2>
+    <aside className={`tars-copilot-container mode-${mode}`} aria-labelledby="copilot-title">
+      {/* 1. Header Toolbar */}
+      <header className="tars-copilot-header">
+        <div className="tars-copilot-header-brand">
+          {mode === "fullscreen" && (
+            <button
+              type="button"
+              className={`tars-copilot-icon-btn tars-copilot-sidebar-toggle-btn ${sidebarCollapsed ? "is-collapsed" : ""}`}
+              onClick={toggleSidebar}
+              title={sidebarCollapsed ? "Expand Session Telemetry (Ctrl+B)" : "Collapse Session Telemetry (Ctrl+B)"}
+              aria-label={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
+            </button>
+          )}
+
+          <div className="tars-copilot-brand-icon">
+            <Sparkles size={16} />
+          </div>
+          <div>
+            <h2 id="copilot-title" className="tars-copilot-header-title">
+              TARS Copilot
+            </h2>
+          </div>
+          <span className={`tars-copilot-header-status ${busy ? "is-thinking" : ""}`}>
+            {busy ? (
+              <>
+                <span className="tars-copilot-cli-spinner">{CLI_SPINNER_FRAMES[spinnerIndex]}</span>
+                <span>THINKING</span>
+              </>
+            ) : (
+              <>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
+                <span>ONLINE</span>
+              </>
+            )}
+          </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+
+        <div className="tars-copilot-header-actions">
           {messages.length > 0 && (
             <button
               type="button"
+              className="tars-copilot-icon-btn tars-copilot-btn-clear"
               onClick={clearChat}
-              title="Clear chat history"
-              aria-label="Clear chat history"
-              style={{
-                background: "rgba(255, 255, 255, 0.08)",
-                border: "1px solid rgba(255, 255, 255, 0.15)",
-                color: "#cbd5e1",
-                cursor: "pointer",
-                padding: "3px 8px",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                borderRadius: 6,
-                fontSize: 11,
-                fontWeight: 600,
-                lineHeight: 1.2,
-                transition: "background 0.15s ease",
-              }}
-              onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.18)")}
-              onMouseLeave={(e) => (e.currentTarget.style.background = "rgba(255, 255, 255, 0.08)")}
+              title="Clear conversation history"
+              aria-label="Clear chat"
             >
-              <Trash2 size={12} />
-              <span>Clear</span>
+              <Trash2 size={16} />
             </button>
           )}
-          <span className="copilot-state">
-            <span aria-hidden="true" />
-            {getHeaderState()}
-          </span>
+
+          {mode !== "fullscreen" && onModeChange && (
+            <button
+              type="button"
+              className="tars-copilot-icon-btn tars-copilot-btn-maximize"
+              onClick={() => onModeChange("fullscreen")}
+              title="Maximize to Fullscreen Console Workstation"
+              aria-label="Maximize"
+            >
+              <Maximize2 size={16} />
+            </button>
+          )}
+
+          {mode === "fullscreen" && onModeChange && (
+            <button
+              type="button"
+              className="tars-copilot-icon-btn tars-copilot-btn-restore"
+              onClick={() => onModeChange("floating")}
+              title="Restore to Floating Window"
+              aria-label="Restore"
+            >
+              <Minimize2 size={16} />
+            </button>
+          )}
+
+          {onClose && (
+            <button
+              type="button"
+              className="tars-copilot-icon-btn tars-copilot-btn-close"
+              onClick={onClose}
+              title="Close Copilot (Ctrl+K)"
+              aria-label="Close"
+            >
+              <X size={17} />
+            </button>
+          )}
         </div>
       </header>
 
-      {selectedRecordId && (
-        <div className="copilot-context" role="status" aria-atomic="true">
-          <small>Selected record</small>
-          <strong>{selectedRecordId}</strong>
-        </div>
-      )}
+      {/* 2. Context & Stage Telemetry Bar */}
+      <div className="tars-copilot-context-bar">
+        <span className="tars-copilot-stage-badge">
+          <Terminal size={12} style={{ color: "var(--kpmg-atlantic, #0091da)" }} />
+          <span>LOCATION:</span>
+          <strong>{v2Context?.stageLabel || (effectiveSessionId ? "RECONCILIATION SESSION" : "GLOBAL WORKBENCH")}</strong>
+        </span>
 
-      {v2Context && !selectedRecordId && (
-        <div className="copilot-context" role="status" aria-atomic="true">
-          <small>Active screen</small>
-          <strong>{v2Context.stageLabel}</strong>
-        </div>
-      )}
-
-      <div className="copilot-log" ref={logRef} aria-live="polite">
-        {messages.length === 0 && (
-          <div className="copilot-empty">
-            <strong>
-              {v2Context
-                ? `Copilot is active on ${v2Context.stageLabel}`
-                : reconciliationId
-                ? "Ask about this reconciliation"
-                : "Welcome to TARS Copilot"}
-            </strong>
-            <p>
-              {v2Context
-                ? "Ask questions about this stage or issue instructions like 'map column X to Y', 'add rule...', or 'go forward'. You can also attach your workbooks below to auto-reconcile."
-                : reconciliationId
-                ? "Answers are calculated from persisted records, candidates, variances, and policy."
-                : "Ask about TARS features, workflow navigation, or how to start a reconciliation."}
-            </p>
-            <div>
-              {samplePrompts.map((prompt) => (
-                <button
-                  className="button-secondary"
-                  key={prompt}
-                  onClick={() => void ask(prompt)}
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {messages.map((message, idx) => {
-          const prevMsg = idx > 0 ? messages[idx - 1] : null;
-          const prevCtx = prevMsg?.context;
-          const currCtx = message.context;
-
-          const sessionSwitched = Boolean(
-            prevCtx?.sessionId &&
-            currCtx?.sessionId &&
-            prevCtx.sessionId !== currCtx.sessionId
-          );
-
-          const stageSwitched = Boolean(
-            !sessionSwitched &&
-            prevCtx?.stageKey &&
-            currCtx?.stageKey &&
-            prevCtx.stageKey !== currCtx.stageKey
-          );
-
-          return (
-            <React.Fragment key={message.id}>
-              {sessionSwitched && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    margin: "12px 0 8px 0",
-                    padding: "5px 12px",
-                    background: "rgba(30, 41, 59, 0.85)",
-                    borderRadius: "6px",
-                    border: "1px dashed #475569",
-                    color: "#94a3b8",
-                    fontSize: "11px",
-                    fontWeight: 500,
-                    lineHeight: 1.4,
-                  }}
-                >
-                  <span>
-                    🔄 <strong>Session Changed</strong>: from{" "}
-                    <code style={{ color: "#38bdf8", padding: "1px 4px", background: "rgba(56, 189, 248, 0.1)", borderRadius: "3px" }}>
-                      {prevCtx?.sessionId?.slice(0, 8)}
-                    </code>{" "}
-                    ({prevCtx?.stageLabel || prevCtx?.stageKey}) ➔{" "}
-                    <code style={{ color: "#38bdf8", padding: "1px 4px", background: "rgba(56, 189, 248, 0.1)", borderRadius: "3px" }}>
-                      {currCtx?.sessionId?.slice(0, 8)}
-                    </code>{" "}
-                    ({currCtx?.stageLabel || currCtx?.stageKey})
-                  </span>
-                </div>
-              )}
-
-              {stageSwitched && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    margin: "10px 0 6px 0",
-                    padding: "4px 10px",
-                    background: "rgba(15, 23, 42, 0.6)",
-                    borderRadius: "4px",
-                    border: "1px dotted #334155",
-                    color: "#94a3b8",
-                    fontSize: "10.5px",
-                    fontWeight: 500,
-                  }}
-                >
-                  <span>
-                    🧭 <strong>Stage Switched</strong>: {prevCtx?.stageLabel || prevCtx?.stageKey} ➔{" "}
-                    {currCtx?.stageLabel || currCtx?.stageKey}
-                  </span>
-                </div>
-              )}
-
-              <article
-                className={`copilot-message copilot-message--${message.role}`}
-              >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span>{message.role === "user" ? "You" : "Copilot"}</span>
-                  {currCtx && (currCtx.stageLabel || currCtx.sessionId) && (
-                    <span
-                      style={{
-                        fontSize: "9px",
-                        padding: "1px 6px",
-                        borderRadius: "4px",
-                        background: message.role === "user" ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.15)",
-                        color: message.role === "user" ? "#cbd5e1" : "#64748b",
-                        fontWeight: 600,
-                        border: "1px solid rgba(255, 255, 255, 0.08)",
-                      }}
-                      title={`Session: ${currCtx.sessionId || "Global"} | Stage: ${currCtx.stageLabel || "N/A"}`}
-                    >
-                      {currCtx.stageLabel || (currCtx.sessionId ? `Sess: ${currCtx.sessionId.slice(0, 6)}…` : "Global")}
-                    </span>
-                  )}
-                </div>
-                {renderFormattedContent(message.content)}
-                {message.response && (
-                  <>
-                    {message.response.evidence.length > 0 && (
-                      <details>
-                        <summary>View evidence · {message.response.evidence.length} facts</summary>
-                        {message.response.provider && (
-                          <div className="evidence-provider">
-                            <small>
-                              Provider: {message.response.provider}{" "}
-                              {message.response.model ? `(${message.response.model})` : ""}
-                            </small>
-                          </div>
-                        )}
-                        {message.response.evidence.map((item) => (
-                          <div
-                            className="evidence-reference"
-                            key={`${item.reference_type}-${item.reference_id}`}
-                          >
-                            <strong>{item.reference_type.replaceAll("_", " ")}</strong>
-                            <small>{item.reference_id}</small>
-                          </div>
-                        ))}
-                      </details>
-                    )}
-                    {message.response.tool_calls.length > 0 && (
-                      <details>
-                        <summary>Activity · {message.response.tool_calls.length} tools</summary>
-                        {message.response.tool_calls.map((call) => (
-                          <div
-                            className="tool-trace"
-                            key={`${message.id}-${call.tool_name}`}
-                          >
-                            <strong>{call.tool_name.replaceAll("_", " ")}</strong>
-                            <small>
-                              {call.purpose} · {call.duration_ms.toFixed(0)} ms
-                            </small>
-                          </div>
-                        ))}
-                      </details>
-                    )}
-                  </>
-                )}
-              </article>
-            </React.Fragment>
-          );
-        })}
-
-        {busy && thinkingStatus && (
-          <div className="copilot-thinking" role="status">
-            <span className="spinner" aria-hidden="true" />
-            {thinkingStatus}
-          </div>
+        {v2Context?.sessionId && (
+          <span style={{ fontSize: 10, color: "#64748b", fontFamily: "ui-monospace, monospace" }}>
+            ID: {v2Context.sessionId.slice(0, 8)}…
+          </span>
         )}
       </div>
 
-      {error && <p className="copilot-error" role="alert">{error}</p>}
+      {/* 3. Main Body Container (Supports 2-Column in Fullscreen Mode) */}
+      <div className={`tars-copilot-body ${sidebarCollapsed ? "is-sidebar-collapsed" : ""}`}>
+        {/* Fullscreen Telemetry Sidebar */}
+        {!sidebarCollapsed && (
+          <aside className="tars-copilot-telemetry-sidebar">
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, fontWeight: 700, color: "#f8fafc" }}>
+                <Cpu size={15} style={{ color: "var(--kpmg-atlantic, #0091da)" }} />
+                <span>SESSION RUNTIME TELEMETRY</span>
+              </div>
+              <button
+                type="button"
+                className="tars-copilot-icon-btn tars-copilot-sidebar-collapse-btn"
+                onClick={toggleSidebar}
+                title="Collapse Telemetry Sidebar (Ctrl+B)"
+                aria-label="Collapse sidebar"
+              >
+                <PanelLeftClose size={14} />
+              </button>
+            </div>
 
-      <form onSubmit={submit}>
-        <label htmlFor="copilot-question">Ask Copilot</label>
+            <div style={{ background: "rgba(13, 26, 45, 0.7)", border: "1px solid rgba(0, 145, 218, 0.15)", borderRadius: 8, padding: 12, fontSize: 11 }}>
+              <div style={{ color: "#94a3b8", marginBottom: 4, fontWeight: 600 }}>Active Screen</div>
+              <div style={{ color: "var(--kpmg-glacier, #72cdf4)", fontWeight: 700 }}>{v2Context?.stageLabel || "Global Flight Deck"}</div>
+            </div>
 
-        {/* Attached Workbooks Pills */}
-        {attachedFiles.length > 0 && (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8, padding: "6px 8px", background: "#172033", borderRadius: 8, border: "1px solid #334155" }}>
-            {attachedFiles.map((f, i) => {
-              const isGstr = f.name.toLowerCase().includes("gstr") || f.name.toLowerCase().includes("gov") || i === 0;
-              return (
-                <div key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "rgba(3, 105, 161, 0.35)", padding: "3px 8px", borderRadius: 6, fontSize: 11, color: "#e0f2fe", border: "1px solid rgba(56, 189, 248, 0.4)" }}>
-                  <FileSpreadsheet size={13} style={{ color: "#38bdf8" }} />
-                  <span style={{ fontWeight: 700, color: "#7dd3fc" }}>{isGstr && attachedFiles.length > 1 ? "GSTR-2B:" : "PR:"}</span>
-                  <span style={{ maxWidth: 110, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>{f.name}</span>
-                  <button type="button" onClick={() => removeFile(i)} style={{ background: "transparent", border: "none", color: "#94a3b8", cursor: "pointer", padding: 0, display: "inline-flex" }}>
-                    <X size={12} />
-                  </button>
+            {v2Context?.gstrFilename && (
+              <div style={{ background: "rgba(13, 26, 45, 0.7)", border: "1px solid rgba(0, 145, 218, 0.15)", borderRadius: 8, padding: 12, fontSize: 11 }}>
+                <div style={{ color: "#94a3b8", marginBottom: 6, fontWeight: 600 }}>Workbooks Linked</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#e2e8f0" }}>
+                    <FileSpreadsheet size={13} style={{ color: "var(--kpmg-atlantic, #0091da)" }} />
+                    <span style={{ maxWidth: 260, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                      GSTR: {v2Context.gstrFilename}
+                    </span>
+                  </div>
+                  {v2Context.prFilename && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#e2e8f0" }}>
+                      <FileSpreadsheet size={13} style={{ color: "var(--kpmg-atlantic, #0091da)" }} />
+                      <span style={{ maxWidth: 260, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                        PR: {v2Context.prFilename}
+                      </span>
+                    </div>
+                  )}
                 </div>
-              );
-            })}
-          </div>
+              </div>
+            )}
+
+            {v2Context?.resultsSummary && (
+              <div style={{ background: "rgba(13, 26, 45, 0.7)", border: "1px solid rgba(0, 145, 218, 0.15)", borderRadius: 8, padding: 12, fontSize: 11 }}>
+                <div style={{ color: "#94a3b8", marginBottom: 6, fontWeight: 600 }}>Classification Matrix</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <div>
+                    <div style={{ color: "#10b981", fontWeight: 700, fontSize: 14 }}>
+                      {v2Context.resultsSummary.exact.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: 10, color: "#64748b" }}>Exact Matches</div>
+                  </div>
+                  <div>
+                    <div style={{ color: "var(--kpmg-atlantic, #0091da)", fontWeight: 700, fontSize: 14 }}>
+                      {v2Context.resultsSummary.tolerance.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: 10, color: "#64748b" }}>Tolerance</div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={{ marginTop: "auto", padding: 12, background: "rgba(0, 51, 141, 0.15)", borderRadius: 8, border: "1px solid rgba(0, 145, 218, 0.25)", fontSize: 11, color: "var(--kpmg-glacier, #72cdf4)" }}>
+              <div style={{ fontWeight: 700, marginBottom: 4 }}>Agentic Command Engine</div>
+              <div>All responses are calculated against persisted financial truth with sub-second execution.</div>
+            </div>
+          </aside>
         )}
 
-        <textarea
-          id="copilot-question"
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          placeholder={getPlaceholder()}
-          rows={3}
-          disabled={busy}
-        />
+        {/* Conversation Stream */}
+        <div className="tars-copilot-chat-container">
+          <div className="tars-copilot-messages" ref={logRef}>
+            {messages.length === 0 && (
+              <div className="tars-copilot-empty-state">
+                <div className="tars-copilot-empty-title">
+                  <Sparkles size={18} style={{ color: "var(--kpmg-atlantic, #0091da)" }} />
+                  <span>Welcome to TARS Copilot</span>
+                </div>
+                <p className="tars-copilot-empty-desc">
+                  {v2Context
+                    ? `I am actively monitoring ${v2Context.stageLabel}. You can ask questions, verify variance tolerances, or issue direct operational commands like "map X to Y", "add rule...", or "reconcile".`
+                    : "Your grounded agentic partner for GST reconciliation, statutory tax compliance, and multi-workbook ledger matching."}
+                </p>
 
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 4 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              title="Attach Excel workbooks (GSTR-2B / Purchase Register)"
-              style={{
-                background: attachedFiles.length > 0 ? "rgba(3, 105, 161, 0.4)" : "rgba(255, 255, 255, 0.08)",
-                border: "1px solid rgba(255, 255, 255, 0.18)",
-                color: attachedFiles.length > 0 ? "#7dd3fc" : "#cbd5e1",
-                cursor: "pointer",
-                padding: "6px 10px",
-                borderRadius: 6,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 5,
-                fontSize: 11,
-                fontWeight: 600,
-              }}
-            >
-              <Paperclip size={13} />
-              <span>{attachedFiles.length === 0 ? "Attach Excel" : `${attachedFiles.length} file(s)`}</span>
-            </button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              multiple
-              accept=".xlsx,.xls,.csv"
-              style={{ display: "none" }}
-              onChange={handleFilesSelected}
-            />
+                <div className="tars-copilot-prompt-pills">
+                  <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    Suggested Actions
+                  </div>
+                  {samplePrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      type="button"
+                      className="tars-copilot-prompt-btn"
+                      onClick={() => void ask(prompt)}
+                    >
+                      <span>{prompt}</span>
+                      <ArrowRight size={13} style={{ color: "var(--kpmg-atlantic, #0091da)" }} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {messages.map((message, idx) => {
+              const isUser = message.role === "user";
+              const prevMsg = idx > 0 ? messages[idx - 1] : null;
+              const prevCtx = prevMsg?.context;
+              const currCtx = message.context;
+
+              const sessionSwitched = Boolean(
+                prevCtx?.sessionId &&
+                  currCtx?.sessionId &&
+                  prevCtx.sessionId !== currCtx.sessionId
+              );
+
+              const stageSwitched = Boolean(
+                !sessionSwitched &&
+                  prevCtx?.stageKey &&
+                  currCtx?.stageKey &&
+                  prevCtx.stageKey !== currCtx.stageKey
+              );
+
+              return (
+                <React.Fragment key={message.id}>
+                  {sessionSwitched && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        margin: "10px 0",
+                        padding: "5px 12px",
+                        background: "rgba(30, 41, 59, 0.85)",
+                        borderRadius: "6px",
+                        border: "1px dashed #475569",
+                        color: "#94a3b8",
+                        fontSize: "11px",
+                      }}
+                    >
+                      <span>
+                        🔄 Session Changed: {prevCtx?.sessionId?.slice(0, 8)} ➔ {currCtx?.sessionId?.slice(0, 8)}
+                      </span>
+                    </div>
+                  )}
+
+                  {stageSwitched && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        margin: "8px 0",
+                        padding: "4px 10px",
+                        background: "rgba(15, 23, 42, 0.6)",
+                        borderRadius: "4px",
+                        border: "1px dotted #334155",
+                        color: "#94a3b8",
+                        fontSize: "10.5px",
+                      }}
+                    >
+                      <span>
+                        🧭 Stage Switched: {prevCtx?.stageLabel || prevCtx?.stageKey} ➔ {currCtx?.stageLabel || currCtx?.stageKey}
+                      </span>
+                    </div>
+                  )}
+
+                  <article className={`tars-msg ${isUser ? "is-user" : "is-assistant"}`}>
+                    <div className="tars-msg-header">
+                      <span className={`tars-msg-author ${isUser ? "" : "is-copilot"}`}>
+                        {!isUser && <Sparkles size={12} />}
+                        {isUser ? "You" : "TARS Copilot"}
+                      </span>
+                      {currCtx && (currCtx.stageLabel || currCtx.sessionId) && (
+                        <span className="tars-msg-badge">
+                          {currCtx.stageLabel || (currCtx.sessionId ? `Sess: ${currCtx.sessionId.slice(0, 6)}` : "Global")}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Post-Completion Collapsible Thought Accordion (Claude Code Style) */}
+                    {!isUser && message.telemetry_steps && message.telemetry_steps.length > 0 && (
+                      <ThoughtAccordion
+                        steps={message.telemetry_steps}
+                        durationMs={message.reasoning_duration_ms}
+                      />
+                    )}
+
+                    <div className="tars-msg-bubble">
+                      {renderFormattedContent(message.content)}
+                    </div>
+
+                    {message.response && (
+                      <>
+                        {message.response.evidence.length > 0 && (
+                          <details style={{ marginTop: 8, fontSize: 11, color: "#94a3b8" }}>
+                            <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                              View evidence ({message.response.evidence.length} facts)
+                            </summary>
+                            <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                              {message.response.evidence.map((item) => (
+                                <div
+                                  key={`${item.reference_type}-${item.reference_id}`}
+                                  style={{ padding: "4px 8px", background: "rgba(255, 255, 255, 0.04)", borderRadius: 4 }}
+                                >
+                                  <strong>{item.reference_type.replaceAll("_", " ")}</strong>: {item.reference_id}
+                                </div>
+                              ))}
+                            </div>
+                          </details>
+                        )}
+                      </>
+                    )}
+                  </article>
+                </React.Fragment>
+              );
+            })}
+
+            {/* Live Sub-Second Telemetry Trace during generation */}
+            {busy && (
+              <div className="tars-copilot-telemetry-live">
+                <div className="tars-copilot-telemetry-header">
+                  <span className="tars-copilot-cli-spinner">{CLI_SPINNER_FRAMES[spinnerIndex]}</span>
+                  <span>{thinkingStatus || "Thinking..."}</span>
+                </div>
+                {liveSteps.length > 0 && (
+                  <div className="tars-copilot-telemetry-steps">
+                    {liveSteps.map((step) => (
+                      <div key={step.id} className="tars-copilot-telemetry-line">
+                        <span className="step-glyph">›</span>
+                        <span className="step-label">{step.label}</span>
+                        {step.duration_ms && <span className="step-ms">[{step.duration_ms}ms]</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
-          <button disabled={busy || (!draft.trim() && attachedFiles.length === 0)}>
-            {attachedFiles.length > 0 && !draft.trim() ? "Reconcile" : "Send"}
-          </button>
+          {error && (
+            <div style={{ margin: "0 16px 8px 16px", padding: "8px 12px", background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 6, color: "#fca5a5", fontSize: 12 }}>
+              {error}
+            </div>
+          )}
+
+          {/* 4. Sleek Input Bar (ChatGPT / Codex Aesthetic) */}
+          <footer className="tars-copilot-footer">
+            <form onSubmit={submit}>
+              <div className="tars-copilot-input-box">
+                {/* Attached Workbooks Chips */}
+                {attachedFiles.length > 0 && (
+                  <div className="tars-copilot-attached-chips">
+                    {attachedFiles.map((f, i) => {
+                      const isGstr =
+                        f.name.toLowerCase().includes("gstr") ||
+                        f.name.toLowerCase().includes("gov") ||
+                        i === 0;
+                      return (
+                        <div key={i} className="tars-copilot-chip">
+                          <FileSpreadsheet size={13} style={{ color: "var(--kpmg-glacier, #72cdf4)" }} />
+                          <span style={{ fontWeight: 700, color: "var(--kpmg-glacier, #72cdf4)" }}>
+                            {isGstr && attachedFiles.length > 1 ? "GSTR-2B:" : "PR:"}
+                          </span>
+                          <span style={{ maxWidth: 120, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
+                            {f.name}
+                          </span>
+                          <button type="button" onClick={() => removeFile(i)}>
+                            <X size={12} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <textarea
+                  ref={textareaRef}
+                  className="tars-copilot-textarea"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder={getPlaceholder()}
+                  rows={2}
+                  disabled={busy}
+                />
+
+                <div className="tars-copilot-input-toolbar">
+                  <div className="tars-copilot-input-actions-left">
+                    <button
+                      type="button"
+                      className={`tars-copilot-attach-btn ${attachedFiles.length > 0 ? "has-files" : ""}`}
+                      onClick={() => fileInputRef.current?.click()}
+                      title="Attach Excel workbooks (GSTR-2B or Purchase Register)"
+                    >
+                      <Paperclip size={13} />
+                      <span>{attachedFiles.length === 0 ? "Attach Excel" : `${attachedFiles.length} file(s)`}</span>
+                    </button>
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      multiple
+                      accept=".xlsx,.xls,.csv"
+                      style={{ display: "none" }}
+                      onChange={handleFilesSelected}
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="tars-copilot-send-btn"
+                    disabled={busy || (!draft.trim() && attachedFiles.length === 0)}
+                    title="Send message (Enter)"
+                    aria-label="Send"
+                  >
+                    <Send size={14} />
+                  </button>
+                </div>
+              </div>
+            </form>
+          </footer>
         </div>
-      </form>
+      </div>
     </aside>
   );
 }

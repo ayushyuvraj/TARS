@@ -471,6 +471,13 @@ export type CopilotMessageContext = {
   routePath?: string;
   timestamp: string;
 };
+export type CopilotTelemetryStep = {
+  id: string;
+  label: string;
+  duration_ms?: number;
+  status?: "running" | "completed" | "failed";
+};
+
 export type CopilotMessage = {
   id: string;
   conversation_id: string;
@@ -480,6 +487,8 @@ export type CopilotMessage = {
   response: CopilotResponse | null;
   created_at: string;
   context?: CopilotMessageContext | null;
+  telemetry_steps?: CopilotTelemetryStep[];
+  reasoning_duration_ms?: number;
 };
 export type CopilotConversation = {
   conversation_id: string;

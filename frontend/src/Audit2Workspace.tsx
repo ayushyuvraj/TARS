@@ -7,6 +7,7 @@ import {
   UnifiedAuditChapter,
   CryptographicAuditManifest
 } from "./api_v2";
+import { copilotV2Bridge } from "./copilot_v2_bridge";
 import {
   History,
   CheckCircle2,
@@ -85,6 +86,35 @@ export const Audit2Workspace: React.FC = () => {
       }
     }
   }, [sessions, routeId]);
+
+  useEffect(() => {
+    if (selectedSession) {
+      const gstrName = selectedSession.stages?.setup?.files?.government_gstr2b?.filename || "GSTR-2B";
+      const prName = selectedSession.stages?.setup?.files?.purchase_register?.filename || "Purchase Register";
+      const resStage = selectedSession.stages?.results;
+      copilotV2Bridge.setContext({
+        activeStage: "audit",
+        stageNumber: 7,
+        stageLabel: "Audit 2.0 Ledger",
+        sessionId: selectedSession.session_id,
+        gstrFilename: gstrName,
+        prFilename: prName,
+        resultsSummary: {
+          exact: resStage?.exact_matches || 0,
+          tolerance: resStage?.tolerance_matches || 0,
+          nearMatch: resStage?.near_matches || 0,
+          unresolved: (resStage?.open_on_government || 0) + (resStage?.open_on_pr || 0),
+        },
+      });
+    } else {
+      copilotV2Bridge.setContext({
+        activeStage: "audit",
+        stageNumber: 7,
+        stageLabel: "Audit 2.0 Workspace",
+        sessionId: null,
+      });
+    }
+  }, [selectedSession]);
 
   const loadAuditData = async () => {
     setLoading(true);

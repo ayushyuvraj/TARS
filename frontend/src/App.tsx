@@ -61,7 +61,9 @@ import { MappingEditor } from "./MappingEditor";
 import { PolicyBuilder, PolicyPreview } from "./PolicyBuilder";
 import { NearMatchWorkspace } from "./NearMatchWorkspace";
 import { ExceptionWorkspace } from "./ExceptionWorkspace";
-import { CopilotPanel } from "./CopilotPanel";
+import { CopilotDisplayMode, CopilotPanel } from "./CopilotPanel";
+import { copilotV2Bridge, V2WorkspaceContext } from "./copilot_v2_bridge";
+import "./copilot_agentic.css";
 import { GovernanceWorkspace } from "./GovernanceWorkspace";
 import { AuditTimeline } from "./AuditTimeline";
 import { FinalReviewWorkspace } from "./FinalReviewWorkspace";
@@ -387,7 +389,43 @@ export default function App() {
     [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState<string | null>(null),
     [navOpen, setNavOpen] = useState(false),
-    [copilotOpen, setCopilotOpen] = useState(false);
+    [copilotMode, setCopilotMode] = useState<CopilotDisplayMode>(() => {
+      const saved = localStorage.getItem("tars_copilot_mode_v2");
+      if (saved === "floating" || saved === "fullscreen") return saved as CopilotDisplayMode;
+      return "closed";
+    });
+  const copilotOpen = copilotMode !== "closed";
+  const setCopilotOpen = (open: boolean) => setCopilotMode(open ? "floating" : "closed");
+  const [v2BridgeContext, setV2BridgeContext] = useState<V2WorkspaceContext | null>(() =>
+    copilotV2Bridge.getContext()
+  );
+
+  useEffect(() => {
+    return copilotV2Bridge.subscribe((ctx) => {
+      setV2BridgeContext(ctx);
+    });
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("tars_copilot_mode_v2", copilotMode);
+  }, [copilotMode]);
+
+  useEffect(() => {
+    const handleGlobalKeys = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "K" || e.key === "/")) {
+        e.preventDefault();
+        setCopilotMode((prev) => (prev === "closed" ? "floating" : "closed"));
+      } else if (e.key === "Escape") {
+        setCopilotMode((prev) => {
+          if (prev === "fullscreen") return "floating";
+          if (prev === "floating") return "closed";
+          return prev;
+        });
+      }
+    };
+    window.addEventListener("keydown", handleGlobalKeys);
+    return () => window.removeEventListener("keydown", handleGlobalKeys);
+  }, []);
   const [exportHistory, setExportHistory] = useState<ExportRecord[]>([]);
   const [reconciliations, setReconciliations] = useState<ReconciliationListItem[]>([]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -551,36 +589,21 @@ export default function App() {
     document.title = `${label ?? (loc.pathname === "/dashboard" ? "Dashboard" : loc.pathname === "/overview" ? "Overview" : loc.pathname === "/rules" ? "Rules Wiki" : "GST reconciliation")} · TARS`;
   }, [loc.pathname]);
   useEffect(() => {
-    if (!copilotOpen) return;
-    const previous = document.activeElement as HTMLElement | null;
-    requestAnimationFrame(() =>
-      copilotDialogRef.current?.querySelector<HTMLElement>("button")?.focus(),
-    );
+    if (copilotMode === "pill") return;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        setCopilotOpen(false);
-        return;
-      }
-      if (event.key !== "Tab" || !copilotDialogRef.current) return;
-      const focusable = Array.from(
-        copilotDialogRef.current.querySelectorAll<HTMLElement>(
-          'button:not(:disabled), textarea:not(:disabled), input:not(:disabled), select:not(:disabled), a[href], [tabindex]:not([tabindex="-1"])',
-        ),
-      );
-      if (!focusable.length) return;
-      const first = focusable[0], last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault(); last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault(); first.focus();
+        if (copilotMode === "fullscreen") {
+          setCopilotMode("parallel");
+        } else {
+          setCopilotMode("pill");
+        }
       }
     };
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      (previous ?? copilotTriggerRef.current)?.focus();
     };
-  }, [copilotOpen]);
+  }, [copilotMode]);
   const go = (stage: StageKey, id = sessionId) =>
     id && nav(`/reconciliations/${id}/${stage}`);
   const startAnalysis = async () => {
@@ -1541,19 +1564,20 @@ export default function App() {
             <button
               className="copilot-trigger"
               ref={copilotTriggerRef}
-              onClick={() => setCopilotOpen(true)}
+              onClick={() => setCopilotMode((m) => (m === "closed" ? "floating" : "closed"))}
               aria-haspopup="dialog"
-              aria-expanded={copilotOpen}
-              title="Open TARS Copilot"
+              aria-expanded={copilotMode !== "closed"}
+              title="Toggle TARS Copilot (Ctrl+K)"
             >
-              <MessageSquareText size={17} />
+              <Sparkles size={16} />
               Copilot
             </button>
             <div className="avatar">PO</div>
           </div>
         </header>
-        <main
-          id="workspace"
+        <div className="app-viewport-layout">
+          <main
+            id="workspace"
           className={
             loc.pathname === "/dashboard"
               ? "workspace workspace--dashboard"
@@ -1933,41 +1957,45 @@ export default function App() {
           </Routes>
         </main>
       </div>
-      <div
-        className="copilot-drawer"
-        style={{
-          display: copilotOpen ? "flex" : "none",
-          pointerEvents: copilotOpen ? "auto" : "none",
-        }}
-        aria-hidden={!copilotOpen}
+    </div>
+
+    {/* Mode A: Floating Overlapping Card Window (OpenAI Support Style) */}
+    {copilotMode === "floating" && (
+      <CopilotPanel
+        reconciliationId={sessionId}
+        selectedRecordId={selectedException}
+        currentPage={loc.pathname}
+        mode="floating"
+        onModeChange={setCopilotMode}
+        onClose={() => setCopilotMode("closed")}
+      />
+    )}
+
+    {/* Mode B: Maximized Fullscreen Console Workstation */}
+    {copilotMode === "fullscreen" && (
+      <CopilotPanel
+        reconciliationId={sessionId}
+        selectedRecordId={selectedException}
+        currentPage={loc.pathname}
+        mode="fullscreen"
+        onModeChange={setCopilotMode}
+        onClose={() => setCopilotMode("closed")}
+      />
+    )}
+
+    {/* Mode C: Circular Floating Trigger Button (OpenAI Help Style) */}
+    {copilotMode === "closed" && (
+      <button
+        type="button"
+        className="tars-copilot-fab-launcher"
+        onClick={() => setCopilotMode("floating")}
+        title="Open TARS Copilot (Ctrl+K)"
+        aria-label="Open TARS Copilot"
       >
-        <button
-          className="drawer-backdrop"
-          tabIndex={-1}
-          aria-hidden="true"
-          onClick={() => setCopilotOpen(false)}
-        />
-        <div
-          className="drawer-panel"
-          ref={copilotDialogRef}
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="copilot-title"
-        >
-          <button
-            className="drawer-close icon-button"
-            onClick={() => setCopilotOpen(false)}
-            aria-label="Close Copilot"
-          >
-            <PanelLeftClose size={19} />
-          </button>
-          <CopilotPanel
-            reconciliationId={sessionId}
-            selectedRecordId={selectedException}
-            currentPage={loc.pathname}
-          />
-        </div>
-      </div>
+        <span className="tars-copilot-fab-pulse" />
+        <MessageSquareText size={24} />
+      </button>
+    )}
       {selected && (
         <ToleranceDetail item={selected} onClose={() => setSelected(null)} />
       )}
