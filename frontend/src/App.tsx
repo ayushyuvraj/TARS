@@ -431,6 +431,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_KEY) === "true",
   );
+  const [isBrandHovered, setIsBrandHovered] = useState(false);
   const mappingErrorRef = useRef<HTMLDivElement>(null),
     policyErrorRef = useRef<HTMLDivElement>(null),
     copilotTriggerRef = useRef<HTMLButtonElement>(null),
@@ -1456,8 +1457,33 @@ export default function App() {
         Skip to content
       </a>
       <aside className={`app-sidebar${navOpen ? " app-sidebar--open" : ""}`}>
-        <div className="brand">
-          <img src="/kpmg-logo.png" alt="KPMG" className="brand-logo" />
+        <div
+          className={`brand ${isBrandHovered ? "is-brand-hovered" : ""}`}
+          onMouseEnter={() => setIsBrandHovered(true)}
+          onMouseLeave={() => setIsBrandHovered(false)}
+        >
+          <button
+            type="button"
+            className={`brand-logo-toggle ${isBrandHovered ? "is-hovered" : ""}`}
+            onMouseEnter={() => setIsBrandHovered(true)}
+            onMouseLeave={() => setIsBrandHovered(false)}
+            onClick={() => {
+              setSidebarCollapsed((collapsed) => !collapsed);
+            }}
+            aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+            aria-expanded={!sidebarCollapsed}
+            title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
+            data-tooltip={sidebarCollapsed ? "Expand sidebar" : undefined}
+          >
+            <img
+              src="/kpmg-logo.png"
+              alt="KPMG"
+              className={`brand-logo-img ${isBrandHovered ? "is-hidden" : ""}`}
+            />
+            <span className={`brand-logo-icon ${isBrandHovered ? "is-visible" : ""}`}>
+              {sidebarCollapsed ? <PanelLeftOpen size={19} /> : <PanelLeftClose size={19} />}
+            </span>
+          </button>
           <div className="brand-copy">
             <strong>TARS</strong>
             <small>GST Reconciliation</small>
@@ -1470,16 +1496,6 @@ export default function App() {
             <X size={18} />
           </button>
         </div>
-        <button
-          className="sidebar-collapse"
-          onClick={() => setSidebarCollapsed((collapsed) => !collapsed)}
-          aria-label={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
-          aria-expanded={!sidebarCollapsed}
-          title={sidebarCollapsed ? "Expand navigation" : "Collapse navigation"}
-        >
-          {sidebarCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
-          <span>{sidebarCollapsed ? "Expand" : "Collapse sidebar"}</span>
-        </button>
         <nav aria-label="Primary navigation">
           <NavLink to="/dashboard" data-tooltip="Dashboard" title={sidebarCollapsed ? "Dashboard" : undefined}>
             <Terminal />
@@ -1521,60 +1537,46 @@ export default function App() {
             <History className="text-emerald-400" />
             <span>Audit 2.0</span>
           </NavLink>
+          <button
+            type="button"
+            ref={copilotTriggerRef}
+            className="sidebar-copilot-btn"
+            onClick={() => setCopilotMode((m) => (m === "closed" ? "floating" : "closed"))}
+            data-tooltip="TARS Copilot"
+            title={sidebarCollapsed ? "TARS Copilot (Ctrl+K)" : undefined}
+            aria-haspopup="dialog"
+            aria-expanded={copilotMode !== "closed"}
+          >
+            <Sparkles size={16} />
+            <span>TARS Copilot</span>
+            {!sidebarCollapsed && <kbd className="sidebar-kbd">Ctrl+K</kbd>}
+          </button>
         </nav>
         <div className="sidebar-foot">
-          <ShieldCheck size={16} />
-          <span>
-            Human-governed<small>Evidence preserved</small>
-          </span>
+          {isBusy && (
+            <div className="sidebar-sync-pill">
+              <Activity className="spin" size={13} />
+              <span>{busy}</span>
+            </div>
+          )}
+          <div className="sidebar-user-block">
+            <div className="avatar-mini" title="Purchase Officer / Product Owner">PO</div>
+            <div className="sidebar-user-meta">
+              <strong>Finance Operations</strong>
+              <small>Human-governed audit</small>
+            </div>
+            <ShieldCheck size={16} className="sidebar-shield-icon" />
+          </div>
         </div>
       </aside>
       <div className="app-frame">
-        <header className="app-topbar">
-          <button
-            className="icon-button nav-trigger"
-            onClick={() => setNavOpen(true)}
-            aria-label="Open navigation"
-          >
-            <Menu size={19} />
-          </button>
-          <div className="crumbs">
-            <span>Finance operations</span>
-            <ChevronRight size={14} />
-            <strong>
-              {loc.pathname.startsWith("/reconciliations-v2")
-                ? "Reconciliation 2.0"
-                : loc.pathname.includes("reconciliations")
-                ? "Reconciliation workspace"
-                : loc.pathname === "/rules"
-                ? "Rules Wiki"
-                : loc.pathname === "/rules-v2"
-                ? "Rules Wiki 2.0"
-                : loc.pathname.split("/")[1]?.replaceAll("-", " ") ||
-                  "Overview"}
-            </strong>
-          </div>
-          <div className="topbar-actions">
-            {isBusy && (
-              <span className="sync-state">
-                <Activity className="spin" size={14} />
-                {busy}
-              </span>
-            )}
-            <button
-              className="copilot-trigger"
-              ref={copilotTriggerRef}
-              onClick={() => setCopilotMode((m) => (m === "closed" ? "floating" : "closed"))}
-              aria-haspopup="dialog"
-              aria-expanded={copilotMode !== "closed"}
-              title="Toggle TARS Copilot (Ctrl+K)"
-            >
-              <Sparkles size={16} />
-              Copilot
-            </button>
-            <div className="avatar">PO</div>
-          </div>
-        </header>
+        <button
+          className="icon-button mobile-hamburger-trigger"
+          onClick={() => setNavOpen(true)}
+          aria-label="Open navigation"
+        >
+          <Menu size={19} />
+        </button>
         <div className="app-viewport-layout">
           <main
             id="workspace"

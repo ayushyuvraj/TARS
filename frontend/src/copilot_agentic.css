@@ -226,7 +226,7 @@
 .app-viewport-layout {
   display: flex;
   flex: 1;
-  min-height: calc(100vh - 56px);
+  min-height: 100vh;
   position: relative;
   overflow: hidden;
 }
@@ -467,7 +467,7 @@
   width: 440px;
   min-width: 380px;
   max-width: 600px;
-  height: calc(100vh - 56px);
+  height: 100vh;
   flex-shrink: 0;
 }
 

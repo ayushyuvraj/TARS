@@ -318,17 +318,23 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
   if (!data && !isLoading) {
     return (
       <div className="v2-results-container">
-        {/* Top Action Bar */}
-        <ReconciliationV2ActionBar
-          position="top"
-          stageNumber={4}
-          backLabel="Back to Stage 3 Rules"
-          onBack={onBackToRules}
-        />
-
         {/* Hero Banner */}
         <div className="v2-results-hero" style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #1e40af 100%)" }}>
-          <div className="v2-results-hero-left">
+          {onBackToRules && (
+            <div className="v2-hero-nav-left">
+              <button
+                type="button"
+                className="v2-hero-btn-back"
+                onClick={onBackToRules}
+                title="Return to Stage 3: Reconciliation Rules"
+                aria-label="Back to previous screen"
+              >
+                <ArrowLeft size={15} />
+                <span>Back to Rules</span>
+              </button>
+            </div>
+          )}
+          <div className="v2-results-hero-content">
             <div className="v2-results-stage-tag" style={{ background: "rgba(59, 130, 246, 0.2)", color: "#93c5fd" }}>
               <Sparkles size={13} />
               <span>Stage 4 of 6 • Reconciliation Engine Launchpad</span>
@@ -438,7 +444,22 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
     <div className="v2-results-container">
       {/* 1. HERO BANNER */}
       <div className="v2-results-hero">
-        <div className="v2-results-hero-left">
+        {onBackToRules && (
+          <div className="v2-hero-nav-left">
+            <button
+              type="button"
+              className="v2-hero-btn-back"
+              onClick={onBackToRules}
+              title="Return to Stage 3: Reconciliation Rules"
+              aria-label="Back to previous screen"
+            >
+              <ArrowLeft size={15} />
+              <span>Back to Rules</span>
+            </button>
+          </div>
+        )}
+
+        <div className="v2-results-hero-content">
           <div className="v2-results-hero-title-row">
             <h2 className="v2-results-hero-title">Deterministic Match Matrix &amp; Ambiguity Hub</h2>
             <div className="v2-results-stage-tag">
@@ -466,6 +487,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
             type="button"
             className="v2-btn-primary-action"
             onClick={onProceedToSummary}
+            title="Proceed to Stage 5: Summary Dashboard"
           >
             <span>Proceed to Summary Dashboard</span>
             <ArrowRight size={14} />

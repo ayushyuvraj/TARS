@@ -1,12 +1,11 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 2.0 Copilot Dynamic Thought Streams & KPMG Cloud Architecture (12th September 2026)
+## Reconciliation 2.0 Screen Elevation, Symmetrical Hero Navigation & KPMG Logo Hover Collapse (12th September 2026)
 
-- **Checkpoint Name**: `TARS Copilot Real-Time Dynamic Cognitive Reasoning & KPMG Cloud Architecture`
+- **Checkpoint Name**: `TARS UI Optimization: Screen Elevation, Symmetrical Hero Navigation & KPMG Logo Hover Collapse`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-12-dynamic-thought-streams-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-12-kpmg-cloud-lightmode-checkpoint`
-- **Current HEAD Commit**: `98e2c48`
+- **Checkpoint Tag**: `tars-2026-09-12-screen-elevation-kpmg-hover-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-12-dynamic-thought-streams-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
   1. *Exact KPMG Cloud White Shade (`#F7F9FA`)*: Replaced generic stark white with the official KPMG Digital Design System neutral (`#F7F9FA` KPMG Cloud / Cool Gray 1). Paired with KPMG Ice Tint (`#F0F4F8`) for telemetry bars and crisp white (`#FFFFFF`) for elevated cards and inputs.
@@ -31,6 +30,22 @@
      - Updated `CopilotPanel.tsx` and `api.ts` with `thought_content` tracking, real-time elapsed duration calculation (`reasoning_duration_ms`), and collapsible Claude Code-style `ThoughtAccordion` rendering formatted markdown thoughts.
      - Every unique question produces a completely distinct, question-specific cognitive monologue with zero hardcoded boilerplate.
   6. *Strict Invariant Enforcement*: Only `copilot_action_engine.py`, `api.ts`, `CopilotPanel.tsx`, and `copilot_agentic.css` were updated. Zero core reconciliation matching algorithms, database schemas, or business policies were altered. Full verification passed via browser subagent.
+  7. *Global Top Bar Elimination & Usable Screen Elevation*:
+     - Completely removed the 64px `<header className="app-topbar">` across all screens, reclaiming vertical screen area for match tables, steppers, and telemetry headers.
+     - Preserved all functional capabilities: added dedicated `TARS Copilot` launcher item with `Ctrl+K` hint into primary sidebar navigation; preserved `PO` user identity and dynamic sync indicator in the sidebar footer (`.sidebar-foot`); preserved mobile navigation drawer trigger for viewports $\le 880\text{px}$.
+     - Recalibrated `.workspace--v2`, `.workspace--audit-v2`, `.workspace--dashboard`, and parallel dock layouts to `100vh`. Verified via live browser subagent across all major routes.
+  8. *Universal Stage Hero Banner & Symmetrical Navigation Blueprint*:
+     - Standardized the Stage Hero container blueprint (`.v2-stage-hero`, `.v2-results-hero`) across Reconciliation 2.0.
+     - Placed the symmetrical **Back Switch** (`.v2-hero-btn-back`) on the far left of the blue box, vertically centered with exact matching dimensions (`7px 16px` padding, `8px` border radius, `12px` bold font), smooth glassmorphic hover elevation, and a crisp left arrow icon.
+     - Centered the Stage Title, Stage Tag badge, and accounting scope description.
+     - Aligned secondary stage actions (e.g. `Re-run Waterfall`) alongside the primary **Next Switch** (`Proceed to Summary Dashboard →`) on the far right.
+     - Verified bidirectional navigation in browser between Stage 3 (Rules) and Stage 4 (Results).
+  9. *Interactive KPMG Logo Collapse Toggle & Separate Button Removal*:
+     - Removed the standalone `<button className="sidebar-collapse">` ("Collapse sidebar" / "Expand") completely from the sidebar, reclaiming 48px of vertical sidebar space and bringing navigation items up.
+     - Converted the KPMG brand logo in the sidebar header into an interactive morphing toggle button (`.brand-logo-toggle`).
+     - Implemented a smooth hover micro-animation: on hover, the KPMG logo smoothly shrinks and rotates while the collapse icon (`<PanelLeftClose>` when expanded, `<PanelLeftOpen>` when collapsed) pops in with a luminous cyan glow (`drop-shadow(0 2px 6px rgba(56, 189, 248, 0.45))`) and frosted glass halo badge (`background: rgba(0, 94, 184, 0.24)`).
+     - Clicking smoothly toggles between expanded (232px) and collapsed (72px rail) states.
+     - Fully verified in browser with live subagent across hover, collapse, collapsed-hover, and restore-expanded flows.
 
 ---
 

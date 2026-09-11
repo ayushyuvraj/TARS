@@ -44,8 +44,8 @@
   max-width: 100% !important;
   margin: 0 !important;
   padding: 0 !important;
-  height: calc(100vh - 64px) !important;
-  max-height: calc(100vh - 64px) !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
   background: #ffffff !important;
   overflow: hidden !important;
   display: flex !important;
@@ -580,6 +580,142 @@
   color: var(--v2-slate-500);
   line-height: 1.35;
   margin: 0;
+}
+
+/* ----------------------------------------------------------------------------
+   UNIVERSAL STAGE HERO BANNER (Standard Blueprint Across All 6 Stages)
+   ---------------------------------------------------------------------------- */
+.v2-stage-hero {
+  background: linear-gradient(135deg, #0a192f 0%, #0d274c 50%, #00338d 100%);
+  border-radius: 12px;
+  padding: 12px 20px;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 6px 20px -6px rgba(0, 51, 141, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.v2-stage-hero::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(0, 145, 234, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Left: Back Navigation Switch */
+.v2-hero-nav-left {
+  display: flex;
+  align-items: center;
+  z-index: 1;
+  flex-shrink: 0;
+  padding-right: 14px;
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.v2-hero-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 16px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 8px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  backdrop-filter: blur(8px);
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.v2-hero-btn-back:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.45);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.v2-hero-btn-back:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.v2-hero-btn-back:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Center: Stage Title, Pill & Subtitle */
+.v2-stage-hero-center {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  z-index: 1;
+  flex: 1;
+  min-width: 0;
+}
+
+.v2-stage-hero-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.v2-stage-hero-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.3px;
+  color: #ffffff;
+  white-space: nowrap;
+}
+
+.v2-stage-hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(255, 255, 255, 0.12);
+  padding: 2px 9px;
+  border-radius: 9999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: #93c5fd;
+  backdrop-filter: blur(8px);
+  width: fit-content;
+  white-space: nowrap;
+}
+
+.v2-stage-hero-desc {
+  margin: 0;
+  font-size: 12px;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+/* Right: Action Buttons & Next Switch */
+.v2-stage-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  z-index: 1;
+  flex-shrink: 0;
 }
 
 /* ----------------------------------------------------------------------------

@@ -37,8 +37,8 @@
   max-width: 100% !important;
   margin: 0 !important;
   padding: 0 !important;
-  height: calc(100vh - 64px) !important;
-  max-height: calc(100vh - 64px) !important;
+  height: 100vh !important;
+  max-height: 100vh !important;
   background: #f8fafc !important;
   overflow: hidden !important;
   display: flex !important;
