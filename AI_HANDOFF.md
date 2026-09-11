@@ -1,11 +1,11 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 2.0 Stage 1 Dual Ingestion & Schema Mapping Performance Breakthrough (11th September 2026)
+## Reconciliation 2.0 Stage 6 Custom Visual Export Studio & Financial Ledger Designer (11th September 2026)
 
-- **Checkpoint Name**: `Reconciliation 2.0 Stage 1 Dual Ingestion & Schema Mapping Performance Breakthrough`
+- **Checkpoint Name**: `Reconciliation 2.0 Stage 6 Custom Visual Export Studio & Financial Ledger Designer`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-stage-1-subsecond-ingestion-breakthrough`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-reconciliation-v2-6-stages-export-studio-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-11-stage-6-visual-export-studio-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-stage-1-subsecond-ingestion-breakthrough`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Objective**: Optimizing Stage 1 dual ingestion and schema mapping from 25–30 seconds down to split seconds (<1.5s for 10k rows and sub-5s for 500k rows):
   1. *Sub-30ms Streaming XLSX Extraction*: Replaced full-workbook openpyxl parsing in `FastExcelParser` with a zero-dependency `zipfile` streaming XML parser reading strictly top ~60 sample rows and `<dimension>` row bounds, dropping probe time from 4,200ms to 357ms on 10k x 223 column workbooks.
@@ -27,7 +27,7 @@
      3. `Rules` *(Reconciliation Rules Studio & Statutory Core Advisory Guardrails)*
      4. `Results` *(Multi-Pass Waterfall Match Matrix & Ambiguity Disambiguation Hub)*
      5. `Summary` *(Executive Flight Deck & Risk Intelligence)*
-     6. `Export` *(Multi-Format Ledger Dispatch & Color-Coded Export Studio)*
+     6. `Export` *(Visual Export Studio & Custom Ledger Designer)* — Universal column universe introspection across both files and calculated intel, arbitrary column reordering, custom header/fill colors, live on-screen & native Excel conditional formatting injection (`openpyxl`), reusable export presets persisted to disk, and a unified top-right Export dropdown (`.xlsx`, `.csv`, configurable DSV `| \t ;`, and `.json`).
    - **Dynamic Session Lifecycle & Order File Persistence**:
      - Auto-generates brand-new session IDs (`POST /api/v2/reconciliations`) when navigating to `/reconciliations-v2` or clicking sidebar links.
      - Hard refresh (F5) reads `:id` from URL (`/reconciliations-v2/:id/:stage`), restoring exact stage, uploaded files, rules, and waterfall matrix from disk (`data/audit_v2/sessions_v2.json`).

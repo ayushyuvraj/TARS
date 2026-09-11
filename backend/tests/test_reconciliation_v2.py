@@ -512,5 +512,62 @@ def test_v2_export_endpoints():
     assert json_data["session_id"] == session_id
     assert len(json_data["records"]) == 1
 
+    # 7. Test Columns Catalog endpoint (Stage 6)
+    cols_res = client.get(f"/api/reconciliations-v2/{session_id}/export/columns")
+    assert cols_res.status_code == 200
+    cols_data = cols_res.json()
+    assert "families" in cols_data
+    assert "CALCULATED" in cols_data["families"]
+    assert "GSTR" in cols_data["families"]
+    assert "PR" in cols_data["families"]
+    assert len(cols_data["families"]["CALCULATED"]) >= 8
+
+    # 8. Test Presets list and CRUD (Stage 6)
+    presets_res = client.get("/api/reconciliations-v2/export/presets")
+    assert presets_res.status_code == 200
+    presets = presets_res.json()
+    assert len(presets) >= 4
+    preset_names = [p["name"] for p in presets]
+    assert "KPMG Statutory Audit Package" in preset_names
+    assert "360° Dual Ledger Complete Dump" in preset_names
+
+    # 9. Test Custom Export endpoint with conditional formatting & column styling (XLSX, DSV)
+    custom_payload = {
+        "columns": [
+            {"id": "calc_id", "alias": "Custom_Rec_ID", "header_color": "#00338D"},
+            {"id": "calc_bucket", "alias": "Status_Badge"},
+            {"id": "gstr_gstin", "alias": "Supplier_GSTIN"},
+            {"id": "calc_tax_variance", "alias": "Tax_Disparity_INR"},
+        ],
+        "conditional_rules": [
+            {
+                "id": "cr_1",
+                "column_id": "calc_tax_variance",
+                "operator": "GREATER_THAN",
+                "value1": "0",
+                "bg_color": "#FEE2E2",
+                "text_color": "#991B1B",
+                "is_bold": True,
+            }
+        ],
+        "export_format": "xlsx",
+        "color_coded": True,
+        "include_summary_sheet": True,
+        "include_audit_sheet": False,
+    }
+    custom_res = client.post(f"/api/reconciliations-v2/{session_id}/export/custom", json=custom_payload)
+    assert custom_res.status_code == 200
+    assert "spreadsheetml.sheet" in custom_res.headers["content-type"]
+    assert len(custom_res.content) > 1000
+
+    # 10. Test Custom DSV Pipe Export
+    custom_payload["export_format"] = "dsv"
+    custom_payload["delimiter"] = "|"
+    dsv_res = client.post(f"/api/reconciliations-v2/{session_id}/export/custom", json=custom_payload)
+    assert dsv_res.status_code == 200
+    dsv_text = dsv_res.content.decode("utf-8")
+    assert "Custom_Rec_ID|Status_Badge|Supplier_GSTIN|Tax_Disparity_INR" in dsv_text
+
+
 
 

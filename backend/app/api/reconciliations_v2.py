@@ -44,7 +44,11 @@ from app.services.audit_v2_service import (
     V2LogEntry,
     V2StepErrorDetail,
 )
-from app.services.export_v2_service import export_v2_service
+from app.services.export_v2_service import (
+    export_v2_service,
+    CustomExportRequest,
+    ExportPreset,
+)
 from app.workflows.schema_mapping_v2 import SchemaMappingV2Workflow
 
 logger = logging.getLogger(__name__)
@@ -1569,6 +1573,71 @@ def get_v2_export_preview(session_id: str, limit: int = 50):
         raise HTTPException(status_code=500, detail=f"Failed to generate export preview: {exc}") from exc
 
 
+@router_v2.get("/{session_id}/export/columns")
+def get_v2_export_columns(session_id: str):
+    """Returns the complete universe of columns across CALCULATED, GSTR, and PR families."""
+    try:
+        return export_v2_service.get_available_columns(session_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error fetching export columns for session {session_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to inspect export columns: {exc}") from exc
+
+
+@router_v2.post("/{session_id}/export/custom")
+def download_v2_custom_export(session_id: str, request: CustomExportRequest):
+    """Streams a user-designed export file in XLSX, CSV, DSV, or JSON with custom order and formatting."""
+    try:
+        content, filename, media_type = export_v2_service.build_custom_export(
+            session_id=session_id,
+            request=request,
+        )
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error compiling custom export package for session {session_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to compile custom export: {exc}") from exc
+
+
+@router_v2.get("/export/presets")
+def list_v2_export_presets():
+    """Returns all built-in and user-saved export presets."""
+    try:
+        return export_v2_service.get_presets()
+    except Exception as exc:
+        logger.error(f"Error listing export presets: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list export presets: {exc}") from exc
+
+
+@router_v2.post("/export/presets")
+def save_v2_export_preset(preset: ExportPreset):
+    """Persists a user-defined export preset layout and rules to disk."""
+    try:
+        return export_v2_service.save_preset(preset)
+    except Exception as exc:
+        logger.error(f"Error saving export preset: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to save export preset: {exc}") from exc
+
+
+@router_v2.delete("/export/presets/{preset_id}")
+def delete_v2_export_preset(preset_id: str):
+    """Deletes a custom user preset."""
+    try:
+        return export_v2_service.delete_preset(preset_id)
+    except Exception as exc:
+        logger.error(f"Error deleting export preset {preset_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete export preset: {exc}") from exc
+
+
 @router_v2.get("/{session_id}/export/download")
 def download_v2_export(
     session_id: str,
@@ -1597,6 +1666,7 @@ def download_v2_export(
     except Exception as exc:
         logger.error(f"Error generating export package for session {session_id}: {exc}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to generate export package: {exc}") from exc
+
 
 
 # =========================================================================

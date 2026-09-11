@@ -510,6 +510,41 @@ export const apiV2 = {
     return request<ExportPreviewResponse>(`${API_BASE}/${sessionId}/export/preview?limit=${limit}`);
   },
 
+  async getExportColumns(sessionId: string): Promise<AvailableColumnsResponse> {
+    return request<AvailableColumnsResponse>(`${API_BASE}/${sessionId}/export/columns`);
+  },
+
+  async listExportPresets(): Promise<ExportPreset[]> {
+    return request<ExportPreset[]>(`${API_BASE}/export/presets`);
+  },
+
+  async saveExportPreset(preset: ExportPreset): Promise<ExportPreset[]> {
+    return request<ExportPreset[]>(`${API_BASE}/export/presets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(preset),
+    });
+  },
+
+  async deleteExportPreset(presetId: string): Promise<ExportPreset[]> {
+    return request<ExportPreset[]>(`${API_BASE}/export/presets/${encodeURIComponent(presetId)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async downloadCustomExport(sessionId: string, req: CustomExportRequest): Promise<Blob> {
+    const res = await fetch(`${API_BASE}/${sessionId}/export/custom`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(req),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: "Export generation failed" }));
+      throw new Error(err.detail || `Export failed with status ${res.status}`);
+    }
+    return res.blob();
+  },
+
   getExportDownloadUrl(
     sessionId: string,
     format: "xlsx" | "csv" | "json" = "xlsx",
@@ -519,6 +554,65 @@ export const apiV2 = {
     return `${API_BASE}/${sessionId}/export/download?format=${format}&color_coded=${colorCoded}&include_auxiliary=${includeAuxiliary}`;
   }
 };
+
+export interface ExportColumnDescriptor {
+  id: string;
+  label: string;
+  family: "CALCULATED" | "GSTR" | "PR";
+  source_field: string;
+  dtype: "string" | "number" | "date" | "currency";
+  default_selected: boolean;
+  description?: string | null;
+}
+
+export interface ActiveExportColumn {
+  id: string;
+  alias?: string | null;
+  header_color?: string | null;
+  fill_color?: string | null;
+  number_format?: string | null;
+}
+
+export interface ConditionalFormattingRule {
+  id: string;
+  column_id: string;
+  operator: "CONTAINS" | "EQUALS" | "GREATER_THAN" | "LESS_THAN" | "BETWEEN" | "IS_EMPTY";
+  value1: string;
+  value2?: string | null;
+  bg_color: string;
+  text_color: string;
+  is_bold: boolean;
+}
+
+export interface ExportPreset {
+  id: string;
+  name: string;
+  description: string;
+  is_system?: boolean;
+  columns: ActiveExportColumn[];
+  conditional_rules: ConditionalFormattingRule[];
+  created_at?: string | null;
+}
+
+export interface CustomExportRequest {
+  columns: ActiveExportColumn[];
+  conditional_rules: ConditionalFormattingRule[];
+  export_format: "xlsx" | "csv" | "dsv" | "json";
+  delimiter: string;
+  color_coded: boolean;
+  include_summary_sheet: boolean;
+  include_audit_sheet: boolean;
+}
+
+export interface AvailableColumnsResponse {
+  session_id: string;
+  total_available_columns: number;
+  families: {
+    CALCULATED: ExportColumnDescriptor[];
+    GSTR: ExportColumnDescriptor[];
+    PR: ExportColumnDescriptor[];
+  };
+}
 
 export interface ExportPreviewItem {
   id: string;
