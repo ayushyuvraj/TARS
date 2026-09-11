@@ -1380,6 +1380,95 @@ def get_stage4_results_endpoint(
     raise HTTPException(status_code=404, detail="Reconciliation engine has not been executed yet for this session.")
 
 
+class VendorStratificationItem(BaseModel):
+    gstin: str
+    totalInvoices: int
+    matchedInvoices: int
+    claimableItc: float
+    disputedItc: float
+    matchPct: float
+    riskLevel: str
+
+
+class AmbiguityTriageCategory(BaseModel):
+    category: str
+    label: str
+    count: int
+    percentage: float
+    recommended_action: str
+    priority: str = "ROUTINE"
+
+
+class AmbiguityTriageSummary(BaseModel):
+    total_ambiguities: int
+    categories: list[AmbiguityTriageCategory] = Field(default_factory=list)
+
+
+class MatchDispositionBucket(BaseModel):
+    bucket: str
+    label: str
+    count: int
+    percentage: float
+    operational_action: str
+    status: str
+
+
+class ProcessHighlightItem(BaseModel):
+    metric: str
+    label: str
+    detail: str
+    impact_level: str
+
+
+class VarianceTaxonomyItem(BaseModel):
+    category: str
+    percentage: float
+    description: str
+    remediation: str
+
+
+class AiOperationalDirective(BaseModel):
+    step_number: int
+    title: str
+    target_volume: str
+    directive: str
+    impact: str
+
+
+class AiOperationalPlaybook(BaseModel):
+    verdict: str
+    directives: list[AiOperationalDirective] = Field(default_factory=list)
+    erp_optimizations: list[str] = Field(default_factory=list)
+
+
+class Stage5SummaryResponse(BaseModel):
+    session_id: str
+    summary: Stage4ResultsSummary
+    compared_columns: list[dict[str, Any]] = Field(default_factory=list)
+    vendor_stratification: list[VendorStratificationItem] = Field(default_factory=list)
+    resolved_audit_trail: list[dict[str, Any]] = Field(default_factory=list)
+    claimable_itc_total: float = 0.0
+    disputed_itc_total: float = 0.0
+    ambiguity_triage: AmbiguityTriageSummary | None = None
+    disposition_matrix: list[MatchDispositionBucket] = Field(default_factory=list)
+    process_highlights: list[ProcessHighlightItem] = Field(default_factory=list)
+    variance_taxonomy: list[VarianceTaxonomyItem] = Field(default_factory=list)
+    ai_playbook: AiOperationalPlaybook | None = None
+
+
+@router_v2.get("/{session_id}/summary", response_model=Stage5SummaryResponse)
+def get_stage5_summary_endpoint(
+    session_id: str,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> Stage5SummaryResponse:
+    """Returns pre-aggregated Stage 5 executive metrics, vendor risk stratification, and audit traces (split-second load)."""
+    session = _ensure_session(session_id)
+    summary_data = audit_v2_service.get_stage5_summary(session_id)
+    if summary_data and summary_data.get("summary"):
+        return Stage5SummaryResponse(**summary_data)
+    raise HTTPException(status_code=404, detail="Reconciliation engine has not been executed yet for this session.")
+
+
 @router_v2.post("/{session_id}/results/resolve-ambiguity", response_model=Stage4ExecutionResponse)
 def resolve_ambiguity_endpoint(
     session_id: str,

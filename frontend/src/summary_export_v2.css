@@ -763,3 +763,460 @@
   padding: 2px 6px;
   border-radius: 4px;
 }
+
+/* =========================================================================
+   STAGE 5: EXECUTIVE FLIGHT DECK & OPERATIONAL INTELLIGENCE STYLES
+   ========================================================================= */
+
+/* AI Advisory Card */
+.v2-ai-advisory-card {
+  background: linear-gradient(135deg, #ffffff 0%, #f8faff 100%);
+  border: 1px solid #bfdbfe;
+  border-left: 5px solid #00338d;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 4px 14px rgba(0, 51, 141, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.v2-ai-advisory-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 14px;
+}
+
+.v2-ai-advisory-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #00338d;
+}
+
+.v2-ai-advisory-tag {
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  letter-spacing: 0.02em;
+}
+
+.v2-ai-verdict-box {
+  background: #f0f4fa;
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #1e293b;
+  border-left: 3px solid #005eb8;
+}
+
+.v2-directives-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .v2-directives-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.v2-directive-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.v2-directive-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 10px rgba(0, 51, 141, 0.07);
+}
+
+.v2-directive-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.v2-directive-number {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #00338d;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.v2-directive-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #0f172a;
+  flex: 1;
+}
+
+.v2-directive-vol {
+  font-size: 11px;
+  font-weight: 600;
+  color: #005eb8;
+  background: #f0f5ff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+.v2-directive-body {
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.5;
+}
+
+.v2-directive-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-top: 1px solid #f1f5f9;
+  padding-top: 8px;
+  font-size: 11px;
+}
+
+.v2-directive-impact {
+  font-weight: 700;
+  color: #166534;
+  background: #dcfce7;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+/* Ambiguity Triage Hub */
+.v2-ambiguity-hub {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 22px 24px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.v2-ambiguity-hub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 12px;
+}
+
+.v2-triage-categories-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+@media (max-width: 1280px) {
+  .v2-triage-categories-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .v2-triage-categories-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.v2-triage-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  transition: all 0.15s ease;
+}
+
+.v2-triage-card:hover {
+  background: #ffffff;
+  border-color: #94a3b8;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.05);
+}
+
+.v2-triage-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.v2-triage-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.v2-triage-priority {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.v2-priority-ROUTINE {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.v2-priority-REVIEW {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.v2-priority-URGENT {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.v2-triage-count-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.v2-triage-count {
+  font-size: 20px;
+  font-weight: 700;
+  color: #00338d;
+}
+
+.v2-triage-pct {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.v2-triage-action {
+  font-size: 11.5px;
+  color: #334155;
+  background: #f1f5f9;
+  padding: 6px 8px;
+  border-radius: 4px;
+  line-height: 1.4;
+  border-left: 2px solid #005eb8;
+}
+
+/* Match Disposition Grid */
+.v2-disposition-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+@media (max-width: 900px) {
+  .v2-disposition-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.v2-disposition-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.v2-disposition-card__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.v2-disposition-card__label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.v2-disposition-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.v2-status-VERIFIED {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.v2-status-ATTENTION {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.v2-status-ACTION_REQUIRED {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.v2-status-CLEAN {
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.v2-disposition-val-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.v2-disposition-count {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.v2-disposition-pct {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.v2-disposition-action {
+  font-size: 11.5px;
+  color: #475569;
+  line-height: 1.4;
+  background: #f8fafc;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+/* Process Highlights & Taxonomy Deck */
+.v2-highlights-deck {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 992px) {
+  .v2-highlights-deck {
+    grid-template-columns: 1fr;
+  }
+}
+
+.v2-highlight-item {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.v2-highlight-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.v2-highlight-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.v2-highlight-metric {
+  font-size: 12px;
+  font-weight: 700;
+  color: #00338d;
+  background: #f0f5ff;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.v2-highlight-detail {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.45;
+}
+
+/* Upstream ERP Box */
+.v2-erp-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.v2-erp-tip-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 12.5px;
+  color: #334155;
+  line-height: 1.45;
+}
+
+.v2-erp-tip-bullet {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #005eb8;
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
+/* Pre-Export Checklist */
+.v2-readiness-checklist {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+
+@media (max-width: 900px) {
+  .v2-readiness-checklist {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.v2-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+}

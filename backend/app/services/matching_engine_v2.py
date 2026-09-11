@@ -175,9 +175,72 @@ class AmbiguityCluster(BaseModel):
     candidates: list[AmbiguityCandidate] = Field(default_factory=list)
     ai_justification: str
     status: str = "PENDING_REVIEW"  # PENDING_REVIEW, RESOLVED
+    ambiguity_category: str = "PROBABLE_EXACT_MATCH"
+    category_label: str = "High-Confidence Probable Match"
+    recommended_action: str = "Safe Auto-Acceptance: Bind dominant candidate"
+    priority: str = "ROUTINE"
     resolved_pr_record_id: str | None = None
     resolved_pr_row_index: int | None = None
     resolved_at: str | None = None
+
+
+def classify_ambiguity_cluster(anchor: dict[str, Any], candidates: list[AmbiguityCandidate]) -> tuple[str, str, str, str]:
+    """Classifies an ambiguity cluster into an operational business category with recommended next steps."""
+    if not candidates:
+        return "UNRESOLVED", "Unresolved Collision", "Manual Review Required", "REVIEW"
+
+    top = candidates[0]
+    # Check for ERP duplicate booking: two PR candidates with identical document number and amount
+    if len(candidates) >= 2:
+        c1, c2 = candidates[0], candidates[1]
+        p1 = c1.pr_preview or {}
+        p2 = c2.pr_preview or {}
+        doc1 = str(p1.get("document_number") or p1.get("InvoiceNumber") or p1.get("Doc_No") or "").strip().lower()
+        doc2 = str(p2.get("document_number") or p2.get("InvoiceNumber") or p2.get("Doc_No") or "").strip().lower()
+        val1 = float(p1.get("taxable_value") or p1.get("TaxableValue") or 0)
+        val2 = float(p2.get("taxable_value") or p2.get("TaxableValue") or 0)
+        if doc1 and doc2 and doc1 == doc2 and abs(val1 - val2) < 0.05:
+            return (
+                "ERP_DUPLICATE_ENTRY",
+                "ERP Duplicate Booking Risk",
+                "Quarantine Duplicate in ERP: Bind primary voucher; cancel duplicate",
+                "URGENT",
+            )
+
+    # Check for High-Confidence Probable Match: top candidate confidence >= 90%
+    if top.confidence_score >= 90.0:
+        return (
+            "PROBABLE_EXACT_MATCH",
+            "High-Confidence Probable Match",
+            f"Safe Auto-Acceptance: Confirm dominant candidate ({top.pr_record_id})",
+            "ROUTINE",
+        )
+
+    # Check for Commercial Rounding Variance: invoice numbers match, minor tax difference
+    doc_sim = top.score_breakdown.invoice_similarity if hasattr(top, "score_breakdown") else 0.0
+    if doc_sim >= 90.0 and any("Tax Variance" in str(d) for d in top.detected_differences):
+        return (
+            "VALUE_ROUNDING_VARIANCE",
+            "Commercial Rounding Variation",
+            "Absorb Under Commercial Tolerance: Accept within allowable margin",
+            "ROUTINE",
+        )
+
+    # Check for Timing Cutoff Differences: Date difference > 14 days
+    if any("Date Displacement" in str(d) for d in top.detected_differences):
+        return (
+            "TIMING_CUTOFF_SHIFT",
+            "Timing Cutoff Difference",
+            "Verify Delivery Date: Confirm goods receipt before month-end claim",
+            "REVIEW",
+        )
+
+    return (
+        "SPLIT_BATCH_DELIVERY",
+        "Split Delivery / Partial Invoicing",
+        "Consolidate Line Vouchers: Group delivery items against parent invoice",
+        "REVIEW",
+    )
 
 
 class ReconciliationRecordItem(BaseModel):
@@ -1675,6 +1738,8 @@ class WaterfallMatchingEngine:
                 "Requires senior accountant confirmation before binding ledger credit."
             )
 
+            amb_cat, amb_label, amb_action, amb_priority = classify_ambiguity_cluster(g.preview, candidates_list)
+
             cluster = AmbiguityCluster(
                 cluster_id=cluster_id,
                 gstr_row_index=g.idx,
@@ -1683,6 +1748,10 @@ class WaterfallMatchingEngine:
                 candidates=candidates_list,
                 ai_justification=ai_cluster_justification,
                 status="PENDING_REVIEW",
+                ambiguity_category=amb_cat,
+                category_label=amb_label,
+                recommended_action=amb_action,
+                priority=amb_priority,
             )
             ambiguities.append(cluster)
 

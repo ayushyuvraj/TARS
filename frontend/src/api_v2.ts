@@ -285,6 +285,82 @@ export interface Stage4ExecutionResponse {
   compared_columns?: ComparedColumnInfo[];
 }
 
+export interface VendorStratificationItem {
+  gstin: string;
+  totalInvoices: number;
+  matchedInvoices: number;
+  claimableItc: number;
+  disputedItc: number;
+  matchPct: number;
+  riskLevel: "LOW" | "MED" | "HIGH";
+}
+
+export interface AmbiguityTriageCategory {
+  category: string;
+  label: string;
+  count: number;
+  percentage: number;
+  recommended_action: string;
+  priority: "ROUTINE" | "REVIEW" | "URGENT";
+}
+
+export interface AmbiguityTriageSummary {
+  total_ambiguities: number;
+  categories: AmbiguityTriageCategory[];
+}
+
+export interface MatchDispositionBucket {
+  bucket: string;
+  label: string;
+  count: number;
+  percentage: number;
+  operational_action: string;
+  status: "VERIFIED" | "ATTENTION" | "ACTION_REQUIRED" | "CLEAN";
+}
+
+export interface ProcessHighlightItem {
+  metric: string;
+  label: string;
+  detail: string;
+  impact_level: "POSITIVE" | "ATTENTION" | "NEUTRAL";
+}
+
+export interface VarianceTaxonomyItem {
+  category: string;
+  percentage: number;
+  description: string;
+  remediation: string;
+}
+
+export interface AiOperationalDirective {
+  step_number: number;
+  title: string;
+  target_volume: string;
+  directive: string;
+  impact: string;
+}
+
+export interface AiOperationalPlaybook {
+  verdict: string;
+  directives: AiOperationalDirective[];
+  erp_optimizations: string[];
+}
+
+export interface Stage5SummaryResponse {
+  session_id: string;
+  summary: Stage4ResultsSummary;
+  compared_columns?: ComparedColumnInfo[];
+  vendor_stratification?: VendorStratificationItem[];
+  resolved_audit_trail?: ReconciliationRecordItem[];
+  claimable_itc_total?: number;
+  disputed_itc_total?: number;
+  ambiguity_triage?: AmbiguityTriageSummary;
+  disposition_matrix?: MatchDispositionBucket[];
+  process_highlights?: ProcessHighlightItem[];
+  variance_taxonomy?: VarianceTaxonomyItem[];
+  ai_playbook?: AiOperationalPlaybook;
+}
+
 const API_BASE = "/api/reconciliations-v2";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -462,6 +538,10 @@ export const apiV2 = {
 
   async getStage4Results(sessionId: string): Promise<Stage4ExecutionResponse> {
     return request<Stage4ExecutionResponse>(`${API_BASE}/${sessionId}/results`);
+  },
+
+  async getStage5Summary(sessionId: string): Promise<Stage5SummaryResponse> {
+    return request<Stage5SummaryResponse>(`${API_BASE}/${sessionId}/summary`);
   },
 
   async resolveAmbiguity(
