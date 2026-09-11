@@ -487,6 +487,7 @@ export type CopilotMessage = {
   response: CopilotResponse | null;
   created_at: string;
   context?: CopilotMessageContext | null;
+  thought_content?: string;
   telemetry_steps?: CopilotTelemetryStep[];
   reasoning_duration_ms?: number;
 };

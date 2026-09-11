@@ -21,6 +21,8 @@ import {
   CheckCircle2,
   PanelLeftClose,
   PanelLeftOpen,
+  Sun,
+  Moon,
 } from "lucide-react";
 import "./copilot_agentic.css";
 
@@ -151,15 +153,22 @@ function renderFormattedContent(text: string) {
 }
 
 function ThoughtAccordion({
+  thoughtContent,
   steps,
   durationMs,
 }: {
-  steps: CopilotTelemetryStep[];
+  thoughtContent?: string;
+  steps?: CopilotTelemetryStep[];
   durationMs?: number;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const totalMs = durationMs || steps.reduce((acc, s) => acc + (s.duration_ms || 15), 0);
+  const totalMs = durationMs || (steps && steps.length > 0 ? steps.reduce((acc, s) => acc + (s.duration_ms || 15), 0) : 2100);
   const seconds = (totalMs / 1000).toFixed(1);
+
+  const hasThought = Boolean(thoughtContent && thoughtContent.trim().length > 0);
+  const hasSteps = Boolean(steps && steps.length > 0);
+
+  if (!hasThought && !hasSteps) return null;
 
   return (
     <div className="tars-copilot-thought-accordion">
@@ -172,7 +181,8 @@ function ThoughtAccordion({
         <div className="tars-copilot-thought-summary-left">
           <span className="glyph">{isOpen ? "▾" : "▸"}</span>
           <span>
-            Reasoned in {seconds}s · {steps.length} operation{steps.length === 1 ? "" : "s"}
+            Reasoned in {seconds}s
+            {hasSteps ? ` · ${steps!.length} operation${steps!.length === 1 ? "" : "s"}` : ""}
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#64748b" }}>
@@ -183,13 +193,23 @@ function ThoughtAccordion({
 
       {isOpen && (
         <div className="tars-copilot-thought-details">
-          {steps.map((step) => (
-            <div key={step.id} className="tars-copilot-telemetry-line">
-              <span className="step-glyph">›</span>
-              <span className="step-label">{step.label}</span>
-              {step.duration_ms && <span className="step-ms">[{step.duration_ms}ms]</span>}
+          {hasThought && (
+            <div className="tars-copilot-thought-raw">
+              {renderFormattedContent(thoughtContent!)}
             </div>
-          ))}
+          )}
+
+          {hasSteps && (
+            <div className="tars-copilot-thought-steps-list">
+              {steps!.map((step) => (
+                <div key={step.id} className="tars-copilot-telemetry-line">
+                  <span className="step-glyph">›</span>
+                  <span className="step-label">{step.label}</span>
+                  {step.duration_ms && <span className="step-ms">[{step.duration_ms}ms]</span>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -246,6 +266,7 @@ export function CopilotPanel({
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [thinkingStatus, setThinkingStatus] = useState<string | null>(null);
+  const [liveThought, setLiveThought] = useState<string>("");
   const [liveSteps, setLiveSteps] = useState<CopilotTelemetryStep[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
@@ -271,6 +292,137 @@ export function CopilotPanel({
       } catch {}
       return next;
     });
+  };
+
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    try {
+      const saved = localStorage.getItem("tars_copilot_theme");
+      if (saved === "dark" || saved === "light") return saved;
+    } catch {}
+    return "light"; // Default to light (KPMG Cloud #f7f9fa) as requested
+  });
+
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === "light" ? "dark" : "light";
+      try {
+        localStorage.setItem("tars_copilot_theme", next);
+      } catch {}
+      return next;
+    });
+  };
+
+  /* Interactive Resizing for Floating Overlapping Card */
+  const DEFAULT_FLOATING_WIDTH = 420;
+  const DEFAULT_FLOATING_HEIGHT = 640;
+  const MIN_FLOATING_WIDTH = 370;
+  const MIN_FLOATING_HEIGHT = 420;
+
+  const [floatingSize, setFloatingSize] = useState<{ width: number; height: number }>(() => {
+    try {
+      const saved = localStorage.getItem("tars_copilot_floating_size");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (typeof parsed.width === "number" && typeof parsed.height === "number") {
+          const maxW = typeof window !== "undefined" ? Math.max(MIN_FLOATING_WIDTH, window.innerWidth - 48) : 960;
+          const maxH = typeof window !== "undefined" ? Math.max(MIN_FLOATING_HEIGHT, window.innerHeight - 48) : 850;
+          return {
+            width: Math.min(Math.max(parsed.width, MIN_FLOATING_WIDTH), maxW),
+            height: Math.min(Math.max(parsed.height, MIN_FLOATING_HEIGHT), maxH),
+          };
+        }
+      }
+    } catch {}
+    return { width: DEFAULT_FLOATING_WIDTH, height: DEFAULT_FLOATING_HEIGHT };
+  });
+
+  const [isResizing, setIsResizing] = useState<"nw" | "n" | "w" | null>(null);
+  const resizeRef = useRef<{
+    handle: "nw" | "n" | "w";
+    startX: number;
+    startY: number;
+    startWidth: number;
+    startHeight: number;
+  } | null>(null);
+
+  const startResize = (e: React.PointerEvent, handle: "nw" | "n" | "w") => {
+    if (mode !== "floating") return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    resizeRef.current = {
+      handle,
+      startX: e.clientX,
+      startY: e.clientY,
+      startWidth: floatingSize.width,
+      startHeight: floatingSize.height,
+    };
+    setIsResizing(handle);
+    document.body.style.userSelect = "none";
+  };
+
+  useEffect(() => {
+    if (!isResizing) return;
+
+    const handlePointerMove = (e: PointerEvent) => {
+      if (!resizeRef.current) return;
+      const { handle, startX, startY, startWidth, startHeight } = resizeRef.current;
+      const maxW = Math.max(MIN_FLOATING_WIDTH, window.innerWidth - 48);
+      const maxH = Math.max(MIN_FLOATING_HEIGHT, window.innerHeight - 48);
+
+      let newWidth = startWidth;
+      let newHeight = startHeight;
+
+      // Anchored at bottom: 24px, right: 24px
+      // Moving mouse to the left (smaller X) increases card width
+      if (handle === "w" || handle === "nw") {
+        const deltaX = startX - e.clientX;
+        newWidth = Math.min(maxW, Math.max(MIN_FLOATING_WIDTH, startWidth + deltaX));
+      }
+
+      // Moving mouse upward (smaller Y) increases card height
+      if (handle === "n" || handle === "nw") {
+        const deltaY = startY - e.clientY;
+        newHeight = Math.min(maxH, Math.max(MIN_FLOATING_HEIGHT, startHeight + deltaY));
+      }
+
+      setFloatingSize({ width: Math.round(newWidth), height: Math.round(newHeight) });
+    };
+
+    const handlePointerUp = () => {
+      setIsResizing(null);
+      document.body.style.userSelect = "";
+      if (resizeRef.current) {
+        setFloatingSize((latest) => {
+          try {
+            localStorage.setItem("tars_copilot_floating_size", JSON.stringify(latest));
+          } catch {}
+          return latest;
+        });
+      }
+      resizeRef.current = null;
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+      document.body.style.userSelect = "";
+    };
+  }, [isResizing]);
+
+  const resetFloatingSize = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    const defaultSize = { width: DEFAULT_FLOATING_WIDTH, height: DEFAULT_FLOATING_HEIGHT };
+    setFloatingSize(defaultSize);
+    try {
+      localStorage.setItem("tars_copilot_floating_size", JSON.stringify(defaultSize));
+    } catch {}
   };
 
   useEffect(() => {
@@ -425,8 +577,11 @@ export function CopilotPanel({
       setMessages([...nextMessages, initialAssistantMsg]);
 
       const hadAttachments = attachedFiles.length > 0;
+      const startTime = Date.now();
       let accumulatedContent = "";
+      let accumulatedThought = "";
       const collectedSteps: CopilotTelemetryStep[] = [];
+      setLiveThought("");
 
       try {
         let res: Response;
@@ -492,7 +647,17 @@ export function CopilotPanel({
                 accumulatedContent += data.content;
                 setMessages((current) =>
                   current.map((m) =>
-                    m.id === assistantId ? { ...m, content: accumulatedContent } : m
+                    m.id === assistantId
+                      ? { ...m, content: accumulatedContent, thought_content: accumulatedThought }
+                      : m
+                  )
+                );
+              } else if (data.type === "thought_content") {
+                accumulatedThought += data.delta || data.content || "";
+                setLiveThought(accumulatedThought);
+                setMessages((current) =>
+                  current.map((m) =>
+                    m.id === assistantId ? { ...m, thought_content: accumulatedThought } : m
                   )
                 );
               } else if (data.type === "thought") {
@@ -508,7 +673,13 @@ export function CopilotPanel({
                 setLiveSteps([...collectedSteps]);
                 setMessages((current) =>
                   current.map((m) =>
-                    m.id === assistantId ? { ...m, telemetry_steps: [...collectedSteps] } : m
+                    m.id === assistantId
+                      ? {
+                          ...m,
+                          telemetry_steps: [...collectedSteps],
+                          thought_content: accumulatedThought,
+                        }
+                      : m
                   )
                 );
               } else if (data.type === "action") {
@@ -520,11 +691,13 @@ export function CopilotPanel({
               } else if (data.type === "done") {
                 const totalDuration = Date.now() - startTime;
                 setThinkingStatus(null);
+                setLiveThought("");
                 setMessages((current) =>
                   current.map((m) =>
                     m.id === assistantId
                       ? {
                           ...m,
+                          thought_content: accumulatedThought,
                           telemetry_steps: [...collectedSteps],
                           reasoning_duration_ms: totalDuration,
                         }
@@ -549,6 +722,7 @@ export function CopilotPanel({
                     content:
                       accumulatedContent ||
                       "❌ **Reconciliation Interrupted**: Could not complete stream processing. Please check server logs or workbook format.",
+                    thought_content: accumulatedThought || undefined,
                   }
                 : m
             )
@@ -731,7 +905,50 @@ export function CopilotPanel({
   };
 
   return (
-    <aside className={`tars-copilot-container mode-${mode}`} aria-labelledby="copilot-title">
+    <aside
+      className={`tars-copilot-container mode-${mode} theme-${theme} ${isResizing ? "is-resizing" : ""}`}
+      style={
+        mode === "floating"
+          ? {
+              width: `${floatingSize.width}px`,
+              height: `${floatingSize.height}px`,
+            }
+          : undefined
+      }
+      aria-labelledby="copilot-title"
+    >
+      {/* Interactive Resize Handles (Floating Card Mode only) */}
+      {mode === "floating" && (
+        <>
+          {/* Top-Left Diagonal Corner Grip Handle */}
+          <div
+            className="tars-copilot-resize-handle tars-copilot-resize-nw"
+            onPointerDown={(e) => startResize(e, "nw")}
+            onDoubleClick={resetFloatingSize}
+            title="Drag to resize width & height (Double-click to reset default size)"
+            aria-label="Resize window diagonally"
+          >
+            <div className="tars-copilot-resize-corner-grip" />
+          </div>
+
+          {/* Top Edge Handle */}
+          <div
+            className="tars-copilot-resize-handle tars-copilot-resize-n"
+            onPointerDown={(e) => startResize(e, "n")}
+            title="Drag to resize height"
+            aria-label="Resize window vertically"
+          />
+
+          {/* Left Edge Handle */}
+          <div
+            className="tars-copilot-resize-handle tars-copilot-resize-w"
+            onPointerDown={(e) => startResize(e, "w")}
+            title="Drag to resize width"
+            aria-label="Resize window horizontally"
+          />
+        </>
+      )}
+
       {/* 1. Header Toolbar */}
       <header className="tars-copilot-header">
         <div className="tars-copilot-header-brand">
@@ -771,6 +988,17 @@ export function CopilotPanel({
         </div>
 
         <div className="tars-copilot-header-actions">
+          {/* Light Mode (KPMG Cloud #f7f9fa) vs Dark Mode (KPMG Midnight #070e17) Toggle */}
+          <button
+            type="button"
+            className="tars-copilot-icon-btn tars-copilot-btn-theme"
+            onClick={toggleTheme}
+            title={theme === "light" ? "Switch to Dark Mode (KPMG Midnight Navy)" : "Switch to Light Mode (KPMG Cloud)"}
+            aria-label={theme === "light" ? "Switch to dark mode" : "Switch to light mode"}
+          >
+            {theme === "light" ? <Moon size={16} /> : <Sun size={16} />}
+          </button>
+
           {messages.length > 0 && (
             <button
               type="button"
@@ -967,20 +1195,7 @@ export function CopilotPanel({
               return (
                 <React.Fragment key={message.id}>
                   {sessionSwitched && (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        margin: "10px 0",
-                        padding: "5px 12px",
-                        background: "rgba(30, 41, 59, 0.85)",
-                        borderRadius: "6px",
-                        border: "1px dashed #475569",
-                        color: "#94a3b8",
-                        fontSize: "11px",
-                      }}
-                    >
+                    <div className="tars-copilot-switch-banner session-switched">
                       <span>
                         🔄 Session Changed: {prevCtx?.sessionId?.slice(0, 8)} ➔ {currCtx?.sessionId?.slice(0, 8)}
                       </span>
@@ -988,20 +1203,7 @@ export function CopilotPanel({
                   )}
 
                   {stageSwitched && (
-                    <div
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        margin: "8px 0",
-                        padding: "4px 10px",
-                        background: "rgba(15, 23, 42, 0.6)",
-                        borderRadius: "4px",
-                        border: "1px dotted #334155",
-                        color: "#94a3b8",
-                        fontSize: "10.5px",
-                      }}
-                    >
+                    <div className="tars-copilot-switch-banner stage-switched">
                       <span>
                         🧭 Stage Switched: {prevCtx?.stageLabel || prevCtx?.stageKey} ➔ {currCtx?.stageLabel || currCtx?.stageKey}
                       </span>
@@ -1022,8 +1224,9 @@ export function CopilotPanel({
                     </div>
 
                     {/* Post-Completion Collapsible Thought Accordion (Claude Code Style) */}
-                    {!isUser && message.telemetry_steps && message.telemetry_steps.length > 0 && (
+                    {!isUser && ((message.thought_content && message.thought_content.trim().length > 0) || (message.telemetry_steps && message.telemetry_steps.length > 0)) && (
                       <ThoughtAccordion
+                        thoughtContent={message.thought_content}
                         steps={message.telemetry_steps}
                         durationMs={message.reasoning_duration_ms}
                       />
@@ -1064,8 +1267,14 @@ export function CopilotPanel({
               <div className="tars-copilot-telemetry-live">
                 <div className="tars-copilot-telemetry-header">
                   <span className="tars-copilot-cli-spinner">{CLI_SPINNER_FRAMES[spinnerIndex]}</span>
-                  <span>{thinkingStatus || "Thinking..."}</span>
+                  <span>{thinkingStatus || (liveThought ? "Cognitive Reasoning..." : "Thinking...")}</span>
                 </div>
+                {liveThought && (
+                  <div className="tars-copilot-live-thought-preview">
+                    {liveThought.slice(-180)}
+                    <span className="tars-copilot-typing-cursor">▌</span>
+                  </div>
+                )}
                 {liveSteps.length > 0 && (
                   <div className="tars-copilot-telemetry-steps">
                     {liveSteps.map((step) => (

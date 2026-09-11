@@ -245,6 +245,7 @@
    3. COPILOT ROOT PANEL & DISPLAY MODES
    -------------------------------------------------------------------------- */
 .tars-copilot-container {
+  position: relative;
   display: flex;
   flex-direction: column;
   background: var(--kpmg-midnight-canvas, #070e17);
@@ -256,6 +257,24 @@
   transition: all 0.26s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+/* KPMG Executive Prismatic Gradient Crown (Top Border Ribbon) */
+.tars-copilot-container::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3.5px;
+  background: linear-gradient(90deg, #00338D 0%, #005EB8 35%, #0091DA 65%, #72CDF4 85%, #483698 100%);
+  z-index: 1600;
+  pointer-events: none;
+}
+
+.tars-copilot-container.mode-floating::before {
+  border-top-left-radius: 16px;
+  border-top-right-radius: 16px;
+}
+
 /* Mode: Overlapping Floating Card Window (OpenAI Support Style) */
 .tars-copilot-container.mode-floating {
   position: fixed;
@@ -263,6 +282,8 @@
   right: 24px;
   width: 420px;
   height: 640px;
+  min-width: 370px;
+  min-height: 420px;
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 48px);
   z-index: 1500;
@@ -271,6 +292,122 @@
   box-shadow: 0 24px 64px -8px rgba(0, 10, 24, 0.85), 0 0 24px rgba(0, 94, 184, 0.2);
   overflow: hidden;
   animation: copilotCardEnter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Fluid 60FPS Drag Suppression */
+.tars-copilot-container.is-resizing {
+  transition: none !important;
+  user-select: none !important;
+}
+
+.tars-copilot-container.is-resizing * {
+  user-select: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   INTERACTIVE WINDOW RESIZE HANDLES (FLOATING OVERLAPPING CARD)
+   -------------------------------------------------------------------------- */
+.tars-copilot-resize-handle {
+  position: absolute;
+  z-index: 1700;
+  touch-action: none;
+  user-select: none;
+}
+
+/* Top-Left Diagonal Corner Handle */
+.tars-copilot-resize-nw {
+  top: 0;
+  left: 0;
+  width: 22px;
+  height: 22px;
+  cursor: nwse-resize;
+  z-index: 1750;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 3px 0 0 3px;
+}
+
+/* Visual Grip Indicator in Top-Left Corner */
+.tars-copilot-resize-corner-grip {
+  width: 10px;
+  height: 10px;
+  position: relative;
+  pointer-events: none;
+  opacity: 0.65;
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.tars-copilot-resize-corner-grip::before {
+  content: "";
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 8px;
+  height: 8px;
+  border-top: 2px solid var(--kpmg-glacier, #72cdf4);
+  border-left: 2px solid var(--kpmg-glacier, #72cdf4);
+  border-top-left-radius: 4px;
+}
+
+.tars-copilot-resize-corner-grip::after {
+  content: "";
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  width: 4px;
+  height: 4px;
+  border-top: 1.5px solid var(--kpmg-glacier, #72cdf4);
+  border-left: 1.5px solid var(--kpmg-glacier, #72cdf4);
+  border-top-left-radius: 2px;
+}
+
+.tars-copilot-resize-nw:hover .tars-copilot-resize-corner-grip {
+  opacity: 1;
+  transform: scale(1.15);
+}
+
+.theme-light .tars-copilot-resize-corner-grip::before,
+.theme-light .tars-copilot-resize-corner-grip::after {
+  border-color: #005eb8 !important;
+}
+
+/* Top Edge Handle */
+.tars-copilot-resize-n {
+  top: 0;
+  left: 22px;
+  right: 0;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 1710;
+  transition: background 0.15s ease;
+}
+
+.tars-copilot-resize-n:hover {
+  background: linear-gradient(180deg, rgba(0, 145, 218, 0.45) 0%, transparent 100%);
+}
+
+.theme-light .tars-copilot-resize-n:hover {
+  background: linear-gradient(180deg, rgba(0, 94, 184, 0.35) 0%, transparent 100%);
+}
+
+/* Left Edge Handle */
+.tars-copilot-resize-w {
+  top: 22px;
+  left: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+  z-index: 1710;
+  transition: background 0.15s ease;
+}
+
+.tars-copilot-resize-w:hover {
+  background: linear-gradient(90deg, rgba(0, 145, 218, 0.45) 0%, transparent 100%);
+}
+
+.theme-light .tars-copilot-resize-w:hover {
+  background: linear-gradient(90deg, rgba(0, 94, 184, 0.35) 0%, transparent 100%);
 }
 
 @keyframes copilotCardEnter {
@@ -798,9 +935,26 @@ button.tars-copilot-sidebar-collapse-btn:hover svg {
   transform: translateX(2px);
 }
 
-/* --------------------------------------------------------------------------
-   7. MESSAGES (KPMG Multi-Shade Blue Executive Styling)
-   -------------------------------------------------------------------------- */
+/* Session & Stage Transition Banners */
+.tars-copilot-switch-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 8px 0;
+  padding: 5px 12px;
+  background: rgba(30, 41, 59, 0.85);
+  border-radius: 6px;
+  border: 1px dashed #475569;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.tars-copilot-switch-banner.stage-switched {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px dotted #334155;
+  font-size: 10.5px;
+}
+
 .tars-msg {
   display: flex;
   flex-direction: column;
@@ -1053,6 +1207,62 @@ button.tars-copilot-sidebar-collapse-btn:hover svg {
   gap: 5px;
 }
 
+/* Raw Cognitive Thought Monologue (DeepSeek-R1 / Claude Extended Thinking Style) */
+.tars-copilot-thought-raw {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--kpmg-text-secondary, #cbd5e1);
+  padding: 8px 12px;
+  background: rgba(0, 51, 141, 0.12);
+  border-left: 2.5px solid var(--kpmg-atlantic, #0091da);
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 4px;
+}
+
+.tars-copilot-thought-raw p {
+  margin: 4px 0;
+}
+
+.tars-copilot-thought-raw p:first-child {
+  margin-top: 0;
+}
+
+.tars-copilot-thought-raw p:last-child {
+  margin-bottom: 0;
+}
+
+.tars-copilot-thought-raw strong {
+  color: var(--kpmg-glacier, #72cdf4);
+  font-weight: 600;
+}
+
+.tars-copilot-live-thought-preview {
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+  font-size: 10.5px;
+  color: var(--kpmg-glacier, #72cdf4);
+  line-height: 1.4;
+  padding: 4px 6px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 4px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 72px;
+  overflow-y: hidden;
+}
+
+.tars-copilot-typing-cursor {
+  display: inline-block;
+  color: var(--kpmg-atlantic, #0091da);
+  font-weight: 800;
+  animation: copilotCursorBlink 0.8s infinite;
+}
+
+@keyframes copilotCursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
 /* --------------------------------------------------------------------------
    9. INPUT BAR (KPMG Refined Aesthetic)
    -------------------------------------------------------------------------- */
@@ -1234,4 +1444,504 @@ button.tars-copilot-sidebar-collapse-btn:hover svg {
 
 .tars-copilot-chip button:hover {
   color: #f87171;
+}
+
+/* --------------------------------------------------------------------------
+   10. THEME TOGGLE BUTTON MICRO-INTERACTIONS
+   -------------------------------------------------------------------------- */
+.tars-copilot-header-actions button.tars-copilot-btn-theme {
+  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-btn-theme:hover {
+  transform: rotate(25deg) scale(1.08) !important;
+  border-color: var(--kpmg-atlantic, #0091da) !important;
+}
+
+.tars-copilot-header-actions button.tars-copilot-btn-theme:active {
+  transform: rotate(45deg) scale(0.95) !important;
+}
+
+.theme-dark button.tars-copilot-btn-theme svg {
+  stroke: #fbbf24 !important; /* warm glowing sun */
+}
+
+.theme-light button.tars-copilot-btn-theme svg {
+  stroke: #005eb8 !important; /* crisp corporate cobalt moon */
+}
+
+/* --------------------------------------------------------------------------
+   11. GLOBAL TRANSITIONS FOR SEAMLESS THEME SWITCHING
+   -------------------------------------------------------------------------- */
+.tars-copilot-container,
+.tars-copilot-header,
+.tars-copilot-context-bar,
+.tars-copilot-chat-container,
+.tars-copilot-messages,
+.tars-copilot-footer,
+.tars-copilot-input-box,
+.tars-copilot-telemetry-sidebar {
+  transition: background 0.24s ease, color 0.24s ease, border-color 0.24s ease, box-shadow 0.24s ease;
+}
+
+/* ==========================================================================
+   12. KPMG CLOUD (#F7F9FA) WHITE/LIGHT MODE DESIGN SYSTEM
+   Curated Official KPMG Digital Palette for Light Screen Surfaces:
+   - Canvas: KPMG Cloud (#F7F9FA) — Official Cool Neutral (eliminates glare)
+   - Accent & Context Recess: KPMG Ice Tint (#F0F4F8)
+   - Elevated Cards & Input: Pure Crisp White (#FFFFFF)
+   - Structural Hairlines: KPMG Corporate Light Border (#DCE3EA)
+   - User Speech Bubble: Signature KPMG Heritage Navy (#00338D) to Cobalt (#005EB8)
+   - Typography: Deep Executive Charcoal Navy (#0F172A / #334155) WCAG AAA
+   - 4-Tier Volumetric Shadow: High-contrast elevation over light workspaces
+   ========================================================================== */
+
+/* Root Light Mode Floating Card Window (High-Contrast Physical Elevation) */
+.tars-copilot-container.theme-light.mode-floating {
+  background: rgba(247, 249, 250, 0.97) !important;
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(0, 51, 141, 0.18) !important;
+  box-shadow: 
+    0 0 0 1px rgba(0, 51, 141, 0.14),
+    0 0 0 4px rgba(0, 145, 218, 0.08),
+    0 16px 36px -4px rgba(0, 32, 74, 0.18),
+    0 32px 80px -12px rgba(0, 18, 48, 0.22),
+    0 48px 120px -20px rgba(0, 94, 184, 0.14) !important;
+  color: #0f172a !important;
+}
+
+/* Root Light Mode Fullscreen Workstation */
+.tars-copilot-container.theme-light.mode-fullscreen {
+  background: #f7f9fa !important;
+  color: #0f172a !important;
+  border-left: none !important;
+  box-shadow: none !important;
+}
+
+/* Root Light Mode Parallel Dock & Drawer Fallbacks */
+.tars-copilot-container.theme-light.mode-parallel,
+.tars-copilot-container.theme-light.mode-drawer {
+  background: #f7f9fa !important;
+  color: #0f172a !important;
+  border-left: 1px solid rgba(0, 51, 141, 0.16) !important;
+  box-shadow: -10px 0 35px -5px rgba(0, 32, 74, 0.12) !important;
+}
+
+/* Light Mode Header Bar */
+.theme-light .tars-copilot-header {
+  background: linear-gradient(180deg, #ffffff 0%, #f4f7fa 100%) !important;
+  border-bottom: 1px solid rgba(0, 51, 141, 0.12) !important;
+}
+
+.theme-light .tars-copilot-header-title {
+  color: #0f172a !important;
+}
+
+.theme-light .tars-copilot-header-status {
+  background: rgba(16, 185, 129, 0.12) !important;
+  color: #047857 !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+}
+
+.theme-light .tars-copilot-header-status.is-thinking {
+  background: rgba(168, 85, 247, 0.14) !important;
+  color: #7e22ce !important;
+  border-color: rgba(168, 85, 247, 0.35) !important;
+}
+
+/* Light Mode Header Action Buttons */
+.theme-light .tars-copilot-header-actions button.tars-copilot-icon-btn,
+.theme-light .tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn {
+  background: #ffffff !important;
+  border: 1px solid #dce3ea !important;
+  color: #334155 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+}
+
+.theme-light .tars-copilot-header-actions button.tars-copilot-icon-btn svg,
+.theme-light .tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn svg {
+  stroke: #334155 !important;
+  color: #334155 !important;
+}
+
+.theme-light .tars-copilot-header-actions button.tars-copilot-icon-btn:hover,
+.theme-light .tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn:hover {
+  background: #f0f4f8 !important;
+  border-color: #0091da !important;
+  color: #00338d !important;
+  box-shadow: 0 3px 8px rgba(0, 51, 141, 0.15) !important;
+}
+
+.theme-light .tars-copilot-header-actions button.tars-copilot-icon-btn:hover svg,
+.theme-light .tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn:hover svg {
+  stroke: #00338d !important;
+}
+
+.theme-light .tars-copilot-header-actions button.tars-copilot-btn-clear:hover {
+  background: #fee2e2 !important;
+  border-color: #f87171 !important;
+  color: #b91c1c !important;
+  box-shadow: 0 3px 8px rgba(239, 68, 68, 0.2) !important;
+}
+
+.theme-light .tars-copilot-header-actions button.tars-copilot-btn-clear:hover svg {
+  stroke: #b91c1c !important;
+}
+
+.theme-light .tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn.is-collapsed {
+  background: #e0f2fe !important;
+  border-color: #0091da !important;
+}
+
+.theme-light .tars-copilot-header-brand button.tars-copilot-sidebar-toggle-btn.is-collapsed svg {
+  stroke: #005eb8 !important;
+}
+
+/* Light Mode Context & Stage Telemetry Bar */
+.theme-light .tars-copilot-context-bar {
+  background: #f0f4f8 !important;
+  border-bottom: 1px solid rgba(0, 51, 141, 0.08) !important;
+  color: #64748b !important;
+}
+
+.theme-light .tars-copilot-stage-badge {
+  color: #475569 !important;
+}
+
+.theme-light .tars-copilot-stage-badge strong {
+  color: #005eb8 !important;
+}
+
+/* Light Mode Chat Container & Stream */
+.theme-light .tars-copilot-chat-container {
+  background: #f7f9fa !important;
+}
+
+.theme-light .tars-copilot-messages {
+  background: #f7f9fa !important;
+}
+
+.theme-light .mode-fullscreen .tars-copilot-chat-container {
+  background: #f7f9fa !important;
+}
+
+/* Light Mode Empty State */
+.theme-light .tars-copilot-empty-title {
+  color: #0f172a !important;
+}
+
+.theme-light .tars-copilot-empty-desc {
+  color: #475569 !important;
+}
+
+.theme-light .tars-copilot-prompt-btn {
+  background: #ffffff !important;
+  border: 1px solid #dce3ea !important;
+  color: #1e293b !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05) !important;
+}
+
+.theme-light .tars-copilot-prompt-btn:hover {
+  background: #f0f9ff !important;
+  border-color: #0091da !important;
+  color: #00338d !important;
+  transform: translateX(3px) !important;
+  box-shadow: 0 4px 10px rgba(0, 145, 218, 0.16) !important;
+}
+
+/* Light Mode Messages & Typography */
+.theme-light .tars-msg-author {
+  color: #64748b !important;
+}
+
+.theme-light .tars-msg-author.is-copilot {
+  color: #005eb8 !important;
+}
+
+.theme-light .tars-msg-badge {
+  background: #e2e8f0 !important;
+  color: #475569 !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+.theme-light .tars-copilot-switch-banner {
+  background: #f0f4f8 !important;
+  border: 1px dashed #cbd5e1 !important;
+  color: #005eb8 !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04) !important;
+}
+
+.theme-light .tars-copilot-switch-banner.stage-switched {
+  background: #f8fafc !important;
+  border: 1px dotted #dce3ea !important;
+  color: #64748b !important;
+  font-weight: 500 !important;
+}
+
+/* User Speech Bubble — KPMG Heritage Navy into Cobalt Blue with Elevation Shadow */
+.theme-light .tars-msg.is-user .tars-msg-bubble {
+  background: linear-gradient(135deg, #00338d 0%, #005eb8 100%) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(114, 205, 244, 0.35) !important;
+  box-shadow: 0 4px 16px rgba(0, 51, 141, 0.22) !important;
+}
+
+/* Assistant Message Area */
+.theme-light .tars-msg.is-assistant .tars-msg-bubble {
+  background: transparent !important;
+  color: #1e293b !important;
+}
+
+.theme-light .tars-copilot-markdown p {
+  color: #1e293b !important;
+}
+
+.theme-light .tars-copilot-markdown strong {
+  color: #0f172a !important;
+}
+
+.theme-light .tars-copilot-markdown code {
+  background: #eef2f6 !important;
+  color: #00338d !important;
+  border: 1px solid #dce3ea !important;
+}
+
+.theme-light .tars-copilot-markdown table {
+  background: #ffffff !important;
+  border: 1px solid #dce3ea !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+.theme-light .tars-copilot-markdown th {
+  background: #f0f4f8 !important;
+  color: #00338d !important;
+  border-bottom: 1px solid #dce3ea !important;
+  font-weight: 700;
+}
+
+.theme-light .tars-copilot-markdown td {
+  border-bottom: 1px solid #f1f5f9 !important;
+  color: #334155 !important;
+}
+
+.theme-light .tars-copilot-markdown li {
+  color: #334155 !important;
+}
+
+/* Light Mode AI Reasoning Thought Accordion */
+.theme-light .tars-copilot-thought-accordion {
+  border: 1px solid rgba(0, 145, 218, 0.25) !important;
+  background: #f0f9ff !important;
+}
+
+.theme-light .tars-copilot-thought-summary-btn {
+  color: #0369a1 !important;
+}
+
+.theme-light .tars-copilot-thought-summary-btn:hover {
+  background: rgba(0, 145, 218, 0.08) !important;
+  color: #00338d !important;
+}
+
+.theme-light .tars-copilot-thought-summary-left .glyph {
+  color: #7c3aed !important;
+}
+
+.theme-light .tars-copilot-thought-details {
+  background: #f8fafc !important;
+  border-top: 1px solid rgba(0, 145, 218, 0.15) !important;
+}
+
+.theme-light .tars-copilot-thought-raw {
+  background: rgba(0, 94, 184, 0.05) !important;
+  border-left: 2.5px solid #005eb8 !important;
+  color: #334155 !important;
+}
+
+.theme-light .tars-copilot-thought-raw strong {
+  color: #00338d !important;
+}
+
+.theme-light .tars-copilot-live-thought-preview {
+  background: rgba(0, 94, 184, 0.06) !important;
+  color: #005eb8 !important;
+}
+
+.theme-light .tars-copilot-typing-cursor {
+  color: #005eb8 !important;
+}
+
+.theme-light .tars-copilot-telemetry-line {
+  color: #475569 !important;
+}
+
+.theme-light .tars-copilot-telemetry-line .step-glyph {
+  color: #0091da !important;
+}
+
+.theme-light .tars-copilot-telemetry-line .step-label {
+  color: #1e293b !important;
+}
+
+.theme-light .tars-copilot-telemetry-line .step-ms {
+  color: #64748b !important;
+}
+
+/* Light Mode Live Telemetry Banner during generation */
+.theme-light .tars-copilot-telemetry-live {
+  background: #f0f9ff !important;
+  border: 1px solid rgba(0, 145, 218, 0.3) !important;
+  box-shadow: 0 2px 8px rgba(0, 145, 218, 0.08) !important;
+}
+
+.theme-light .tars-copilot-telemetry-header {
+  color: #005eb8 !important;
+}
+
+.theme-light .tars-copilot-cli-spinner {
+  color: #0091da !important;
+}
+
+/* Light Mode Input Bar & Footer */
+.theme-light .tars-copilot-footer {
+  background: linear-gradient(180deg, #f7f9fa 0%, #f0f4f8 100%) !important;
+  border-top: 1px solid rgba(0, 51, 141, 0.1) !important;
+}
+
+.theme-light .mode-floating .tars-copilot-footer {
+  background: linear-gradient(180deg, #f7f9fa 0%, #f0f4f8 100%) !important;
+  border-top: 1px solid rgba(0, 51, 141, 0.1) !important;
+}
+
+.theme-light .mode-fullscreen .tars-copilot-footer {
+  background: #f7f9fa !important;
+  border-top: 1px solid rgba(0, 51, 141, 0.1) !important;
+}
+
+.theme-light .tars-copilot-input-box {
+  background: #ffffff !important;
+  border: 1.5px solid #cbd5e1 !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+}
+
+.theme-light .tars-copilot-input-box:focus-within {
+  border-color: #005eb8 !important;
+  box-shadow: 0 0 0 3.5px rgba(0, 145, 218, 0.22), inset 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+}
+
+.theme-light .tars-copilot-textarea {
+  color: #0f172a !important;
+}
+
+.theme-light .tars-copilot-textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+.theme-light .tars-copilot-attach-btn {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #475569 !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+.theme-light .tars-copilot-attach-btn svg {
+  stroke: #475569 !important;
+}
+
+.theme-light .tars-copilot-attach-btn:hover {
+  background: #f0f4f8 !important;
+  border-color: #0091da !important;
+  color: #00338d !important;
+}
+
+.theme-light .tars-copilot-attach-btn:hover svg {
+  stroke: #00338d !important;
+}
+
+.theme-light .tars-copilot-attach-btn.has-files {
+  background: #e0f2fe !important;
+  border-color: #0091da !important;
+  color: #005eb8 !important;
+}
+
+.theme-light .tars-copilot-attach-btn.has-files svg {
+  stroke: #005eb8 !important;
+}
+
+.theme-light .tars-copilot-chip {
+  background: #e0f2fe !important;
+  border: 1px solid rgba(0, 145, 218, 0.35) !important;
+  color: #00338d !important;
+}
+
+.theme-light .tars-copilot-chip span {
+  color: #00338d !important;
+}
+
+.theme-light .tars-copilot-chip svg {
+  stroke: #005eb8 !important;
+}
+
+.theme-light .tars-copilot-chip button {
+  color: #64748b !important;
+}
+
+.theme-light .tars-copilot-chip button:hover {
+  color: #ef4444 !important;
+}
+
+.theme-light .tars-copilot-send-btn {
+  background: linear-gradient(135deg, #005eb8 0%, #0072ce 100%) !important;
+  border: 1px solid #005eb8 !important;
+  box-shadow: 0 2px 8px rgba(0, 51, 141, 0.25) !important;
+}
+
+.theme-light .tars-copilot-send-btn:hover:not(:disabled) {
+  background: #00338d !important;
+  box-shadow: 0 0 14px rgba(0, 94, 184, 0.35) !important;
+}
+
+.theme-light .tars-copilot-send-btn:disabled {
+  background: #e2e8f0 !important;
+  border-color: #cbd5e1 !important;
+  color: #94a3b8 !important;
+}
+
+.theme-light .tars-copilot-send-btn:disabled svg {
+  stroke: #94a3b8 !important;
+}
+
+/* Light Mode Fullscreen Telemetry Sidebar */
+.theme-light .tars-copilot-telemetry-sidebar {
+  background: #f0f4f8 !important;
+  border-right: 1px solid rgba(0, 51, 141, 0.12) !important;
+}
+
+.theme-light .tars-copilot-telemetry-sidebar > div:first-child span {
+  color: #0f172a !important;
+}
+
+.theme-light .tars-copilot-telemetry-sidebar > div:not(:first-child) {
+  background: #ffffff !important;
+  border: 1px solid #dce3ea !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05) !important;
+}
+
+.theme-light .tars-copilot-telemetry-sidebar div[style*="color: #e2e8f0"],
+.theme-light .tars-copilot-telemetry-sidebar div[style*="color: rgb(226, 232, 240)"] {
+  color: #1e293b !important;
+}
+
+.theme-light .tars-copilot-sidebar-collapse-btn {
+  background: #ffffff !important;
+  border: 1px solid #cbd5e1 !important;
+  color: #64748b !important;
+}
+
+.theme-light .tars-copilot-sidebar-collapse-btn:hover {
+  background: #e0f2fe !important;
+  border-color: #0091da !important;
+  color: #005eb8 !important;
 }

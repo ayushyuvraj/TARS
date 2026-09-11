@@ -1,24 +1,35 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 2.0 Copilot KPMG Multi-Shade Blue Revamp & Agentic UI (12th September 2026)
+## Reconciliation 2.0 Copilot KPMG Cloud Light Mode & Header Theme Toggle (12th September 2026)
 
-- **Checkpoint Name**: `TARS Copilot KPMG Executive Multi-Shade Blue Revamp & Persistent FAB Architecture`
+- **Checkpoint Name**: `TARS Copilot KPMG Cloud (#F7F9FA) White Light Mode & Header Theme Switcher Architecture`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-12-kpmg-copilot-revamp-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-12-copilot-persistent-memory-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-12-kpmg-cloud-lightmode-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-12-kpmg-copilot-revamp-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
-  1. *Circular Floating Action Button (FAB Launcher)*: Replaced horizontal HUD pill with a sleek circular floating action button (56px × 56px, rounded 50%) at `bottom: 24px; right: 24px` with live emerald online beacon (`#10b981`). Workspace stays 100% full width with zero page reflow.
-  2. *Overlapping Floating Card Window (`420px × 640px`)*: Clicking the FAB opens an overlapping floating card window (`z-index: 1500`) with zero workspace reflow, rounded 16px corners, obsidian backdrop (`#070e17`), and subtle Atlantic Blue border.
-  3. *Prominent Action Buttons*: Three prominently styled action buttons in header: `[ 🗑 Clear ]` (thread cleanup), `[ ⛶ Maximize ]` (fullscreen console), and `[ ✕ Close ]` (minimize to FAB). Deduplicated redundant header icons in fullscreen mode.
-  4. *Fullscreen Workstation Sidebar Collapse & Claude Padding*: Added a one-click sidebar collapse button `[ ◫ ]` (`Ctrl+B`) in the telemetry header bar. Built an authentic Claude Code / ChatGPT / Codex layout where messages and bottom input box are centered in an ergonomic reading column (`max-width: 860px`) with generous left/right breathing room.
-  5. *KPMG Executive Multi-Shade Blue Palette*: Replaced harsh monochromatic electric cyan (`#38bdf8`) and blinding cerulean (`#0369a1`) with the official KPMG enterprise color hierarchy:
-     - **KPMG Midnight Navy (`#070E17` / `#0C1626` / `#112035`)**: Eye-friendly, comfortable dark canvas, cards, and elevated toolbars.
-     - **KPMG Heritage Navy (`#00338D`) to Cobalt Blue (`#005EB8`)**: User speech bubble gradient with soft Glacier Sky (`#72CDF4`) rim.
-     - **KPMG Atlantic Blue (`#0091DA`)**: Live telemetry step glyphs (`›`), spinners, and crisp boundary lines.
-     - **KPMG Innovation Violet (`#483698` / `#A855F7`)**: Digital Lighthouse AI companion accent for reasoning glyphs and thought accordions.
-  6. *Strict Invariant Enforcement*: Only `copilot_agentic.css` and inline icon variables in `CopilotPanel.tsx` were modified. No backend logic, reconciliation matching algorithms, database schemas, or other product components were touched.
-  7. *Full Verification*: Verified via browser subagent across floating card, fullscreen console, sidebar collapse, speech bubbles, and keyboard shortcuts. All backend unit tests remain 24/24 passing.
+  1. *Exact KPMG Cloud White Shade (`#F7F9FA`)*: Replaced generic stark white with the official KPMG Digital Design System neutral (`#F7F9FA` KPMG Cloud / Cool Gray 1). Paired with KPMG Ice Tint (`#F0F4F8`) for telemetry bars and crisp white (`#FFFFFF`) for elevated cards and inputs.
+  2. *Header Theme Toggle (1-Click Switcher)*: Added a dedicated `[ ☾ / ☀ ]` button into the header action cluster. Clicking toggles instantly between Light Mode (KPMG Cloud `#F7F9FA`) and Dark Mode (KPMG Midnight Navy `#070E17`). Automatically persists user choice in `localStorage` and defaults to Light Mode.
+  3. *5-Tier High-Contrast Visual Separation*: Engineered high-contrast physical demarcation against white workspace backgrounds:
+     - 4-Tier volumetric lighting shadow with KPMG Navy brand tinting (`0 0 0 1px rgba(0, 51, 141, 0.14), 0 0 0 4px rgba(0, 145, 218, 0.08), 0 16px 36px -4px rgba(0, 32, 74, 0.18), 0 32px 80px -12px rgba(0, 18, 48, 0.22)`).
+     - Prismatic gradient crown (3.5px gradient ribbon `#00338D ➔ #005EB8 ➔ #0091DA ➔ #72CDF4 ➔ #483698`) along the upper border.
+     - Heavy frosted glassmorphism (`backdrop-filter: blur(28px) saturate(180%)`).
+     - Executive user speech bubble in KPMG Heritage Navy to Cobalt gradient (`#00338D` to `#005EB8`) with white typography.
+     - Soft KPMG Ice Blue transition pills for session and stage switches.
+  4. *Interactive Bidirectional Card Resizing*: Added smooth drag-to-resize controls to the floating card:
+     - Top-left diagonal corner grip handle (`.tars-copilot-resize-nw`) with KPMG-styled micro-grip indicator.
+     - Top edge (`.tars-copilot-resize-n`) and left edge (`.tars-copilot-resize-w`) draggable borders with visual hover accents.
+     - Anchored at bottom-right, smoothly expanding inward without pushing off-screen.
+     - Double-click reset to default dimensions (`440px × 640px`).
+     - Persistent custom dimensions in `localStorage` under `tars_copilot_floating_size`.
+     - Zero transition lag during active drag via `.is-resizing` (60 FPS fluid tracking).
+  5. *Real-Time Dynamic Cognitive Reasoning & Raw Thought Streams*:
+     - Eliminated hardcoded static telemetry steps (`ctx_probe`, `statutory_eval`, `matrix_scan`, `synth`).
+     - Implemented real-time dynamic cognitive reasoning in `copilot_action_engine.py` that introspects live session state (matrix distribution across exact, tolerance, near-match, and unresolved records), Rule R-01 to R-05 heuristics (e.g. Levenshtein edit distance <= 2, date proximity <= 15 days), and GST statutory provisions (Section 16(2)(aa), Rule 36(4)).
+     - Emits unedited raw thought streams as `thought_content` SSE events.
+     - Updated `CopilotPanel.tsx` and `api.ts` with `thought_content` tracking, real-time elapsed duration calculation (`reasoning_duration_ms`), and collapsible Claude Code-style `ThoughtAccordion` rendering formatted markdown thoughts.
+     - Every unique question produces a completely distinct, question-specific cognitive monologue with zero hardcoded boilerplate.
+  6. *Strict Invariant Enforcement*: Only `copilot_action_engine.py`, `api.ts`, `CopilotPanel.tsx`, and `copilot_agentic.css` were updated. Zero core reconciliation matching algorithms, database schemas, or business policies were altered. Full verification passed via browser subagent.
 
 ---
 
