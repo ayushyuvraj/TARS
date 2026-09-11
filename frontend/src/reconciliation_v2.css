@@ -282,11 +282,12 @@
 .v2-pipeline-track {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
   width: 100%;
   max-width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
+  gap: 0;
 }
 
 .v2-pipeline-node {
@@ -295,7 +296,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 5px 10px;
+  padding: 5px 12px;
   border-radius: 8px;
   cursor: pointer;
   position: relative;
@@ -321,6 +322,7 @@
   background: var(--v2-slate-200);
   color: var(--v2-slate-600);
   transition: all 0.2s ease;
+  flex-shrink: 0;
 }
 
 .v2-node-text-col {
@@ -350,6 +352,7 @@
 .v2-pipeline-node.is-active .v2-node-number-ring {
   background: var(--v2-kpmg-blue);
   color: #ffffff;
+  border: 1.5px solid var(--v2-kpmg-blue);
   box-shadow: 0 0 10px rgba(0, 51, 141, 0.4);
 }
 
@@ -359,18 +362,27 @@
 
 .v2-node-active-bar {
   position: absolute;
-  bottom: -9px;
-  left: 12px;
-  right: 12px;
+  bottom: -7px;
+  left: 10px;
+  right: 10px;
   height: 2.5px;
   background: var(--v2-kpmg-blue);
   border-radius: 2px 2px 0 0;
 }
 
+/* KPMG BLUE COMPLETED STAGE BADGE & TICK MARK */
 .v2-pipeline-node.is-completed .v2-node-number-ring {
-  background: #dcfce7;
-  color: #15803d;
-  border: 1px solid #86efac;
+  background: #eff6ff;
+  color: var(--v2-kpmg-blue, #00338d);
+  border: 1.5px solid var(--v2-kpmg-blue, #00338d);
+  box-shadow: 0 1px 3px rgba(0, 51, 141, 0.12);
+}
+
+.v2-pipeline-node.is-completed.is-active .v2-node-number-ring {
+  background: #e0f2fe;
+  color: var(--v2-kpmg-blue, #00338d);
+  border: 2px solid var(--v2-kpmg-blue, #00338d);
+  box-shadow: 0 0 8px rgba(0, 51, 141, 0.35);
 }
 
 .v2-pipeline-node.is-locked {
@@ -378,17 +390,18 @@
   cursor: not-allowed;
 }
 
+/* EVENLY DISTRIBUTED CONNECTOR STRIPS */
 .v2-pipeline-connector {
-  flex: 1 1 8px;
-  min-width: 8px;
-  max-width: 36px;
+  flex: 1 1 0%;
+  min-width: 14px;
   height: 2px;
   background: var(--v2-slate-200);
   border-radius: 2px;
+  margin: 0 6px;
 }
 
 .v2-pipeline-connector.is-filled {
-  background: #86efac;
+  background: var(--v2-kpmg-blue, #00338d);
 }
 
 /* ----------------------------------------------------------------------------

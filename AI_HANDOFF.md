@@ -1,19 +1,18 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Audit 2.0 Sovereign Statutory Workbench & Full-Bleed KPMG Experience (11th September 2026)
+## Reconciliation 2.0 Balanced Pipeline Stepper & Audit 2.0 Sovereign Compact Header (11th September 2026)
 
-- **Checkpoint Name**: `Audit 2.0 Sovereign Statutory Workbench & Full-Bleed KPMG Experience`
+- **Checkpoint Name**: `Reconciliation 2.0 Balanced Pipeline Stepper & Audit 2.0 Sovereign Compact Header`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-audit-2-sovereign-workbench-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-audit-conversation-lifecycle-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-11-recon-v2-stepper-kpmg-blue-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-audit-2-sovereign-workbench-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
-  1. *Full-Bleed Edge-to-Edge Architecture*: Eliminated the 1600px width constraint and massive 128px+ side gutters on `/audit-v2` by assigning `.workspace--audit-v2` in `App.tsx` and adding zero-gutter styling in `audit_v2.css`, allowing the workbench to expand smoothly to full monitor width.
-  2. *Two-Tier Executive Session Header*: Restructured `.v2-audit-detail-header` with a clean monospace Session ID badge (`SESSION demo-completed-6stages`) featuring 1-click clipboard copy, completion status badges, Section 16(2) statutory compliance stamp, and fixed-height `white-space: nowrap !important; flex-shrink: 0 !important;` action buttons (`Download Audit Manifest (JSON)` and `Re-open in Workspace`) completely eliminating vertical squashing and button line-wrapping.
-  3. *Statutory 6-Stage Milestone Ledger Matrix*: Integrated high-density accounting table directly below Executive Briefing showing all 6 stages simultaneously with statutory assertions, engine latencies, row conservation metrics, cryptographic proofs, and 1-click smooth jump scroll inspection.
-  4. *KPMG Sovereign Palette Integration*: Replaced neon green card borders with official KPMG Deep Navy (`#00338d`) and Cobalt (`#005eb8`), updated milestone indicators to KPMG Navy/Cobalt gradients, and aligned 4-pillar cards with KPMG brand tokens.
-  5. *Populated Developer Trace & Raw State JSON Drawer*: Verified rich, genuine state JSON payloads across all 6 stages with copy and search capabilities.
-  6. *Passive Event Hooks & Test Suite*: Preserved passive telemetry recorders in `reconciliations_v2.py` and `audit_v2_service.py` with 100% passing tests.
+  1. *Reconciliation 2.0 Full-Bleed Equal Stage Distribution*: Configured `.v2-pipeline-track` with `justify-content: space-between` and removed the artificial 36px connector limit (`flex: 1 1 0%`), spreading stages 1 through 6 uniformly from edge to edge with zero trailing whitespace or left-centering.
+  2. *KPMG Blue Completed Stage Indicators*: Replaced the green tick mark and green badge (`#15803d` / `#dcfce7` / `#86efac`) on completed pipeline stages with official **KPMG Blue (`#00338d`)**, soft sky tint, and KPMG Blue filled connector lines.
+  3. *Audit 2.0 Compact 2-Tier Session Header*: Streamlined `.v2-audit-detail-header` by ~45% into an executive primary bar (title + badges + action buttons) and a full-width bottom meta bar (session ID badge + full-length initiated and last mutation timestamps), completely eliminating timestamp truncation.
+  4. *Eliminated Stepper Horizontal Scroll in Audit 2.0*: Made `.v2-pipeline-step` flexibly proportional (`flex: 1; min-width: 0`), allowing all 6 statutory stages to fit seamlessly on a single line across any viewport without a horizontal scrollbar.
+  5. *Zero Logic/Computation Regressions*: Changes are 100% confined to presentation CSS and JSX layout; deterministic matching logic, financial contracts, and test suites remain untouched.
 
 ---
 

@@ -877,81 +877,92 @@ export const Audit2Workspace: React.FC = () => {
         {selectedSession ? (
           <section className="v2-audit-detail-deck">
             {/* 1. DETAIL HEADER — TWO-TIER KPMG SOVEREIGN WORKBENCH */}
+            {/* 1. DETAIL HEADER — COMPACT & SOVEREIGN KPMG AUDIT FLIGHT DECK */}
             <div className="v2-audit-detail-header">
-              <div className="v2-audit-header-content">
-                {/* Meta Tier: Monospace Session ID Badge, Status Badge, Statutory Stamp */}
-                <div className="v2-audit-header-meta-tier">
-                  <div className="v2-audit-id-badge-wrap">
-                    <span className="v2-id-badge-label">SESSION</span>
-                    <code className="v2-id-badge-code" title={selectedSession.session_id}>
-                      {selectedSession.session_id}
-                    </code>
-                    <button
-                      className="v2-inline-copy-btn"
-                      onClick={() => handleCopyText(selectedSession.session_id, "session-id")}
-                      title="Copy full Session ID"
+              {/* Primary Bar: Title + Badges (Left) & Actions (Right) */}
+              <div className="v2-audit-header-primary-bar">
+                <div className="v2-audit-header-headline">
+                  <h2 className="v2-audit-detail-title" title={selectedSession.session_title}>
+                    {selectedSession.session_title}
+                  </h2>
+                  <div className="v2-audit-header-tags">
+                    <span
+                      className={`v2-audit-status-badge ${
+                        selectedSession.completed_stages_count === 6 ? "completed" : "warning"
+                      }`}
                     >
-                      {copyStatus === "session-id" ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
-                    </button>
+                      {selectedSession.completed_stages_count === 6
+                        ? "6/6 COMPLETED"
+                        : `STAGE ${selectedSession.current_stage_number}/6`}
+                    </span>
+                    <span className="v2-statutory-stamp">
+                      <ShieldCheck size={11} className="text-emerald-500" />
+                      SEC 16(2)
+                    </span>
                   </div>
-
-                  <span
-                    className={`v2-audit-status-badge ${
-                      selectedSession.completed_stages_count === 6 ? "completed" : "warning"
-                    }`}
-                  >
-                    {selectedSession.completed_stages_count === 6
-                      ? "6/6 STAGES COMPLETED"
-                      : `STAGE ${selectedSession.current_stage_number} OF 6 IN PROGRESS`}
-                  </span>
-
-                  <span className="v2-statutory-stamp">
-                    <ShieldCheck size={12} className="text-emerald-500" />
-                    SECTION 16(2) AUDIT RECORDED
-                  </span>
                 </div>
 
-                {/* Title and Timestamps Tier */}
-                <div className="v2-audit-header-title-tier">
-                  <h2 className="v2-audit-detail-title">{selectedSession.session_title}</h2>
-                  <div className="v2-audit-detail-timestamps">
-                    <span>Session Initiated: <strong>{new Date(selectedSession.created_at).toLocaleString()}</strong></span>
-                    <span className="v2-timestamp-sep">•</span>
-                    <span>Last Mutation: <strong>{new Date(selectedSession.updated_at).toLocaleString()}</strong></span>
-                  </div>
+                <div className="v2-audit-header-actions">
+                  <button
+                    className="v2-audit-btn v2-audit-btn-secondary"
+                    onClick={handleDownloadManifest}
+                    title="Download complete cryptographically verifiable audit manifest (JSON) for SOC-2, ISO-27001, and GSTR-9C workpapers"
+                  >
+                    <Download size={13} className="text-blue-600" />
+                    <span>Download Manifest</span>
+                  </button>
+
+                  <button
+                    className="v2-audit-btn v2-audit-btn-primary"
+                    onClick={() => handleResumeSession(selectedSession)}
+                    disabled={isResuming}
+                    title={
+                      selectedSession.completed_stages_count === 6
+                        ? "Open completed session in Reconciliation 2.0 Workspace"
+                        : `Resume session where you left off at Stage ${selectedSession.current_stage_number}`
+                    }
+                  >
+                    <Play size={12} fill="#ffffff" />
+                    <span>
+                      {isResuming
+                        ? "Resuming..."
+                        : selectedSession.completed_stages_count === 6
+                        ? "Re-open in Workspace"
+                        : `Resume (${selectedSession.current_stage_number}/6)`}
+                    </span>
+                  </button>
                 </div>
               </div>
 
-              {/* Action Buttons: Solid heights, non-squashing, white-space: nowrap */}
-              <div className="v2-audit-header-actions">
-                <button
-                  className="v2-audit-btn v2-audit-btn-secondary"
-                  onClick={handleDownloadManifest}
-                  title="Download complete cryptographically verifiable audit manifest (JSON) for SOC-2, ISO-27001, and GSTR-9C workpapers"
-                >
-                  <Download size={13} className="text-blue-600" />
-                  <span>Download Audit Manifest (JSON)</span>
-                </button>
+              {/* Meta Bar: Monospace Session Pill + Initiated + Last Mutation Timestamps (Full Width) */}
+              <div className="v2-audit-header-meta-bar">
+                <div className="v2-audit-id-badge-wrap">
+                  <span className="v2-id-badge-label">SESSION</span>
+                  <code className="v2-id-badge-code" title={selectedSession.session_id}>
+                    {selectedSession.session_id}
+                  </code>
+                  <button
+                    className="v2-inline-copy-btn"
+                    onClick={() => handleCopyText(selectedSession.session_id, "session-id")}
+                    title="Copy full Session ID"
+                  >
+                    {copyStatus === "session-id" ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
+                  </button>
+                </div>
 
-                <button
-                  className="v2-audit-btn v2-audit-btn-primary"
-                  onClick={() => handleResumeSession(selectedSession)}
-                  disabled={isResuming}
-                  title={
-                    selectedSession.completed_stages_count === 6
-                      ? "Open completed session in Reconciliation 2.0 Workspace"
-                      : `Resume session where you left off at Stage ${selectedSession.current_stage_number}`
-                  }
-                >
-                  <Play size={13} fill="#ffffff" />
-                  <span>
-                    {isResuming
-                      ? "Resuming..."
-                      : selectedSession.completed_stages_count === 6
-                      ? "Re-open in Workspace"
-                      : `Resume Session (Stage ${selectedSession.current_stage_number})`}
+                <span className="v2-timestamp-sep">•</span>
+
+                <div className="v2-audit-detail-timestamps">
+                  <span className="v2-timestamp-item">
+                    <Clock size={11} className="v2-timestamp-icon" />
+                    Session Initiated: <strong>{new Date(selectedSession.created_at).toLocaleString()}</strong>
                   </span>
-                </button>
+                  <span className="v2-timestamp-sep">•</span>
+                  <span className="v2-timestamp-item">
+                    <History size={11} className="v2-timestamp-icon" />
+                    Last Mutation: <strong>{new Date(selectedSession.updated_at).toLocaleString()}</strong>
+                  </span>
+                </div>
               </div>
             </div>
 
