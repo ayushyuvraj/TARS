@@ -87,12 +87,15 @@ class SchemaMappingV2Workflow:
         }
 
     def _direct_schema_correlation(self, state: SchemaMappingV2State) -> SchemaMappingV2State:
-        gstr_path = Path(state["gstr_path"])
-        pr_path = Path(state["pr_path"])
-
-        # Re-parse or convert dicts
-        g_prof = self.parser.parse_fast_profile(gstr_path, DatasetRole.GOVERNMENT)
-        pr_prof = self.parser.parse_fast_profile(pr_path, DatasetRole.PURCHASE_REGISTER)
+        # Reconstruct already extracted profiles from state to avoid duplicate workbook parsing
+        if "gstr_profile" in state and "pr_profile" in state:
+            g_prof = FastFileProfile.from_dict(state["gstr_profile"])
+            pr_prof = FastFileProfile.from_dict(state["pr_profile"])
+        else:
+            gstr_path = Path(state["gstr_path"])
+            pr_path = Path(state["pr_path"])
+            g_prof = self.parser.parse_fast_profile(gstr_path, DatasetRole.GOVERNMENT)
+            pr_prof = self.parser.parse_fast_profile(pr_path, DatasetRole.PURCHASE_REGISTER)
 
         res = self.correlator.correlate(state["session_id"], g_prof, pr_prof)
         return {

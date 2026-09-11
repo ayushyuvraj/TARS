@@ -72,32 +72,47 @@ class DirectCorrelationResult(BaseModel):
     total_duration_ms: float = 0.0
 
 
-# Primary GST concepts for deterministic matching
+# Primary & secondary GST / ERP concepts for high-speed deterministic matching
+try:
+    from rapidfuzz import fuzz
+    def _fuzzy_token_ratio(s1: str, s2: str) -> float:
+        return fuzz.token_sort_ratio(s1, s2) / 100.0
+except Exception:
+    def _fuzzy_token_ratio(s1: str, s2: str) -> float:
+        return SequenceMatcher(None, s1, s2).ratio()
+
 CORE_GST_CONCEPTS: dict[str, dict[str, Any]] = {
     "gstin": {
         "canonical": "supplier_gstin",
-        "tokens": {"gstin", "suppliergstin", "counterpartygstin", "vendorgstin", "partygstin", "ctin", "taxid"},
+        "tokens": {"gstin", "suppliergstin", "counterpartygstin", "vendorgstin", "partygstin", "ctin", "taxid", "lifnr"},
         "negative": {"buyer", "customer", "recipient", "billto", "shipto", "location", "entity"},
         "expected_dtype": CanonicalDataType.STRING,
         "is_primary": True,
     },
+    "customer_gstin": {
+        "canonical": "customer_gstin",
+        "tokens": {"recipientgstin", "buyergstin", "customergstin", "billtogstin", "shiptogstin", "cetin"},
+        "negative": {"supplier", "vendor"},
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
     "document_number": {
         "canonical": "invoice_number",
-        "tokens": {"invoicenumber", "invoiceno", "invno", "billnumber", "billno", "documentnumber", "docno", "voucherno", "vouchernumber"},
+        "tokens": {"invoicenumber", "invoiceno", "invno", "billnumber", "billno", "documentnumber", "docno", "voucherno", "vouchernumber", "belnr"},
         "negative": {"irn", "po", "purchaseorder", "challan"},
         "expected_dtype": CanonicalDataType.STRING,
         "is_primary": True,
     },
     "document_date": {
         "canonical": "invoice_date",
-        "tokens": {"invoicedate", "invdate", "billdate", "documentdate", "docdate", "postingdate", "entrydate"},
+        "tokens": {"invoicedate", "invdate", "billdate", "documentdate", "docdate", "postingdate", "entrydate", "bldat"},
         "negative": {"filing", "gstr1", "payment", "due"},
         "expected_dtype": CanonicalDataType.DATE,
         "is_primary": True,
     },
     "taxable_value": {
         "canonical": "taxable_value",
-        "tokens": {"taxablevalue", "taxableamount", "taxable", "assessedvalue", "assessableamount", "baseamount"},
+        "tokens": {"taxablevalue", "taxableamount", "taxable", "assessedvalue", "assessableamount", "baseamount", "wrbtra"},
         "negative": {"rate", "tax"},
         "expected_dtype": CanonicalDataType.NUMBER,
         "is_primary": True,
@@ -132,10 +147,101 @@ CORE_GST_CONCEPTS: dict[str, dict[str, Any]] = {
     },
     "total_amount": {
         "canonical": "total_invoice_value",
-        "tokens": {"totalamount", "invoicevalue", "totalvalue", "invvalue", "netamount", "grossamount", "billamount"},
+        "tokens": {"totalamount", "invoicevalue", "totalvalue", "invvalue", "netamount", "grossamount", "billamount", "wrbtr"},
         "negative": {"taxable", "tax"},
         "expected_dtype": CanonicalDataType.NUMBER,
         "is_primary": True,
+    },
+    "supplier_name": {
+        "canonical": "supplier_name",
+        "tokens": {"suppliername", "vendorname", "tradelegalname", "tradename", "legalname", "partyname", "vendor", "supplier", "name1"},
+        "negative": {"buyer", "customer", "recipient", "client"},
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
+    "customer_name": {
+        "canonical": "customer_name",
+        "tokens": {"customername", "buyername", "recipientname", "clientname", "billtoname"},
+        "negative": {"supplier", "vendor"},
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
+    "place_of_supply": {
+        "canonical": "place_of_supply",
+        "tokens": {"placeofsupply", "pos", "posstate", "recipientstate", "supplyplace", "stateofsupply"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
+    "reverse_charge": {
+        "canonical": "reverse_charge",
+        "tokens": {"reversecharge", "rcm", "rcmflag", "isreversecharge", "reversechargeflag"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
+    "document_type": {
+        "canonical": "document_type",
+        "tokens": {"documenttype", "doctype", "invoicetype", "invtype", "vouchertype", "billtype"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
+    "rate": {
+        "canonical": "tax_rate",
+        "tokens": {"rate", "taxrate", "gstrate", "slabrate", "ratepercent", "ratepct", "mwskz"},
+        "negative": {"taxable", "amount", "value"},
+        "expected_dtype": CanonicalDataType.NUMBER,
+        "is_primary": False,
+    },
+    "hsn_code": {
+        "canonical": "hsn_code",
+        "tokens": {"hsn", "hsncode", "sac", "saccode", "hsnsac", "itemhsn"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
+    "round_off": {
+        "canonical": "round_off",
+        "tokens": {"roundoff", "rounding", "roundamount", "roundoffamount"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.NUMBER,
+        "is_primary": False,
+    },
+    "tcs_amount": {
+        "canonical": "tcs_amount",
+        "tokens": {"tcs", "tcsamount", "tds", "tdsamount"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.NUMBER,
+        "is_primary": False,
+    },
+    "return_period": {
+        "canonical": "return_period",
+        "tokens": {"returnperiod", "retperiod", "taxperiod", "filingperiod"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
+    "itc_eligibility": {
+        "canonical": "itc_eligibility",
+        "tokens": {"itceligibility", "itcavailable", "itcclaim", "eligibility", "itceligible"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
+    "irn": {
+        "canonical": "irn",
+        "tokens": {"irn", "invoicereferencenumber", "einvoiceirn", "einvoicehash"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
+    },
+    "po_number": {
+        "canonical": "po_number",
+        "tokens": {"ponumber", "pono", "purchaseorder", "purchaseorderno", "poref"},
+        "negative": set(),
+        "expected_dtype": CanonicalDataType.STRING,
+        "is_primary": False,
     },
 }
 
@@ -301,8 +407,8 @@ class DirectSchemaCorrelator:
                         reason = f"Deterministic match: both columns represent {concept_info['canonical']} with matching datatype and format."
                         scored_candidates.append((score, pr_c, reason))
                     else:
-                        # Lexical similarity
-                        ratio = SequenceMatcher(None, g_norm, p_norm).ratio()
+                        # Lexical similarity via rapidfuzz C++
+                        ratio = _fuzzy_token_ratio(g_norm, p_norm)
                         if ratio >= 0.85:
                             scored_candidates.append((round(ratio, 2), pr_c, f"High lexical token similarity ({ratio:.0%}) for {concept_info['canonical']}."))
 
@@ -322,7 +428,7 @@ class DirectSchemaCorrelator:
                         reason=best_reason,
                         engine="deterministic",
                         alternatives=alts,
-                        is_primary_gst_field=True,
+                        is_primary_gst_field=concept_info.get("is_primary", False),
                         canonical_concept=concept_info["canonical"],
                     )
 
@@ -343,7 +449,7 @@ class DirectSchemaCorrelator:
                     is_primary_gst_field=False,
                 )
 
-        # Check high lexical or sub-token similarity match for non-primary columns
+        # Check high lexical or sub-token similarity match for non-primary columns via RapidFuzz
         best_lex_score = 0.0
         best_lex_pr: FastColumnSummary | None = None
         lex_alts: list[AlternativeMatch] = []
@@ -352,7 +458,7 @@ class DirectSchemaCorrelator:
             if pr_c.name in assigned_pr_cols:
                 continue
             p_norm = _normalize(pr_c.name)
-            ratio = SequenceMatcher(None, g_norm, p_norm).ratio()
+            ratio = _fuzzy_token_ratio(g_norm, p_norm)
             if ratio > best_lex_score:
                 if best_lex_pr:
                     lex_alts.append(
@@ -392,13 +498,31 @@ class DirectSchemaCorrelator:
                 for g in unresolved_gstr
             }
 
-        # Chunk unresolved columns into batches of max 15 to ensure fast responses and fit structured output token limits
+        import concurrent.futures
+
         results: dict[str, DirectColumnCorrelation] = {}
         batch_size = 15
         pr_names_set = {p.name for p in pr_cols}
 
-        for i in range(0, len(unresolved_gstr), batch_size):
-            chunk = unresolved_gstr[i : i + batch_size]
+        chunks = [unresolved_gstr[i : i + batch_size] for i in range(0, len(unresolved_gstr), batch_size)]
+
+        def _process_chunk(chunk: list[FastColumnSummary]) -> dict[str, DirectColumnCorrelation]:
+            chunk_results: dict[str, DirectColumnCorrelation] = {}
+            # Context-aware candidate filtering: scope PR columns to top relevant candidates to avoid token bloat
+            chunk_g_norms = [_normalize(g.name) for g in chunk]
+            scoped_pr: list[FastColumnSummary] = []
+            scored_pr = []
+            for p in pr_cols:
+                p_norm = _normalize(p.name)
+                max_score = max((_fuzzy_token_ratio(g_n, p_norm) for g_n in chunk_g_norms), default=0.0)
+                scored_pr.append((max_score, p))
+            scored_pr.sort(key=lambda x: x[0], reverse=True)
+            # Take top 40 candidate columns or any with ratio > 0.25
+            top_candidates = [p for score, p in scored_pr if score >= 0.25][:40]
+            if len(top_candidates) < 20:
+                top_candidates = [p for _, p in scored_pr[:30]]
+            scoped_pr = top_candidates if top_candidates else pr_cols[:30]
+
             gstr_payload = [
                 {
                     "name": g.name,
@@ -415,7 +539,7 @@ class DirectSchemaCorrelator:
                     "samples": p.sample_values[:3],
                     "hints": p.pattern_hints,
                 }
-                for p in pr_cols
+                for p in scoped_pr
             ]
 
             system_msg = (
@@ -447,7 +571,7 @@ class DirectSchemaCorrelator:
                         valid_alts = [
                             a for a in item.alternatives if a.pr_column in pr_names_set and a.pr_column != selected
                         ]
-                        results[g_col.name] = DirectColumnCorrelation(
+                        chunk_results[g_col.name] = DirectColumnCorrelation(
                             gstr_column=g_col.name,
                             gstr_dtype=g_col.inferred_dtype.value,
                             gstr_samples=g_col.sample_values,
@@ -459,13 +583,26 @@ class DirectSchemaCorrelator:
                             is_primary_gst_field=False,
                         )
                     else:
-                        results[g_col.name] = self._lexical_fallback(g_col, pr_cols)
+                        chunk_results[g_col.name] = self._lexical_fallback(g_col, pr_cols)
             except Exception as exc:
                 logger.error(f"LLM correlation chunk failed: {exc}; using deterministic lexical fallback")
                 for g_col in chunk:
-                    results[g_col.name] = self._lexical_fallback(
+                    chunk_results[g_col.name] = self._lexical_fallback(
                         g_col, pr_cols, fallback_reason=f"Deterministic fallback (LLM chunk failed: {exc})"
                     )
+            return chunk_results
+
+        # Execute chunks in parallel using ThreadPoolExecutor
+        if len(chunks) == 1:
+            results.update(_process_chunk(chunks[0]))
+        else:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(4, len(chunks))) as executor:
+                futures = [executor.submit(_process_chunk, c) for c in chunks]
+                for f in concurrent.futures.as_completed(futures):
+                    try:
+                        results.update(f.result())
+                    except Exception as err:
+                        logger.error(f"Parallel chunk execution error: {err}")
 
         return results
 

@@ -25,6 +25,20 @@ def test_fast_excel_parser():
     assert "Taxable_Value" in col_names
 
 
+def test_fast_excel_parser_streaming_large():
+    parser = FastExcelParser()
+    large_path = Path("sample_data/TARS_Government_GSTR2B_223cols_10000rows.xlsx")
+    if large_path.exists():
+        import time
+        t0 = time.perf_counter()
+        profile = parser.parse_fast_profile(large_path, DatasetRole.GOVERNMENT)
+        t1 = time.perf_counter()
+        # Even for 10,000 rows x 223 cols, streaming probe must finish in under 1 second!
+        assert (t1 - t0) < 1.0
+        assert profile.column_count > 0
+        assert profile.detected_row_count_estimate == 10000 or profile.detected_row_count_estimate is None
+
+
 def test_direct_schema_correlator_deterministic():
     parser = FastExcelParser()
     gov_path = Path("sample_data/POC_Government_GST_Aug2026.xlsx")
@@ -89,6 +103,38 @@ def test_v2_api_session_lifecycle():
     )
     assert confirm_res.status_code == 200
     assert confirm_res.json()["status"] == "mapping_confirmed"
+
+
+def test_v2_api_fast_upload_10k_benchmark():
+    gov_path = Path("sample_data/TARS_Government_GSTR2B_223cols_10000rows.xlsx")
+    pr_path = Path("sample_data/TARS_Purchase_Register_223cols_10500rows.xlsx")
+    if not (gov_path.exists() and pr_path.exists()):
+        return
+
+    import time
+    app = create_app()
+    client = TestClient(app)
+
+    create_res = client.post("/api/reconciliations-v2")
+    assert create_res.status_code == 201
+    session_id = create_res.json()["id"]
+
+    t0 = time.perf_counter()
+    with gov_path.open("rb") as f1, pr_path.open("rb") as f2:
+        upload_res = client.post(
+            f"/api/reconciliations-v2/{session_id}/fast-upload-and-correlate",
+            files={
+                "government_file": (gov_path.name, f1, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+                "purchase_file": (pr_path.name, f2, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+            },
+        )
+    t1 = time.perf_counter()
+    assert upload_res.status_code == 200
+    corr = upload_res.json()
+    assert corr["total_gstr_columns"] == 223
+    assert corr["total_pr_columns"] == 223
+    assert len(corr["correlations"]) == 223
+    print(f"\n[BENCHMARK] 10,000 rows x 223 cols fast upload & correlation total time: {t1 - t0:.2f}s")
 
 
 def test_compile_ai_rule_endpoint():

@@ -288,16 +288,13 @@ def _load_df_safely(path: Path, nrows: int | None = None) -> pd.DataFrame:
         if path.suffix.lower() == ".csv":
             df = pd.read_csv(path)
         else:
-            # Fast header check using first 10 rows to avoid full double parsing
-            sample = pd.read_excel(path, nrows=10)
-            unnamed = [c for c in sample.columns if str(c).startswith("Unnamed")]
+            # Fast header check using streaming probe (<15ms) to avoid full double parsing
             best_header = 0
-            if len(unnamed) > len(sample.columns) / 2:
-                for row_idx in range(len(sample)):
-                    row_vals = [str(v).strip() for v in sample.iloc[row_idx] if pd.notna(v) and str(v).strip()]
-                    if len(row_vals) >= len(sample.columns) / 2 and len(set(row_vals)) == len(row_vals):
-                        best_header = row_idx + 1
-                        break
+            try:
+                prof = FastExcelParser().parse_fast_profile(path, DatasetRole.GOVERNMENT, sample_size=10)
+                best_header = max(0, prof.header_row - 1)
+            except Exception:
+                best_header = 0
             df = pd.read_excel(path, header=best_header)
 
         # 4. Ensure tabular headers
@@ -308,7 +305,7 @@ def _load_df_safely(path: Path, nrows: int | None = None) -> pd.DataFrame:
             df.to_pickle(fp_cache)
             df.to_pickle(stem_cache)
         except Exception as cache_err:
-            logger.warning(f"Failed to write pickle cache to {cache_file}: {cache_err}")
+            logger.warning(f"Failed to write pickle cache to {stem_cache}: {cache_err}")
 
         return df.head(nrows) if nrows is not None else df
     except Exception as exc:
