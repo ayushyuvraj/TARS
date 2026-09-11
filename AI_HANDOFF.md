@@ -1,19 +1,27 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 2.0 Actionable Copilot & Autonomous Reconcile Flow (11th September 2026)
+## Reconciliation 2.0 Copilot Persistent Memory & Cross-Session Transition Continuity (12th September 2026)
 
-- **Checkpoint Name**: `Reconciliation 2.0 Dynamic Actionable Copilot & Autonomous Reconcile Flow`
+- **Checkpoint Name**: `Reconciliation 2.0 Copilot Persistent Memory & Cross-Session Transition Continuity`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-recon-v2-actionable-copilot-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-stage-6-complete-kpmg-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-12-copilot-persistent-memory-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-recon-v2-actionable-copilot-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
   1. *Actionable Copilot Engine*: Engineered `CopilotActionEngine` (`backend/app/services/copilot_action_engine.py`) with sub-second deterministic intent parsing for conversational commands: `NAVIGATE_STAGE` (forward/backward/direct jumps), `UPDATE_MAPPING` (mapping and unmapping columns), `ADD_RULE` & `TOGGLE_RULE` (live rules injection & activation), and `RUN_RECONCILIATION`.
   2. *Context-Grounded Explanations & Streaming*: Real-time Server-Sent Events (SSE) with `stream_invoke` streaming on LLM provider boundary, contextual "what is this screen" stage breakdowns, and thinking indicators.
-  3. *Autonomous Reconcile Pipeline*: Added `POST /api/v2/copilot/auto-reconcile` with dual-workbook GST sanity checks, automated schema coupling, waterfall execution, and zero-intervention handoff to Results Matrix.
-  4. *Frontend Copilot Bridge*: Created `frontend/src/copilot_v2_bridge.ts` providing reactive telemetry from Stages 1-6 into `CopilotPanel.tsx` and dispatching real-time actions to `DynamicMappingGridV2.tsx`, `ReconciliationV2RulesStage.tsx`, and `ReconciliationV2ResultsStage.tsx`.
+  3. *Autonomous Reconcile Pipeline*: Added `POST /api/reconciliations-v2/copilot/auto-reconcile` with dual-workbook GST sanity checks, streaming XLSX probe, automated schema coupling, waterfall execution, and zero-intervention handoff to Results Matrix. Hardened runtime imports (`json`, `datetime`, `AsyncGenerator`, `FastExcelParser`), fixed correlation attribute mapping, and wrapped stream in error-resilient exception handlers.
+  4. *Frontend Copilot Bridge*: Created `frontend/src/copilot_v2_bridge.ts` providing reactive telemetry from Stages 1-6 into `CopilotPanel.tsx` and dispatching real-time actions to `DynamicMappingGridV2.tsx`, `ReconciliationV2RulesStage.tsx`, and `ReconciliationV2ResultsStage.tsx`. Added non-blocking error handling to eliminate hanging V1 LLM fallbacks during file upload.
   5. *Audit 2.0 Integration*: Implemented `record_step` and `get_session_steps` in `AuditV2Service`, recording all Copilot interventions under actor `"AI_COPILOT"` with timestamps, parameters, and results.
-  6. *Rigorous Verification*: Validated with dedicated test suite (`backend/tests/test_copilot_v2_actions.py` - 6/6 passed), core V2 suite (`test_reconciliation_v2.py` - 11/11 passed, total 17/17 passed), and zero-error TypeScript build (`tsc -b && vite build` in 1.13s).
+  6. *Multi-Layer Domain Guardrails (Product / GST / Enterprise Scoping)*: Added dual-layer domain protection in `CopilotActionEngine` (`is_out_of_domain` and prompt guardrail injection) and synchronized `CopilotService` (V1) to strictly deflect out-of-domain questions (cooking recipes, entertainment, sports, general trivia, weather, unrelated code) with a fast, zero-token deflection and thought notification (`Domain guardrail engaged`). Implemented strict word-boundary token matching (`\b`) to eliminate false positives on terms like `"pr"` in `"president"`.
+  7. *Dynamic Row Counting & Hardcoding Elimination*: Resolved hardcoded `10,000` / `10,500` fallback constants across `FastExcelParser`, `AuditV2Service`, `reconciliations_v2.py`, `Audit2Workspace.tsx`, and `ReconciliationV2SummaryStage.tsx`. FastExcelParser now performs ultra-fast binary tag scanning (<15ms) when openxml `<dimension>` tags are missing, computing exact row counts for arbitrary workbook sizes (e.g. 1,000 rows GSTR / 1,050 rows PR). Audit 2.0 narrative, manifest, and mathematical conservation now dynamically pull exact row counts from session state and Stage 4 execution results.
+  8. *Rigorous Verification*: Validated with dedicated test suite (`backend/tests/test_copilot_v2_actions.py` - 13/13 passed including cross-session and cross-stage transition tests, out-of-domain refusals, greetings, and in-domain GST/KPMG acceptance), core V2 suite (`test_reconciliation_v2.py` - 11/11 passed, total 24/24 backend tests passed), and zero-error production frontend build (`npm run build` in 1.02s).
+  9. *Persistent Memory & Cross-Session Transition Continuity*:
+     - Implemented unified local storage store `tars_copilot_unified_history_v2` in `CopilotPanel.tsx` ensuring conversation memory persists across drawer open/close (clicking outside backdrop), screen changes, route transitions, and browser reloads until manually cleared via the "Clear" button.
+     - Kept `<CopilotPanel />` mounted in DOM in `App.tsx` with `display: copilotOpen ? "flex" : "none"` and `pointerEvents: copilotOpen ? "auto" : "none"` to eliminate remount latency and preserve draft inputs and scroll position.
+     - Extended `CopilotMessage` with `CopilotMessageContext` (`sessionId`, `stageKey`, `stageLabel`, `stageNumber`, `routePath`, `timestamp`).
+     - Rendered inline visual **Context Switched** dividers in the chat timeline when jumping across sessions or stages, along with subtle message context chips.
+     - Engineered background cross-session and cross-stage transition detection in `CopilotActionEngine.stream_response` to explicitly acknowledge shifts in conversation turns (e.g. *(Noting that your previous question pertained to Session '...' [Stage], we are now analyzing Session '...' [Stage].)*).
 
 ---
 

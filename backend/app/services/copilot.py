@@ -133,15 +133,38 @@ class CopilotService:
     @staticmethod
     def _is_out_of_domain(message: str) -> bool:
         msg = message.lower().strip()
+        in_domain_terms = [
+            "tars", "kpmg", "gst", "gstin", "gstr", "gstr-2b", "gstr-1", "gstr-3b",
+            "reconcil", "reconciliation", "ledger", "purchase register", "pr", "erp",
+            "invoice", "bill", "tax", "taxable", "cgst", "sgst", "igst", "cess", "itc",
+            "section 16", "rule 36", "vendor", "supplier", "buyer", "customer", "party",
+            "exact match", "tolerance", "near match", "ambiguity", "unresolved", "exception",
+            "waterfall", "variance", "threshold", "rule", "rules", "profile", "export",
+            "mapping", "schema", "audit", "workbench", "row", "record", "candidate"
+        ]
+        if any(k in msg for k in in_domain_terms):
+            return False
+
         unrelated_patterns = [
-            r"\bpizza\b", r"\brecipe\b", r"\bcook(?:ing)?\b", r"\bingredients\b",
-            r"\bmovie\b", r"\bweather\b", r"\bsports?\b", r"\bfootball\b", r"\bcricket\b",
-            r"\bjoke\b", r"\bpoem\b", r"\bsong\b", r"\bstory\b",
+            r"\bpizza\b", r"\brecipe\b", r"\bcook(?:ing)?\b", r"\bingredients?\b", r"\bbak(?:e|ing)\b",
+            r"\bfood\b", r"\bdish\b", r"\bmeal\b", r"\brestaurant\b", r"\bdinner\b", r"\blunch\b",
+            r"\bbreakfast\b", r"\bpasta\b", r"\bburger\b", r"\bcake\b", r"\bcoffee\b", r"\btea\b",
+            r"\bmovie\b", r"\bfilm\b", r"\bactor\b", r"\bactress\b", r"\bcinema\b", r"\bsong\b",
+            r"\bmusic\b", r"\balbum\b", r"\bcelebrity\b", r"\bseries\b", r"\bnetflix\b",
+            r"\bweather\b", r"\bforecast\b", r"\bclimate\b", r"\bplanet\b",
+            r"\bsports?\b", r"\bfootball\b", r"\bcricket\b", r"\bbasketball\b", r"\btennis\b",
+            r"\bgaming\b", r"\bvideo\s*game\b", r"\banime\b", r"\bmanga\b",
+            r"\bjoke\b", r"\bpoem\b", r"\bpoetry\b", r"\bsong\b", r"\bstory\b", r"\blyrics\b",
         ]
         if any(re.search(pat, msg) for pat in unrelated_patterns):
-            if not any(k in msg for k in ["tars", "gst", "reconciliation", "invoice", "register"]):
-                return True
+            return True
         if re.search(r"\bwrite\b.*\bcode\b.*\bgame\b", msg) or re.search(r"\bpython\b.*\bgame\b", msg):
+            return True
+        generic_starters = [
+            "how to make", "how do i make", "recipe for", "tell me a joke", "tell me a story",
+            "who won the", "what is the score", "what is the capital of"
+        ]
+        if any(msg.startswith(s) for s in generic_starters):
             return True
         return False
 

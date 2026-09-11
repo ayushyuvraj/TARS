@@ -462,6 +462,15 @@ export type CopilotResponse = {
   model: string | null;
   created_at: string;
 };
+export type CopilotMessageContext = {
+  sessionId?: string | null;
+  sessionTitle?: string | null;
+  stageKey?: string | null;
+  stageNumber?: number | null;
+  stageLabel?: string | null;
+  routePath?: string;
+  timestamp: string;
+};
 export type CopilotMessage = {
   id: string;
   conversation_id: string;
@@ -470,6 +479,7 @@ export type CopilotMessage = {
   selected_record_id: string | null;
   response: CopilotResponse | null;
   created_at: string;
+  context?: CopilotMessageContext | null;
 };
 export type CopilotConversation = {
   conversation_id: string;

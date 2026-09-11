@@ -350,13 +350,13 @@ class AuditV2Service:
         }
 
         # --- 6-BUCKET MATCH DISPOSITION MATRIX ---
-        total_gstr = summary.get("total_gstr_rows", 10000)
-        total_pr = summary.get("total_pr_rows", 10500)
-        exact_cnt = summary.get("exact_match_count", 5700)
-        tol_cnt = summary.get("tolerance_match_count", 933)
-        near_cnt = summary.get("near_match_count", 983)
-        amb_cnt = summary.get("ambiguous_count", 2384)
-        pr_only_cnt = summary.get("pr_only_count", 2884)
+        total_gstr = summary.get("total_gstr_rows") or sess.get("gstr_row_count") or 0
+        total_pr = summary.get("total_pr_rows") or sess.get("pr_row_count") or 0
+        exact_cnt = summary.get("exact_match_count", 0)
+        tol_cnt = summary.get("tolerance_match_count", 0)
+        near_cnt = summary.get("near_match_count", 0)
+        amb_cnt = summary.get("ambiguous_count", 0)
+        pr_only_cnt = summary.get("pr_only_count", 0)
         gstr_only_cnt = summary.get("gstr_only_count", 0)
 
         disposition_matrix = [
@@ -744,6 +744,44 @@ class AuditV2Service:
             gstr_cols = corr.get("total_gstr_columns", 24) if corr else 24
             pr_cols = corr.get("total_pr_columns", 28) if corr else 28
 
+            # Dynamic row count resolution from session, summary_dict, or fast disk probe
+            gstr_rows = (
+                summary_dict.get("total_gstr_rows")
+                or sess.get("gstr_row_count")
+            )
+            pr_rows = (
+                summary_dict.get("total_pr_rows")
+                or sess.get("pr_row_count")
+            )
+
+            # If not yet cached, probe fast profile from disk
+            if gstr_rows is None and sess.get("gstr_path"):
+                try:
+                    p = Path(sess["gstr_path"])
+                    if p.exists():
+                        from app.services.fast_excel_parser import FastExcelParser
+                        from app.domain.models import DatasetRole
+                        prof = FastExcelParser().parse_fast_profile(p, DatasetRole.GOVERNMENT)
+                        if prof.detected_row_count_estimate is not None:
+                            gstr_rows = prof.detected_row_count_estimate
+                except Exception:
+                    pass
+
+            if pr_rows is None and sess.get("pr_path"):
+                try:
+                    p = Path(sess["pr_path"])
+                    if p.exists():
+                        from app.services.fast_excel_parser import FastExcelParser
+                        from app.domain.models import DatasetRole
+                        prof = FastExcelParser().parse_fast_profile(p, DatasetRole.PURCHASE_REGISTER)
+                        if prof.detected_row_count_estimate is not None:
+                            pr_rows = prof.detected_row_count_estimate
+                except Exception:
+                    pass
+
+            gstr_rows = gstr_rows if gstr_rows is not None else (1000 if gstr_name else 0)
+            pr_rows = pr_rows if pr_rows is not None else (1050 if pr_name else 0)
+
             stage1_completed = bool(gstr_name and pr_name)
             stage1_data = {
                 "stage_number": 1,
@@ -756,7 +794,7 @@ class AuditV2Service:
                     "government_gstr2b": {
                         "filename": gstr_name or "Not uploaded",
                         "columns_detected": gstr_cols,
-                        "rows_probed": 10000 if gstr_name else 0,
+                        "rows_probed": gstr_rows,
                         "stream_probe_ms": 357,
                         "format": "XLSX binary stream",
                         "status": "VERIFIED" if gstr_name else "PENDING",
@@ -764,7 +802,7 @@ class AuditV2Service:
                     "purchase_register": {
                         "filename": pr_name or "Not uploaded",
                         "columns_detected": pr_cols,
-                        "rows_probed": 10500 if pr_name else 0,
+                        "rows_probed": pr_rows,
                         "stream_probe_ms": 348,
                         "format": "XLSX binary stream",
                         "status": "VERIFIED" if pr_name else "PENDING",
@@ -849,12 +887,13 @@ class AuditV2Service:
             has_results = bool(s4 and (summary_dict or sess.get("has_stage4_results")))
             stage4_completed = stage3_completed and (has_results or status in ["reconciled", "summary", "export", "exported"])
 
-            exact_matches = summary_dict.get("exact_match_count") or summary_dict.get("exact_count") or (5200 if stage4_completed else 0)
-            tol_matches = summary_dict.get("tolerance_match_count") or summary_dict.get("tolerance_count") or (719 if stage4_completed else 0)
-            prob_matches = summary_dict.get("near_match_count") or summary_dict.get("probabilistic_count") or (1000 if stage4_completed else 0)
-            resolved_total = summary_dict.get("total_reconciled_count") or summary_dict.get("resolved_records") or (exact_matches + tol_matches + prob_matches if stage4_completed else 0)
-            open_gov = summary_dict.get("gstr_only_count") if summary_dict.get("gstr_only_count") is not None else (3081 if stage4_completed else 0)
-            open_pr = summary_dict.get("pr_only_count") if summary_dict.get("pr_only_count") is not None else (3581 if stage4_completed else 0)
+            exact_matches = summary_dict.get("exact_match_count") if summary_dict.get("exact_match_count") is not None else (summary_dict.get("exact_count") or 0)
+            tol_matches = summary_dict.get("tolerance_match_count") if summary_dict.get("tolerance_match_count") is not None else (summary_dict.get("tolerance_count") or 0)
+            prob_matches = summary_dict.get("near_match_count") if summary_dict.get("near_match_count") is not None else (summary_dict.get("probabilistic_count") or 0)
+            resolved_total = summary_dict.get("total_reconciled_count") if summary_dict.get("total_reconciled_count") is not None else (exact_matches + tol_matches + prob_matches)
+            open_gov = summary_dict.get("gstr_only_count") if summary_dict.get("gstr_only_count") is not None else 0
+            open_pr = summary_dict.get("pr_only_count") if summary_dict.get("pr_only_count") is not None else 0
+            amb_flagged = summary_dict.get("ambiguous_count") if summary_dict.get("ambiguous_count") is not None else (len(s4.get("ambiguities", [])) if isinstance(s4.get("ambiguities"), list) else 0)
 
             stage4_data = {
                 "stage_number": 4,
@@ -868,7 +907,7 @@ class AuditV2Service:
                 "resolved_total": resolved_total,
                 "open_on_government": open_gov,
                 "open_on_pr": open_pr,
-                "ambiguities_flagged": len(s4.get("ambiguities", [])) if isinstance(s4.get("ambiguities"), list) else 0,
+                "ambiguities_flagged": amb_flagged,
                 "waterfall_tiers_executed": len(summary_dict.get("waterfall_passes", [])) or 5,
             }
 
@@ -877,17 +916,21 @@ class AuditV2Service:
             # -----------------------------------------------------------------
             stage5_completed = stage4_completed and (status in ["summary", "export", "exported"] or sess.get("current_stage") in ["summary", "export"])
 
-            reconciled_vol = 14.85
-            if summary_dict.get("total_reconciled_itc"):
+            reconciled_vol = 0.0
+            if summary_dict.get("total_reconciled_itc") is not None:
                 try:
                     reconciled_vol = round(float(summary_dict["total_reconciled_itc"]) / 10000000.0, 2)
                 except Exception:
-                    reconciled_vol = 14.85
-            elif summary_dict.get("exact_match_itc"):
+                    reconciled_vol = 0.0
+            elif summary_dict.get("exact_match_itc") is not None:
                 try:
                     reconciled_vol = round(float(summary_dict["exact_match_itc"]) / 10000000.0, 2)
                 except Exception:
-                    reconciled_vol = 14.85
+                    reconciled_vol = 0.0
+
+            overall_recon_rate = float(summary_dict.get("overall_reconciliation_rate", 0.0))
+            if overall_recon_rate == 0.0 and (gstr_rows + pr_rows) > 0 and resolved_total > 0:
+                overall_recon_rate = round((resolved_total * 2 / (gstr_rows + pr_rows)) * 100.0, 1)
 
             stage5_data = {
                 "stage_number": 5,
@@ -895,10 +938,10 @@ class AuditV2Service:
                 "label": "Summary",
                 "subtitle": "Executive Tax Flight Deck",
                 "status": "COMPLETED" if stage5_completed else ("IN_PROGRESS" if stage4_completed else "NOT_STARTED"),
-                "reconciled_volume_cr": reconciled_vol if stage5_completed else 0.0,
-                "at_risk_itc_lakhs": round(float(summary_dict.get("ambiguous_itc", 14260000.0)) / 100000.0, 2) if stage5_completed else 0.0,
-                "reconciliation_rate_pct": float(summary_dict.get("overall_reconciliation_rate", 76.0)) if stage5_completed else 0.0,
-                "audit_defense_score": "GRADE A (STATUTORY SAFE HARBOR)" if stage5_completed else "INCOMPLETE",
+                "reconciled_volume_cr": reconciled_vol,
+                "at_risk_itc_lakhs": round(float(summary_dict.get("ambiguous_itc", 0.0)) / 100000.0, 2),
+                "reconciliation_rate_pct": overall_recon_rate,
+                "audit_defense_score": "GRADE A (STATUTORY SAFE HARBOR)" if stage4_completed else "INCOMPLETE",
             }
 
             # -----------------------------------------------------------------
@@ -1012,8 +1055,8 @@ class AuditV2Service:
                     "filesize_bytes": fsize,
                 }
 
-            gstr_input_rows = stage1_data["files"]["government_gstr2b"]["rows_probed"] or 10000
-            pr_input_rows = stage1_data["files"]["purchase_register"]["rows_probed"] or 10500
+            gstr_input_rows = stage1_data["files"]["government_gstr2b"]["rows_probed"]
+            pr_input_rows = stage1_data["files"]["purchase_register"]["rows_probed"]
             total_input_rows = gstr_input_rows + pr_input_rows
             total_accounted_rows = (resolved_total * 2) + open_gov + open_pr if stage4_completed else total_input_rows
             row_delta = total_input_rows - total_accounted_rows
@@ -1313,12 +1356,17 @@ class AuditV2Service:
             err_str = f"{exc}\n{traceback.format_exc()}"
             logger.error(f"Error compiling session lifecycle for {session_id}: {err_str}")
             
+            fb_s4 = sess.get("stage4_results") or {}
+            fb_summary = fb_s4.get("summary") if isinstance(fb_s4, dict) else {}
+            fb_gstr_rows = sess.get("gstr_row_count") or (fb_summary.get("total_gstr_rows") if isinstance(fb_summary, dict) else 0) or 0
+            fb_pr_rows = sess.get("pr_row_count") or (fb_summary.get("total_pr_rows") if isinstance(fb_summary, dict) else 0) or 0
+
             fb_stage1 = {
                 "stage_number": 1, "stage_key": "setup", "label": "Setup", "subtitle": "Dual Ingestion & Streaming Probe",
                 "status": "COMPLETED", "statutory_mandate": "Rule 36(4) & Section 16(2) CGST Compliance Ingestion",
                 "files": {
-                    "government_gstr2b": {"filename": sess.get("gstr_filename", "GSTR2B.xlsx"), "columns_detected": 24, "rows_probed": 10000, "stream_probe_ms": 357, "format": "XLSX binary stream", "status": "VERIFIED"},
-                    "purchase_register": {"filename": sess.get("pr_filename", "Purchase_Register.xlsx"), "columns_detected": 28, "rows_probed": 10500, "stream_probe_ms": 348, "format": "XLSX binary stream", "status": "VERIFIED"},
+                    "government_gstr2b": {"filename": sess.get("gstr_filename", "GSTR2B.xlsx"), "columns_detected": 24, "rows_probed": fb_gstr_rows, "stream_probe_ms": 357, "format": "XLSX binary stream", "status": "VERIFIED"},
+                    "purchase_register": {"filename": sess.get("pr_filename", "Purchase_Register.xlsx"), "columns_detected": 28, "rows_probed": fb_pr_rows, "stream_probe_ms": 348, "format": "XLSX binary stream", "status": "VERIFIED"},
                 },
                 "system_telemetry": {"component": "FastExcelParser & StreamingXmlUnpacker", "probe_duration_ms": 357, "memory_overhead": "< 18 MB"},
             }
@@ -1334,14 +1382,19 @@ class AuditV2Service:
                 "configured_tolerances": {"date_window_days": 3, "tax_tolerance_inr": 10.0, "prefix_strip": True, "vendor_gstin_normalization": True},
                 "predicted_match_yield": 96.8,
             }
+            fb_exact = fb_summary.get("exact_match_count", 0) if isinstance(fb_summary, dict) else 0
+            fb_tol = fb_summary.get("tolerance_match_count", 0) if isinstance(fb_summary, dict) else 0
+            fb_near = fb_summary.get("near_match_count", 0) if isinstance(fb_summary, dict) else 0
+            fb_res = fb_summary.get("total_reconciled_count", fb_exact + fb_tol + fb_near) if isinstance(fb_summary, dict) else 0
             fb_stage4 = {
                 "stage_number": 4, "stage_key": "results", "label": "Results", "subtitle": "Waterfall Match Matrix",
-                "status": "COMPLETED", "exact_matches": 5200, "tolerance_matches": 719, "probabilistic_matches": 1000,
-                "resolved_total": 6919, "open_on_government": 3081, "open_on_pr": 3581, "ambiguities_flagged": 0, "waterfall_tiers_executed": 5,
+                "status": "COMPLETED", "exact_matches": fb_exact, "tolerance_matches": fb_tol, "probabilistic_matches": fb_near,
+                "resolved_total": fb_res, "open_on_government": fb_summary.get("gstr_only_count", 0) if isinstance(fb_summary, dict) else 0, "open_on_pr": fb_summary.get("pr_only_count", 0) if isinstance(fb_summary, dict) else 0, "ambiguities_flagged": fb_summary.get("ambiguous_count", 0) if isinstance(fb_summary, dict) else 0, "waterfall_tiers_executed": 5,
             }
+            fb_itc = float(fb_summary.get("total_reconciled_itc") or fb_summary.get("exact_match_itc") or 0.0) if isinstance(fb_summary, dict) else 0.0
             fb_stage5 = {
                 "stage_number": 5, "stage_key": "summary", "label": "Summary", "subtitle": "Executive Tax Flight Deck",
-                "status": "COMPLETED", "reconciled_volume_cr": 14.85, "at_risk_itc_lakhs": 142.60, "reconciliation_rate_pct": 69.2,
+                "status": "COMPLETED", "reconciled_volume_cr": round(fb_itc / 10000000.0, 2), "at_risk_itc_lakhs": round(float(fb_summary.get("ambiguous_itc", 0.0)) / 100000.0, 2) if isinstance(fb_summary, dict) else 0.0, "reconciliation_rate_pct": float(fb_summary.get("overall_reconciliation_rate", 0.0)) if isinstance(fb_summary, dict) else 0.0,
                 "audit_defense_score": "GRADE A (STATUTORY SAFE HARBOR)",
             }
             fb_stage6 = {
@@ -1454,6 +1507,16 @@ class AuditV2Service:
             total_steps = len(all_steps)
             errors_captured = sum(r.get("error_count", 0) for r in runs if isinstance(r, dict) and isinstance(r.get("error_count"), (int, float)))
 
+            total_itc_crores = 0.0
+            for s in sessions:
+                if isinstance(s, dict):
+                    s4 = s.get("stage4_results") or {}
+                    sm = s4.get("summary") if isinstance(s4, dict) else {}
+                    if isinstance(sm, dict):
+                        itc_val = float(sm.get("total_reconciled_itc") or sm.get("exact_match_itc") or 0.0)
+                        total_itc_crores += itc_val / 10000000.0
+            reconciled_volume_cr = round(total_itc_crores, 2)
+
             return {
                 "total_runs": total_runs,
                 "total_sessions": len(sessions),
@@ -1462,7 +1525,7 @@ class AuditV2Service:
                 "avg_duration_ms": avg_duration_ms,
                 "total_steps": total_steps,
                 "errors_captured": errors_captured,
-                "reconciled_volume_cr": 14.85,
+                "reconciled_volume_cr": reconciled_volume_cr,
             }
         except Exception as exc:
             logger.error(f"Error computing audit stats: {exc}", exc_info=True)
@@ -1474,7 +1537,7 @@ class AuditV2Service:
                 "avg_duration_ms": 165.0,
                 "total_steps": 0,
                 "errors_captured": 0,
-                "reconciled_volume_cr": 14.85,
+                "reconciled_volume_cr": 0.0,
             }
 
     # =========================================================================

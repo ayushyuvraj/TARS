@@ -1933,36 +1933,41 @@ export default function App() {
           </Routes>
         </main>
       </div>
-      {copilotOpen && (
-        <div className="copilot-drawer">
+      <div
+        className="copilot-drawer"
+        style={{
+          display: copilotOpen ? "flex" : "none",
+          pointerEvents: copilotOpen ? "auto" : "none",
+        }}
+        aria-hidden={!copilotOpen}
+      >
+        <button
+          className="drawer-backdrop"
+          tabIndex={-1}
+          aria-hidden="true"
+          onClick={() => setCopilotOpen(false)}
+        />
+        <div
+          className="drawer-panel"
+          ref={copilotDialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="copilot-title"
+        >
           <button
-            className="drawer-backdrop"
-            tabIndex={-1}
-            aria-hidden="true"
+            className="drawer-close icon-button"
             onClick={() => setCopilotOpen(false)}
-          />
-          <div
-            className="drawer-panel"
-            ref={copilotDialogRef}
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="copilot-title"
+            aria-label="Close Copilot"
           >
-            <button
-              className="drawer-close icon-button"
-              onClick={() => setCopilotOpen(false)}
-              aria-label="Close Copilot"
-            >
-              <PanelLeftClose size={19} />
-            </button>
-            <CopilotPanel
-              reconciliationId={sessionId}
-              selectedRecordId={selectedException}
-              currentPage={loc.pathname}
-            />
-          </div>
+            <PanelLeftClose size={19} />
+          </button>
+          <CopilotPanel
+            reconciliationId={sessionId}
+            selectedRecordId={selectedException}
+            currentPage={loc.pathname}
+          />
         </div>
-      )}
+      </div>
       {selected && (
         <ToleranceDetail item={selected} onClose={() => setSelected(null)} />
       )}

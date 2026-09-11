@@ -99,15 +99,15 @@ export const ReconciliationV2SummaryStage: React.FC<ReconciliationV2SummaryStage
   const summary = summaryData?.summary || legacyData?.summary;
   const comparedColumns = summaryData?.compared_columns || legacyData?.compared_columns || [];
 
-  const totalGstr = summary?.total_gstr_rows ?? 10000;
-  const totalPr = summary?.total_pr_rows ?? 10500;
-  const exactCount = summary?.exact_match_count ?? 5700;
-  const tolCount = summary?.tolerance_match_count ?? 933;
-  const nearCount = summary?.near_match_count ?? 983;
+  const totalGstr = summary?.total_gstr_rows ?? 0;
+  const totalPr = summary?.total_pr_rows ?? 0;
+  const exactCount = summary?.exact_match_count ?? 0;
+  const tolCount = summary?.tolerance_match_count ?? 0;
+  const nearCount = summary?.near_match_count ?? 0;
   const totalMatches = exactCount + tolCount + nearCount;
-  const accuracyRate = summary?.overall_reconciliation_rate ?? 76.2;
-  const ambiguousCount = summary?.ambiguous_count ?? 2384;
-  const prOnlyCount = summary?.pr_only_count ?? 2884;
+  const accuracyRate = summary?.overall_reconciliation_rate ?? (totalGstr + totalPr > 0 ? Number(((totalMatches * 2 / (totalGstr + totalPr)) * 100).toFixed(1)) : 0.0);
+  const ambiguousCount = summary?.ambiguous_count ?? 0;
+  const prOnlyCount = summary?.pr_only_count ?? 0;
   const gstrOnlyCount = summary?.gstr_only_count ?? 0;
 
   // Ambiguity Triage Categories (Stage 4 Collision Classification)
@@ -115,7 +115,8 @@ export const ReconciliationV2SummaryStage: React.FC<ReconciliationV2SummaryStage
     if (summaryData?.ambiguity_triage?.categories && summaryData.ambiguity_triage.categories.length > 0) {
       return summaryData.ambiguity_triage.categories;
     }
-    const tot = ambiguousCount || 2384;
+    const tot = ambiguousCount;
+    if (tot === 0) return [];
     return [
       {
         category: "PROBABLE_EXACT_MATCH",

@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
-import { api, CopilotMessage } from "./api";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
+import { api, CopilotMessage, CopilotMessageContext } from "./api";
 import { copilotV2Bridge, V2WorkspaceContext } from "./copilot_v2_bridge";
 import { Trash2, Paperclip, FileSpreadsheet, X } from "lucide-react";
 
@@ -38,15 +38,23 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
   const effectiveSessionId = v2Context?.sessionId || reconciliationId;
   const storageKey = effectiveSessionId ? `gst-copilot-${effectiveSessionId}` : "gst-copilot-global";
   const msgStorageKey = effectiveSessionId ? `gst-copilot-msgs-${effectiveSessionId}` : "gst-copilot-msgs-global";
+  const UNIFIED_STORAGE_KEY = "tars_copilot_unified_history_v2";
 
   const [conversationId, setConversationId] = useState<string | null>(() => localStorage.getItem(storageKey));
   const [messages, setMessages] = useState<CopilotMessage[]>(() => {
-    if (!effectiveSessionId) {
-      try {
-        const saved = localStorage.getItem(msgStorageKey);
-        if (saved) return JSON.parse(saved);
-      } catch {}
-    }
+    try {
+      const saved = localStorage.getItem(UNIFIED_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      // Fallback to legacy key if present
+      const legacySaved = localStorage.getItem(msgStorageKey);
+      if (legacySaved) {
+        const parsedLegacy = JSON.parse(legacySaved);
+        if (Array.isArray(parsedLegacy) && parsedLegacy.length > 0) return parsedLegacy;
+      }
+    } catch {}
     return [];
   });
   const [draft, setDraft] = useState("");
@@ -58,19 +66,21 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
   const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!effectiveSessionId) {
-      try {
-        localStorage.setItem(msgStorageKey, JSON.stringify(messages));
-      } catch {}
-    }
-  }, [messages, effectiveSessionId, msgStorageKey]);
+    try {
+      localStorage.setItem(UNIFIED_STORAGE_KEY, JSON.stringify(messages));
+    } catch {}
+  }, [messages]);
 
   useEffect(() => {
-    if (!conversationId || !effectiveSessionId || v2Context) return;
+    if (!conversationId || !effectiveSessionId || v2Context || messages.length > 0) return;
     api.copilotConversation(effectiveSessionId, conversationId)
-      .then(result => setMessages(result.messages))
+      .then(result => {
+        if (result.messages && result.messages.length > 0) {
+          setMessages(result.messages);
+        }
+      })
       .catch(() => { localStorage.removeItem(storageKey); setConversationId(null); });
-  }, [conversationId, effectiveSessionId, storageKey, v2Context]);
+  }, [conversationId, effectiveSessionId, storageKey, v2Context, messages.length]);
 
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
@@ -120,6 +130,16 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
     setError(null);
     setThinkingStatus("Processing instruction…");
 
+    const currentContext: CopilotMessageContext = {
+      sessionId: v2Context?.sessionId || effectiveSessionId || null,
+      sessionTitle: v2Context?.gstrFilename ? `${v2Context.gstrFilename} vs ${v2Context.prFilename || 'PR'}` : null,
+      stageKey: v2Context?.activeStage || null,
+      stageNumber: v2Context?.stageNumber || null,
+      stageLabel: v2Context?.stageLabel || (effectiveSessionId ? "Reconciliation Session" : "Global Screen"),
+      routePath: currentPage || window.location.pathname,
+      timestamp: new Date().toISOString(),
+    };
+
     const optimistic: CopilotMessage = {
       id: crypto.randomUUID(),
       conversation_id: conversationId ?? "",
@@ -127,7 +147,8 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
       content: attachedFiles.length > 0 ? `${finalMessage} (Attached: ${attachedFiles.map(f => f.name).join(", ")})` : finalMessage,
       selected_record_id: selectedRecordId,
       response: null,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      context: currentContext,
     };
     const nextMessages = [...messages, optimistic];
     setMessages(nextMessages);
@@ -145,16 +166,22 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
         content: "",
         selected_record_id: selectedRecordId,
         response: null,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        context: currentContext,
       };
       setMessages([...nextMessages, initialAssistantMsg]);
+
+      const hadAttachments = attachedFiles.length > 0;
+      let accumulatedContent = "";
 
       try {
         let res: Response;
 
         // If files are attached, trigger autonomous pipeline endpoint
         if (attachedFiles.length > 0) {
-          const { gstr, pr } = classifyFiles(attachedFiles);
+          const filesToProcess = [...attachedFiles];
+          setAttachedFiles([]);
+          const { gstr, pr } = classifyFiles(filesToProcess);
           const formData = new FormData();
           if (gstr) formData.append("government_file", gstr);
           if (pr) formData.append("purchase_file", pr);
@@ -167,10 +194,13 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
             method: "POST",
             body: formData,
           });
-          setAttachedFiles([]);
         } else {
-          // Standard text / command stream
-          const historyPayload = nextMessages.slice(-6).map(m => ({ role: m.role, content: m.content }));
+          // Standard text / command stream with context-aware history
+          const historyPayload = nextMessages.slice(-10).map(m => ({
+            role: m.role,
+            content: m.content,
+            context: m.context || null,
+          }));
           res = await fetch("/api/reconciliations-v2/copilot/stream", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -191,7 +221,6 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
         const reader = res.body.getReader();
         const decoder = new TextDecoder("utf-8");
         let buffer = "";
-        let accumulatedContent = "";
 
         while (true) {
           const { done, value } = await reader.read();
@@ -203,7 +232,7 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
 
           for (const part of parts) {
             const trimmed = part.trim();
-            if (!trimmed.startsWith("data: ")) continue;
+            if (trimmed.startsWith(":") || !trimmed.startsWith("data: ")) continue;
             const jsonStr = trimmed.slice(6);
             try {
               const data = JSON.parse(jsonStr);
@@ -232,6 +261,23 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
         }
       } catch (reason) {
         console.warn("V2 streaming error, falling back:", reason);
+        if (hadAttachments || accumulatedContent.length > 0) {
+          setError(reason instanceof Error ? reason.message : "Autonomous reconcile failed.");
+          setMessages(current =>
+            current.map(m =>
+              m.id === assistantId
+                ? {
+                    ...m,
+                    content:
+                      accumulatedContent ||
+                      "❌ **Reconciliation Failed**: Could not complete autonomous reconciliation. Please check server logs or workbook format.",
+                  }
+                : m
+            )
+          );
+          return;
+        }
+
         try {
           const response = await api.askCopilot(
             effectiveSessionId,
@@ -287,7 +333,8 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
           content: response.answer,
           selected_record_id: selectedRecordId,
           response,
-          created_at: response.created_at
+          created_at: response.created_at,
+          context: currentContext,
         }
       ]);
     } catch (reason) {
@@ -310,6 +357,7 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
     setConversationId(null);
     setAttachedFiles([]);
     try {
+      localStorage.removeItem(UNIFIED_STORAGE_KEY);
       localStorage.removeItem(storageKey);
       localStorage.removeItem(msgStorageKey);
     } catch {}
@@ -478,57 +526,149 @@ export function CopilotPanel({ reconciliationId, selectedRecordId, currentPage }
           </div>
         )}
 
-        {messages.map((message) => (
-          <article
-            className={`copilot-message copilot-message--${message.role}`}
-            key={message.id}
-          >
-            <span>{message.role === "user" ? "You" : "Copilot"}</span>
-            {renderFormattedContent(message.content)}
-            {message.response && (
-              <>
-                {message.response.evidence.length > 0 && (
-                  <details>
-                    <summary>View evidence · {message.response.evidence.length} facts</summary>
-                    {message.response.provider && (
-                      <div className="evidence-provider">
-                        <small>
-                          Provider: {message.response.provider}{" "}
-                          {message.response.model ? `(${message.response.model})` : ""}
-                        </small>
-                      </div>
+        {messages.map((message, idx) => {
+          const prevMsg = idx > 0 ? messages[idx - 1] : null;
+          const prevCtx = prevMsg?.context;
+          const currCtx = message.context;
+
+          const sessionSwitched = Boolean(
+            prevCtx?.sessionId &&
+            currCtx?.sessionId &&
+            prevCtx.sessionId !== currCtx.sessionId
+          );
+
+          const stageSwitched = Boolean(
+            !sessionSwitched &&
+            prevCtx?.stageKey &&
+            currCtx?.stageKey &&
+            prevCtx.stageKey !== currCtx.stageKey
+          );
+
+          return (
+            <React.Fragment key={message.id}>
+              {sessionSwitched && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    margin: "12px 0 8px 0",
+                    padding: "5px 12px",
+                    background: "rgba(30, 41, 59, 0.85)",
+                    borderRadius: "6px",
+                    border: "1px dashed #475569",
+                    color: "#94a3b8",
+                    fontSize: "11px",
+                    fontWeight: 500,
+                    lineHeight: 1.4,
+                  }}
+                >
+                  <span>
+                    🔄 <strong>Session Changed</strong>: from{" "}
+                    <code style={{ color: "#38bdf8", padding: "1px 4px", background: "rgba(56, 189, 248, 0.1)", borderRadius: "3px" }}>
+                      {prevCtx?.sessionId?.slice(0, 8)}
+                    </code>{" "}
+                    ({prevCtx?.stageLabel || prevCtx?.stageKey}) ➔{" "}
+                    <code style={{ color: "#38bdf8", padding: "1px 4px", background: "rgba(56, 189, 248, 0.1)", borderRadius: "3px" }}>
+                      {currCtx?.sessionId?.slice(0, 8)}
+                    </code>{" "}
+                    ({currCtx?.stageLabel || currCtx?.stageKey})
+                  </span>
+                </div>
+              )}
+
+              {stageSwitched && (
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    margin: "10px 0 6px 0",
+                    padding: "4px 10px",
+                    background: "rgba(15, 23, 42, 0.6)",
+                    borderRadius: "4px",
+                    border: "1px dotted #334155",
+                    color: "#94a3b8",
+                    fontSize: "10.5px",
+                    fontWeight: 500,
+                  }}
+                >
+                  <span>
+                    🧭 <strong>Stage Switched</strong>: {prevCtx?.stageLabel || prevCtx?.stageKey} ➔{" "}
+                    {currCtx?.stageLabel || currCtx?.stageKey}
+                  </span>
+                </div>
+              )}
+
+              <article
+                className={`copilot-message copilot-message--${message.role}`}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span>{message.role === "user" ? "You" : "Copilot"}</span>
+                  {currCtx && (currCtx.stageLabel || currCtx.sessionId) && (
+                    <span
+                      style={{
+                        fontSize: "9px",
+                        padding: "1px 6px",
+                        borderRadius: "4px",
+                        background: message.role === "user" ? "rgba(255, 255, 255, 0.08)" : "rgba(15, 23, 42, 0.15)",
+                        color: message.role === "user" ? "#cbd5e1" : "#64748b",
+                        fontWeight: 600,
+                        border: "1px solid rgba(255, 255, 255, 0.08)",
+                      }}
+                      title={`Session: ${currCtx.sessionId || "Global"} | Stage: ${currCtx.stageLabel || "N/A"}`}
+                    >
+                      {currCtx.stageLabel || (currCtx.sessionId ? `Sess: ${currCtx.sessionId.slice(0, 6)}…` : "Global")}
+                    </span>
+                  )}
+                </div>
+                {renderFormattedContent(message.content)}
+                {message.response && (
+                  <>
+                    {message.response.evidence.length > 0 && (
+                      <details>
+                        <summary>View evidence · {message.response.evidence.length} facts</summary>
+                        {message.response.provider && (
+                          <div className="evidence-provider">
+                            <small>
+                              Provider: {message.response.provider}{" "}
+                              {message.response.model ? `(${message.response.model})` : ""}
+                            </small>
+                          </div>
+                        )}
+                        {message.response.evidence.map((item) => (
+                          <div
+                            className="evidence-reference"
+                            key={`${item.reference_type}-${item.reference_id}`}
+                          >
+                            <strong>{item.reference_type.replaceAll("_", " ")}</strong>
+                            <small>{item.reference_id}</small>
+                          </div>
+                        ))}
+                      </details>
                     )}
-                    {message.response.evidence.map((item) => (
-                      <div
-                        className="evidence-reference"
-                        key={`${item.reference_type}-${item.reference_id}`}
-                      >
-                        <strong>{item.reference_type.replaceAll("_", " ")}</strong>
-                        <small>{item.reference_id}</small>
-                      </div>
-                    ))}
-                  </details>
+                    {message.response.tool_calls.length > 0 && (
+                      <details>
+                        <summary>Activity · {message.response.tool_calls.length} tools</summary>
+                        {message.response.tool_calls.map((call) => (
+                          <div
+                            className="tool-trace"
+                            key={`${message.id}-${call.tool_name}`}
+                          >
+                            <strong>{call.tool_name.replaceAll("_", " ")}</strong>
+                            <small>
+                              {call.purpose} · {call.duration_ms.toFixed(0)} ms
+                            </small>
+                          </div>
+                        ))}
+                      </details>
+                    )}
+                  </>
                 )}
-                {message.response.tool_calls.length > 0 && (
-                  <details>
-                    <summary>Activity · {message.response.tool_calls.length} tools</summary>
-                    {message.response.tool_calls.map((call) => (
-                      <div
-                        className="tool-trace"
-                        key={`${message.id}-${call.tool_name}`}
-                      >
-                        <strong>{call.tool_name.replaceAll("_", " ")}</strong>
-                        <small>
-                          {call.purpose} · {call.duration_ms.toFixed(0)} ms
-                        </small>
-                      </div>
-                    ))}
-                  </details>
-                )}
-              </>
-            )}
-          </article>
-        ))}
+              </article>
+            </React.Fragment>
+          );
+        })}
 
         {busy && thinkingStatus && (
           <div className="copilot-thinking" role="status">

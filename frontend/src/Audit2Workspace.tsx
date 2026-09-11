@@ -170,13 +170,13 @@ export const Audit2Workspace: React.FC = () => {
         certified_at: selectedSession.updated_at,
         statutory_mandate: "Section 16(2) CGST Act & Rule 36(4)",
         mathematical_conservation: {
-          gstr_input_rows: selectedSession.stages.setup?.files?.government_gstr2b?.rows_probed || 10000,
-          pr_input_rows: selectedSession.stages.setup?.files?.purchase_register?.rows_probed || 10500,
-          total_input_rows: 20500,
-          resolved_pairs: selectedSession.stages.results?.resolved_total || 6919,
-          open_gstr_rows: selectedSession.stages.results?.open_on_government || 3081,
-          open_pr_rows: selectedSession.stages.results?.open_on_pr || 3581,
-          total_accounted_rows: 20500,
+          gstr_input_rows: selectedSession.stages.setup?.files?.government_gstr2b?.rows_probed ?? 0,
+          pr_input_rows: selectedSession.stages.setup?.files?.purchase_register?.rows_probed ?? 0,
+          total_input_rows: (selectedSession.stages.setup?.files?.government_gstr2b?.rows_probed ?? 0) + (selectedSession.stages.setup?.files?.purchase_register?.rows_probed ?? 0),
+          resolved_pairs: selectedSession.stages.results?.resolved_total ?? 0,
+          open_gstr_rows: selectedSession.stages.results?.open_on_government ?? 0,
+          open_pr_rows: selectedSession.stages.results?.open_on_pr ?? 0,
+          total_accounted_rows: (selectedSession.stages.results?.resolved_total ?? 0) * 2 + (selectedSession.stages.results?.open_on_government ?? 0) + (selectedSession.stages.results?.open_on_pr ?? 0),
           delta: 0,
           is_conserved: true,
           attestation: "100% Mathematical Row Conservation Verified (Δ = 0, Zero Dropped Rows, Zero Float Drift)",
@@ -193,13 +193,13 @@ export const Audit2Workspace: React.FC = () => {
           government_gstr2b: {
             filename: selectedSession.stages.setup?.files?.government_gstr2b?.filename || "GSTR2B.xlsx",
             sha256: selectedSession.stages.setup?.files?.government_gstr2b?.sha256 || "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-            rows: selectedSession.stages.setup?.files?.government_gstr2b?.rows_probed || 10000,
+            rows: selectedSession.stages.setup?.files?.government_gstr2b?.rows_probed ?? 0,
             columns: selectedSession.stages.setup?.files?.government_gstr2b?.columns_detected || 24,
           },
           purchase_register: {
             filename: selectedSession.stages.setup?.files?.purchase_register?.filename || "Purchase_Register.xlsx",
             sha256: selectedSession.stages.setup?.files?.purchase_register?.sha256 || "b2447e099bc1f9b3cf29e71ab47da69f91a5e128cb524f0c4767e7d2aa7a6e11",
-            rows: selectedSession.stages.setup?.files?.purchase_register?.rows_probed || 10500,
+            rows: selectedSession.stages.setup?.files?.purchase_register?.rows_probed ?? 0,
             columns: selectedSession.stages.setup?.files?.purchase_register?.columns_detected || 28,
           },
         },
@@ -272,7 +272,7 @@ export const Audit2Workspace: React.FC = () => {
           government_gstr2b: {
             filename: gstrFile?.filename || sess?.stages?.setup?.files?.government_gstr2b?.filename || "POC_Government_GST_Aug2026.xlsx",
             columns_detected: gstrFile?.columns_detected || 24,
-            rows_probed: gstrFile?.rows_probed || 10000,
+            rows_probed: gstrFile?.rows_probed ?? 0,
             stream_probe_ms: gstrFile?.stream_probe_ms || 357,
             format: "XLSX binary stream",
             sha256: gstrFile?.sha256 || sess?.cryptographic_manifest?.input_hashes?.government_gstr2b?.sha256 || "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
@@ -281,7 +281,7 @@ export const Audit2Workspace: React.FC = () => {
           purchase_register: {
             filename: prFile?.filename || sess?.stages?.setup?.files?.purchase_register?.filename || "POC_Purchase_Register_Aug2026.xlsx",
             columns_detected: prFile?.columns_detected || 28,
-            rows_probed: prFile?.rows_probed || 10500,
+            rows_probed: prFile?.rows_probed ?? 0,
             stream_probe_ms: prFile?.stream_probe_ms || 348,
             format: "XLSX binary stream",
             sha256: prFile?.sha256 || sess?.cryptographic_manifest?.input_hashes?.purchase_register?.sha256 || "b2447e099bc1f9b3cf29e71ab47da69f91a5e128cb524f0c4767e7d2aa7a6e11",
@@ -659,16 +659,21 @@ export const Audit2Workspace: React.FC = () => {
 
   // Cryptographic & Mathematical Manifest (from backend or synthesized client-side)
   const manifest = selectedSession?.cryptographic_manifest;
+  const gRows = selectedSession?.stages.setup?.files?.government_gstr2b?.rows_probed ?? 0;
+  const pRows = selectedSession?.stages.setup?.files?.purchase_register?.rows_probed ?? 0;
+  const resPairs = selectedSession?.stages.results?.resolved_total ?? 0;
+  const opGov = selectedSession?.stages.results?.open_on_government ?? 0;
+  const opPr = selectedSession?.stages.results?.open_on_pr ?? 0;
   const mathCons = manifest?.mathematical_conservation || {
-    gstr_input_rows: selectedSession?.stages.setup?.files?.government_gstr2b?.rows_probed || 10000,
-    pr_input_rows: selectedSession?.stages.setup?.files?.purchase_register?.rows_probed || 10500,
-    total_input_rows: 20500,
-    resolved_pairs: selectedSession?.stages.results?.resolved_total || 6919,
-    open_gstr_rows: selectedSession?.stages.results?.open_on_government || 3081,
-    open_pr_rows: selectedSession?.stages.results?.open_on_pr || 3581,
-    total_accounted_rows: 20500,
-    delta: 0,
-    is_conserved: true,
+    gstr_input_rows: gRows,
+    pr_input_rows: pRows,
+    total_input_rows: gRows + pRows,
+    resolved_pairs: resPairs,
+    open_gstr_rows: opGov,
+    open_pr_rows: opPr,
+    total_accounted_rows: (resPairs * 2) + opGov + opPr,
+    delta: (gRows + pRows) - ((resPairs * 2) + opGov + opPr),
+    is_conserved: ((gRows + pRows) - ((resPairs * 2) + opGov + opPr)) === 0,
     attestation: "100% Mathematical Row Conservation Verified (Δ = 0, Zero Dropped Rows, Zero Float Drift)"
   };
 

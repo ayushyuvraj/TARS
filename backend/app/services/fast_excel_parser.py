@@ -147,14 +147,20 @@ class FastExcelParser:
                 except Exception:
                     pass
 
-            # Fast estimate rows from dimension tag in header chunk (<2ms)
+            # Fast estimate rows from dimension tag in header chunk (<2ms), or fallback to rapid row tag count (<15ms)
             est_rows = None
             try:
                 with zf.open(sheet_target) as f_dim:
-                    header_chunk = f_dim.read(2048).decode("utf-8", errors="ignore")
+                    header_chunk = f_dim.read(4096).decode("utf-8", errors="ignore")
                     m = re.search(r'ref="[A-Z0-9]+:([A-Z]+)(\d+)"', header_chunk)
                     if m:
                         est_rows = int(m.group(2))
+                    else:
+                        f_dim.seek(0)
+                        raw_sheet = f_dim.read()
+                        row_tags = raw_sheet.count(b"<x:row ") + raw_sheet.count(b"<row ") + raw_sheet.count(b"<x:row>") + raw_sheet.count(b"<row>")
+                        if row_tags > 0:
+                            est_rows = row_tags
             except Exception:
                 pass
 
