@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { DirectColumnCorrelation, AgentThought } from "./api_v2";
 import { SearchableColumnSelect } from "./SearchableColumnSelect";
 import { MappingInspectorDrawer } from "./MappingInspectorDrawer";
 import { AgentThinkingConsole } from "./AgentThinkingConsole";
+import { copilotV2Bridge } from "./copilot_v2_bridge";
 import {
   CheckCircle2,
   Sparkles,
@@ -49,6 +50,55 @@ export const DynamicMappingGridV2: React.FC<DynamicMappingGridV2Props> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "deterministic" | "llm" | "attention" | "unmapped">("all");
   const [inspectedCorrelation, setInspectedCorrelation] = useState<DirectColumnCorrelation | null>(null);
+
+  // Register UPDATE_MAPPING action handler from Copilot Chat
+  useEffect(() => {
+    return copilotV2Bridge.registerActionHandler("UPDATE_MAPPING", (payload) => {
+      if (payload.action_type === "unmap" && payload.column) {
+        const colLower = String(payload.column).toLowerCase().trim();
+        const updated = correlations.map((c) => {
+          const gLower = (c.gstr_column || "").toLowerCase();
+          const pLower = (c.selected_pr_column || "").toLowerCase();
+          if (gLower.includes(colLower) || pLower.includes(colLower)) {
+            return {
+              ...c,
+              selected_pr_column: null,
+              user_edited: true,
+              confidence: 0.0,
+              reason: `Unmapped via Copilot instruction for '${payload.column}'.`,
+            };
+          }
+          return c;
+        });
+        onChange(updated);
+      } else if (payload.pr_column && payload.gstr_column) {
+        const prTarget = String(payload.pr_column).toLowerCase().trim();
+        const gstrTarget = String(payload.gstr_column).toLowerCase().trim();
+        const matchedPr =
+          prColumns.find(
+            (p) =>
+              p.toLowerCase() === prTarget ||
+              p.toLowerCase().includes(prTarget) ||
+              prTarget.includes(p.toLowerCase())
+          ) || payload.pr_column;
+
+        const updated = correlations.map((c) => {
+          const gLower = (c.gstr_column || "").toLowerCase();
+          if (gLower === gstrTarget || gLower.includes(gstrTarget) || gstrTarget.includes(gLower)) {
+            return {
+              ...c,
+              selected_pr_column: matchedPr,
+              user_edited: true,
+              confidence: 1.0,
+              reason: `Mapped via Copilot chat instruction to '${matchedPr}'.`,
+            };
+          }
+          return c;
+        });
+        onChange(updated);
+      }
+    });
+  }, [correlations, prColumns, onChange]);
 
   const handlePrColumnChange = (gstrColName: string, newPrCol: string | null) => {
     const updated = correlations.map((c) => {

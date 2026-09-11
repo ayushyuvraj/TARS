@@ -15,6 +15,7 @@ import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import "./rules_v2.css";
 import "./results_v2.css";
 import "./summary_export_v2.css";
+import { copilotV2Bridge } from "./copilot_v2_bridge";
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -134,6 +135,56 @@ export const ReconciliationV2Workspace: React.FC = () => {
       }
     }
   }, [routeStage, currentStage]);
+
+  // Synchronize V2 workspace context to Copilot Bridge
+  useEffect(() => {
+    const stageInfo = V2_STAGES.find((s) => s.key === currentStage);
+    copilotV2Bridge.setContext({
+      activeStage: currentStage,
+      stageNumber: stageInfo ? stageInfo.number : 1,
+      stageLabel: stageInfo ? `${stageInfo.label} (${stageInfo.subtitle})` : currentStage,
+      sessionId: sessionId,
+      gstrFilename: gstrFile?.name || (correlationResult ? "GSTR-2B" : undefined),
+      prFilename: prFile?.name || (correlationResult ? "Purchase Register" : undefined),
+      correlations: correlationResult?.correlations || [],
+      availableColumnsGstr: correlationResult?.correlations?.map((c) => c.gstr_column) || [],
+      availableColumnsPr: correlationResult?.pr_columns || [],
+    });
+  }, [currentStage, sessionId, gstrFile, prFile, correlationResult]);
+
+  // Register action handlers for Copilot chat actions
+  useEffect(() => {
+    const unregNav = copilotV2Bridge.registerActionHandler("NAVIGATE_STAGE", (payload) => {
+      if (payload.target_stage) {
+        const target = payload.target_stage as V2Stage;
+        setCurrentStage(target);
+        if (sessionId) {
+          navigate(`/reconciliations-v2/${sessionId}/${target}`);
+        }
+      }
+    });
+
+    const unregReconcile = copilotV2Bridge.registerActionHandler("RUN_RECONCILIATION", () => {
+      if (sessionId) {
+        setCurrentStage("results");
+        navigate(`/reconciliations-v2/${sessionId}/results`);
+      }
+    });
+
+    const unregAutoRec = copilotV2Bridge.registerActionHandler("AUTO_RECONCILE_SUCCESS", (payload) => {
+      if (payload.session_id) {
+        setSessionId(payload.session_id);
+        setCurrentStage("results");
+        navigate(`/reconciliations-v2/${payload.session_id}/results`);
+      }
+    });
+
+    return () => {
+      unregNav();
+      unregReconcile();
+      unregAutoRec();
+    };
+  }, [sessionId, navigate]);
 
   // Session hydration / creation logic:
   // 1. If routeSessionId is present in URL (e.g. /reconciliations-v2/:id or /reconciliations-v2/:id/:stage),

@@ -36,4 +36,9 @@ class LLMProvider(ABC):
     ) -> tuple[str, dict[str, int] | None]:
         return self.invoke(messages, **kwargs), None
 
+    def stream_invoke(
+        self, messages: list[dict[str, str]], **kwargs: Any
+    ) -> Any:
+        yield self.invoke(messages, **kwargs)
+
 

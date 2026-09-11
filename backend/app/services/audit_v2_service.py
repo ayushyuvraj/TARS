@@ -633,6 +633,21 @@ class AuditV2Service:
             details={"rules_count": count, "active_rule_ids": rule_ids},
         )
 
+    def record_step(self, step: V2AuditStep | dict[str, Any]) -> None:
+        """Records an individual execution or agentic copilot audit step."""
+        steps_dict = self._read_json(STEPS_FILE)
+        step_data = step.model_dump() if hasattr(step, "model_dump") else dict(step)
+        step_id = step_data.get("step_id") or str(uuid4())
+        steps_dict[step_id] = step_data
+        self._write_json(STEPS_FILE, steps_dict)
+
+    def get_session_steps(self, session_id: str) -> list[dict[str, Any]]:
+        """Retrieves all audit steps matching a specific session ID."""
+        steps_dict = self._read_json(STEPS_FILE)
+        matching = [s for s in steps_dict.values() if s.get("session_id") == session_id]
+        matching.sort(key=lambda s: (s.get("step_order", 0), s.get("started_at", "")))
+        return matching
+
     def record_export_event(
         self,
         session_id: str,

@@ -1,17 +1,19 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 2.0 Stage 6 KPMG Complete Flow & Session Persistence (11th September 2026)
+## Reconciliation 2.0 Actionable Copilot & Autonomous Reconcile Flow (11th September 2026)
 
-- **Checkpoint Name**: `Reconciliation 2.0 Stage 6 KPMG Complete Flow & Session Persistence`
+- **Checkpoint Name**: `Reconciliation 2.0 Dynamic Actionable Copilot & Autonomous Reconcile Flow`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-11-stage-6-complete-kpmg-checkpoint`
-- **Previous Checkpoint Tag**: `tars-2026-09-11-recon-v2-stepper-kpmg-blue-checkpoint`
+- **Checkpoint Tag**: `tars-2026-09-11-recon-v2-actionable-copilot-checkpoint`
+- **Previous Checkpoint Tag**: `tars-2026-09-11-stage-6-complete-kpmg-checkpoint`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
-  1. *Stage 6 KPMG Complete Button*: Integrated a prominent **"Complete"** button (`.v2-btn-complete-kpmg`) featuring KPMG Navy Blue (`#00338d`) styling, `<CheckCircle2 />` icon, and hover micro-interactions in both the top and bottom action bars of Stage 6 (`ReconciliationV2ExportStage.tsx`).
-  2. *Backend Session Finalization*: Added `POST /api/reconciliations-v2/{session_id}/complete` endpoint in `reconciliations_v2.py` to persist session status as `"completed"`, log audit step `"Stage 6 Export Session Finalized"`, and update durable `sessions_v2.json` state.
-  3. *Seamless Navigation & Reset*: Clicking "Complete" invokes `apiV2.completeSession()`, clears active session state in `localStorage`, and navigates the user back to the `/reconciliations-v2` landing screen for fresh ingestion setup.
-  4. *Comprehensive Testing*: Validated with automated unit test (`test_v2_complete_session`) and full test suite passing 100% cleanly (11/11 tests), alongside zero-error TypeScript frontend build (`tsc -b && vite build`).
+  1. *Actionable Copilot Engine*: Engineered `CopilotActionEngine` (`backend/app/services/copilot_action_engine.py`) with sub-second deterministic intent parsing for conversational commands: `NAVIGATE_STAGE` (forward/backward/direct jumps), `UPDATE_MAPPING` (mapping and unmapping columns), `ADD_RULE` & `TOGGLE_RULE` (live rules injection & activation), and `RUN_RECONCILIATION`.
+  2. *Context-Grounded Explanations & Streaming*: Real-time Server-Sent Events (SSE) with `stream_invoke` streaming on LLM provider boundary, contextual "what is this screen" stage breakdowns, and thinking indicators.
+  3. *Autonomous Reconcile Pipeline*: Added `POST /api/v2/copilot/auto-reconcile` with dual-workbook GST sanity checks, automated schema coupling, waterfall execution, and zero-intervention handoff to Results Matrix.
+  4. *Frontend Copilot Bridge*: Created `frontend/src/copilot_v2_bridge.ts` providing reactive telemetry from Stages 1-6 into `CopilotPanel.tsx` and dispatching real-time actions to `DynamicMappingGridV2.tsx`, `ReconciliationV2RulesStage.tsx`, and `ReconciliationV2ResultsStage.tsx`.
+  5. *Audit 2.0 Integration*: Implemented `record_step` and `get_session_steps` in `AuditV2Service`, recording all Copilot interventions under actor `"AI_COPILOT"` with timestamps, parameters, and results.
+  6. *Rigorous Verification*: Validated with dedicated test suite (`backend/tests/test_copilot_v2_actions.py` - 6/6 passed), core V2 suite (`test_reconciliation_v2.py` - 11/11 passed, total 17/17 passed), and zero-error TypeScript build (`tsc -b && vite build` in 1.13s).
 
 ---
 

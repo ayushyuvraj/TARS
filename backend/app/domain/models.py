@@ -787,6 +787,7 @@ class CopilotRequest(BaseModel):
     selected_record_id: str | None = None
     current_page: str | None = None
     conversation_history: list[CopilotTurn] = Field(default_factory=list)
+    stage_context: dict[str, Any] | None = None
 
 
 class CopilotResponse(BaseModel):

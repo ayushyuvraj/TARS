@@ -50,6 +50,27 @@ class OpenAIProvider(LLMProvider):
             logger.error(f"OpenAI invocation failed: {exc}")
             raise ProviderError("OpenAI invocation failed") from exc
 
+    def stream_invoke(
+        self, messages: list[dict[str, str]], **kwargs: Any
+    ) -> Any:
+        try:
+            system_prompt = kwargs.pop("system_prompt", None)
+            formatted_messages = list(messages)
+            if system_prompt:
+                formatted_messages.insert(0, {"role": "system", "content": system_prompt})
+
+            response = self._client.chat.completions.create(
+                model=self._model, messages=formatted_messages, stream=True, **kwargs
+            )
+            for chunk in response:
+                if chunk.choices and len(chunk.choices) > 0:
+                    delta = chunk.choices[0].delta.content or ""
+                    if delta:
+                        yield delta
+        except Exception as exc:
+            logger.error(f"OpenAI stream invocation failed: {exc}")
+            raise ProviderError("OpenAI stream invocation failed") from exc
+
     def invoke_structured(
         self,
         messages: list[dict[str, str]],

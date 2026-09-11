@@ -29,6 +29,7 @@ import {
   Activity,
 } from "lucide-react";
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
+import { copilotV2Bridge } from "./copilot_v2_bridge";
 import "./rules_v2.css";
 
 interface Props {
@@ -435,6 +436,49 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     );
   });
   const [isAiSuggesting, setIsAiSuggesting] = useState<boolean>(false);
+
+  // Sync rules summary with Copilot Bridge
+  useEffect(() => {
+    copilotV2Bridge.setContext({
+      rulesSummary: rules.map((r) => ({
+        id: r.id,
+        name: r.name,
+        isActive: Boolean(r.is_enabled),
+      })),
+      selectedRuleIds: rules.filter((r) => r.is_enabled).map((r) => r.id),
+    });
+  }, [rules]);
+
+  // Handle Copilot actions: ADD_RULE and TOGGLE_RULE
+  useEffect(() => {
+    const unregAdd = copilotV2Bridge.registerActionHandler("ADD_RULE", (payload) => {
+      if (payload.rule) {
+        const newRule = { ...payload.rule, is_enabled: true };
+        setRules((curr) => [...curr, newRule]);
+      }
+    });
+
+    const unregToggle = copilotV2Bridge.registerActionHandler("TOGGLE_RULE", (payload) => {
+      if (payload.rule_target) {
+        const target = String(payload.rule_target).toLowerCase().trim();
+        setRules((curr) =>
+          curr.map((r) => {
+            const rId = (r.id || "").toLowerCase();
+            const rName = (r.name || "").toLowerCase();
+            if (rId === target || rName.includes(target) || target.includes(rId)) {
+              return { ...r, is_enabled: Boolean(payload.is_active) };
+            }
+            return r;
+          })
+        );
+      }
+    });
+
+    return () => {
+      unregAdd();
+      unregToggle();
+    };
+  }, []);
 
   // Modal states
   const [explainingRule, setExplainingRule] = useState<Rule2Item | null>(null);

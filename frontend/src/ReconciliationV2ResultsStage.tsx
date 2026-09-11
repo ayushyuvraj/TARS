@@ -34,6 +34,7 @@ import {
   AmbiguityCandidate,
 } from "./api_v2";
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
+import { copilotV2Bridge } from "./copilot_v2_bridge";
 import "./results_v2.css";
 
 interface ResultsStageProps {
@@ -122,6 +123,30 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
       setIsResolving(false);
     }
   };
+
+  // Synchronize Stage 4 results & selected record to Copilot Bridge
+  useEffect(() => {
+    if (data && data.summary) {
+      const rec = expandedRowId ? data.records?.find((r) => r.id === expandedRowId) : null;
+      copilotV2Bridge.setContext({
+        resultsSummary: {
+          exact: data.summary.exact_match_count || 0,
+          tolerance: data.summary.tolerance_match_count || 0,
+          nearMatch: data.summary.near_match_count || 0,
+          unresolved: (data.summary.pr_only_count || 0) + (data.summary.gstr_only_count || 0),
+        },
+        selectedRecordId: expandedRowId,
+        selectedRecordData: rec ? (rec as any) : null,
+      });
+    }
+  }, [data, expandedRowId]);
+
+  // Register RUN_RECONCILIATION handler for Results stage
+  useEffect(() => {
+    return copilotV2Bridge.registerActionHandler("RUN_RECONCILIATION", () => {
+      void handleRerunWaterfall();
+    });
+  }, []);
 
   const summary = data?.summary;
   const records = data?.records || [];
