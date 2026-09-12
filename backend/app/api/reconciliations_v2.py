@@ -145,13 +145,8 @@ def create_v2_session() -> ReconciliationV2Session:
         "rules_v2": default_rules,
     }
     _V2_SESSIONS[session_id] = session_data
-    # Durable persistence
-    try:
-        session_to_save = dict(session_data)
-        session_to_save["rules_v2"] = [r.model_dump() for r in default_rules]
-        audit_v2_service.save_session(session_to_save)
-    except Exception as exc:
-        logger.warning(f"Could not persist new session {session_id}: {exc}")
+    # Note: Session is held in memory and only persisted to the Audit Ledger
+    # once files are uploaded and Stage 1 ingestion begins, preventing empty ghost runs.
 
     return ReconciliationV2Session(
         id=session_id,
@@ -2017,7 +2012,15 @@ async def copilot_auto_reconcile_stream(
                 pr_path = Path(session["pr_path"])
 
             if not gov_path or not pr_path or not gov_path.exists() or not pr_path.exists():
-                yield f"data: {json.dumps({'type': 'token', 'content': '❌ **What do I reconcile?**\n\nNo files were detected in this request. Please attach both your **Government GSTR-2B** and **Purchase Register** spreadsheets using the attach button below, then type *\"reconcile\"*.'})}\n\n"
+                no_files_msg = {
+                    "type": "token",
+                    "content": (
+                        "❌ **What do I reconcile?**\n\n"
+                        "No files were detected in this request. Please attach both your **Government GSTR-2B** "
+                        "and **Purchase Register** spreadsheets using the attach button below, then type *\"reconcile\"*."
+                    ),
+                }
+                yield f"data: {json.dumps(no_files_msg)}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 
@@ -2041,20 +2044,32 @@ async def copilot_auto_reconcile_stream(
 
             ok_gov, msg_gov = await asyncio.to_thread(_check_gst_sanity, gov_path, DatasetRole.GOVERNMENT)
             if not ok_gov:
-                yield f"data: {json.dumps({'type': 'token', 'content': f'❌ **Pre-flight Check Failed for Government Ledger**:\n\n{msg_gov}'})}\n\n"
+                err_gov_msg = {
+                    "type": "token",
+                    "content": f"❌ **Pre-flight Check Failed for Government Ledger**:\n\n{msg_gov}",
+                }
+                yield f"data: {json.dumps(err_gov_msg)}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 
             ok_pr, msg_pr = await asyncio.to_thread(_check_gst_sanity, pr_path, DatasetRole.PURCHASE_REGISTER)
             if not ok_pr:
-                yield f"data: {json.dumps({'type': 'token', 'content': f'❌ **Pre-flight Check Failed for Purchase Register**:\n\n{msg_pr}'})}\n\n"
+                err_pr_msg = {
+                    "type": "token",
+                    "content": f"❌ **Pre-flight Check Failed for Purchase Register**:\n\n{msg_pr}",
+                }
+                yield f"data: {json.dumps(err_pr_msg)}\n\n"
                 yield f"data: {json.dumps({'type': 'done'})}\n\n"
                 return
 
             yield f"data: {json.dumps({'type': 'thought', 'message': 'Pre-flight verified ✅ Executing Stage 1 Dual Ingestion & Stage 2 AI Schema Coupling...'})}\n\n"
             yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'preflight_ok', 'label': 'Pre-flight verified: Dual workbooks validated as authentic GST ledgers', 'duration_ms': 24, 'status': 'completed'})}\n\n"
             yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'coupling', 'label': 'Executing Stage 1 Ingestion & Stage 2 AI Schema Correlation...', 'duration_ms': 48, 'status': 'completed'})}\n\n"
-            yield f"data: {json.dumps({'type': 'token', 'content': '✅ **Pre-flight Checks Passed**: Workbooks verified as valid GST ledgers.\n\n⚡ **Stage 1 & 2**: Running dual ingestion and AI schema coupling...\n'})}\n\n"
+            preflight_pass_msg = {
+                "type": "token",
+                "content": "✅ **Pre-flight Checks Passed**: Workbooks verified as valid GST ledgers.\n\n⚡ **Stage 1 & 2**: Running dual ingestion and AI schema coupling...\n",
+            }
+            yield f"data: {json.dumps(preflight_pass_msg)}\n\n"
             await asyncio.sleep(0.01)
 
             correlation = await asyncio.to_thread(workflow.run_initial_correlation, session_id, gov_path, pr_path)
@@ -2068,8 +2083,11 @@ async def copilot_auto_reconcile_stream(
 
             matched_count = len(correlation.correlations)
             yield f"data: {json.dumps({'type': 'thought', 'message': f'Coupled {matched_count} columns ✅ Stage 3: Loading statutory waterfall rules...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'rules_loaded', 'label': f'Coupled {matched_count} columns. Compiling 5-tier deterministic waterfall rules...', 'duration_ms': 32, 'status': 'completed'})}\n\n"
-            yield f"data: {json.dumps({'type': 'token', 'content': f'⚡ **Stage 3 Rules**: Linked {matched_count} columns. Applying 5 deterministic matching passes (Exact Match, Numerical Tolerances, Date Proximity)...\n'})}\n\n"
+            stage3_msg = {
+                "type": "token",
+                "content": f"⚡ **Stage 3 Rules**: Linked {matched_count} columns. Applying 5 deterministic matching passes (Exact Match, Numerical Tolerances, Date Proximity)...\n",
+            }
+            yield f"data: {json.dumps(stage3_msg)}\n\n"
             await asyncio.sleep(0.01)
 
             # Stage 4 Matrix - execute non-blockingly in worker thread to prevent event loop starvation

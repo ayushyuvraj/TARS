@@ -577,8 +577,22 @@ class AuditV2Service:
         if not sessions or "demo-completed-6stages" not in sessions:
             self._ensure_seed_data()
             sessions = self._read_json(SESSIONS_FILE)
+        
+        # Authoritative filter: Exclude phantom sessions where no files were uploaded and no runs were initiated
+        meaningful_sessions = [
+            s
+            for s in sessions.values()
+            if isinstance(s, dict)
+            and (
+                s.get("gstr_filename")
+                or s.get("correlation")
+                or s.get("runs")
+                or s.get("current_stage") != "setup"
+                or s.get("id") == "demo-completed-6stages"
+            )
+        ]
         return sorted(
-            sessions.values(),
+            meaningful_sessions,
             key=lambda s: str(s.get("updated_at") or s.get("created_at") or ""),
             reverse=True,
         )

@@ -567,8 +567,8 @@ class CopilotActionEngine:
         if action_plan:
             action_name = action_plan.get("action", "")
             target_label = stage_context.get("stageLabel", "workspace") if stage_context else "workspace"
-            yield f"data: {json.dumps({'type': 'thought', 'message': f'Processing action: {action_name}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_content', 'delta': f'Classified operational intent: {action_name}. Validating mutation parameters for {target_label}...\\n'})}\n\n"
+            delta_text = f"Classified operational intent: {action_name}. Validating mutation parameters for {target_label}...\n"
+            yield f"data: {json.dumps({'type': 'thought_content', 'delta': delta_text})}\n\n"
 
             # Execute action
             exec_result = self.execute_action(session_id, action_plan, prompt, stage_context)
