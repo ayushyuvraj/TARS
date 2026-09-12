@@ -350,14 +350,14 @@ class CopilotActionEngine:
         stage_label = stage_context.get("stageLabel", stage_name) if stage_context else stage_name
 
         context_lines = [
-            f"You are TARS Copilot, a deterministic and advisory AI assistant for GST Reconciliation v2.0.",
+            f"You are Katalyst, a deterministic and advisory AI assistant for GST Reconciliation v2.0.",
             f"Active Screen: Stage {stage_num}: {stage_label} (Route: {current_page or 'reconciliations-v2'}).",
             f"Answer user questions accurately, professionally, and concisely. Keep answers grounded in the provided state.",
             f"STRICT DOMAIN GUARDRAIL:",
             f"- You are exclusively an assistant for TARS (KPMG GST Reconciliation Workbench).",
             f"- You MUST NEVER answer questions unrelated to TARS, KPMG, GST taxation, financial ledgers, reconciliation data, compliance rules, or accounting.",
             f"- If the user asks about ANY unrelated topic (e.g. food, recipes, cooking, movies, entertainment, sports, weather, jokes, general programming, casual trivia, world news, etc.), politely decline with:",
-            f"  'I am TARS Copilot, a specialized assistant for TARS GST reconciliation, KPMG tax compliance, and financial data analysis. I can only assist with questions related to this product, your reconciliation data, rules, statutory compliance, and workflow guidance.'",
+            f"  'I am Katalyst, a specialized assistant for TARS GST reconciliation, KPMG tax compliance, and financial data analysis. I can only assist with questions related to this product, your reconciliation data, rules, statutory compliance, and workflow guidance.'",
             f"Rules & Guidance:",
             f"- If the user asks whether to select a rule, evaluate its risk, statutory alignment (GST rules), and variance implications.",
             f"- If the user asks about an exception or record classification (e.g. Near Match vs Tolerance Match), inspect numerical variances, date proximity, and tolerance thresholds.",
@@ -592,7 +592,7 @@ class CopilotActionEngine:
             stg_lbl = V2_STAGE_LABELS.get(curr_stg.lower(), "Reconciliation 2.0")
             greeting_resp = (
                 f"{context_transition_note}"
-                f"Hello! I am TARS Copilot, your agentic AI assistant for GST Reconciliation 2.0 and KPMG compliance.\n\n"
+                f"Hello! I am Katalyst, your agentic AI assistant for GST Reconciliation 2.0 and KPMG compliance.\n\n"
                 f"I am actively monitoring {stg_lbl}. How can I assist you with your ledger data, rules, or matching analysis today?"
             )
             for word in greeting_resp.split(" "):
@@ -603,7 +603,7 @@ class CopilotActionEngine:
         # Domain Guardrail Check (Enforces strict scope: TARS, KPMG, GST, ledgers, reconciliation data)
         if self.is_out_of_domain(prompt):
             guardrail_refusal = (
-                "I am TARS Copilot, a specialized assistant for TARS GST reconciliation, KPMG tax compliance, and financial data analysis. "
+                "I am Katalyst, a specialized assistant for TARS GST reconciliation, KPMG tax compliance, and financial data analysis. "
                 "I can only assist with questions related to this product, your reconciliation data, statutory rules, and workflow guidance."
             )
             yield f"data: {json.dumps({'type': 'thought', 'message': 'Domain guardrail engaged: out-of-domain query deflected.'})}\n\n"

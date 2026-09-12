@@ -63,6 +63,7 @@ import { NearMatchWorkspace } from "./NearMatchWorkspace";
 import { ExceptionWorkspace } from "./ExceptionWorkspace";
 import { CopilotDisplayMode, CopilotPanel } from "./CopilotPanel";
 import { copilotV2Bridge, V2WorkspaceContext } from "./copilot_v2_bridge";
+import { KatalystKBadge } from "./KatalystKBadge";
 import "./copilot_agentic.css";
 import { GovernanceWorkspace } from "./GovernanceWorkspace";
 import { AuditTimeline } from "./AuditTimeline";
@@ -1497,58 +1498,30 @@ export default function App() {
           </button>
         </div>
         <nav aria-label="Primary navigation">
-          <NavLink to="/dashboard" data-tooltip="Dashboard" title={sidebarCollapsed ? "Dashboard" : undefined}>
-            <Terminal />
-            <span>Dashboard</span>
-          </NavLink>
-          <NavLink to="/overview" data-tooltip="Overview" title={sidebarCollapsed ? "Overview" : undefined}>
-            <LayoutDashboard />
-            <span>Overview</span>
-          </NavLink>
-          <NavLink to="/quick-reconcile" data-tooltip="Quick Reconcile" title={sidebarCollapsed ? "Quick Reconcile" : undefined}>
-            <Zap />
-            <span>Quick Reconcile</span>
-          </NavLink>
-          <NavLink to="/reconciliations" data-tooltip="Reconciliations" title={sidebarCollapsed ? "Reconciliations" : undefined}>
-            <Scale />
-            <span>Reconciliations</span>
-          </NavLink>
-          <NavLink to="/reconciliations-v2" data-tooltip="Reconciliation 2.0" title={sidebarCollapsed ? "Reconciliation 2.0" : undefined}>
+          <NavLink to="/reconciliations-v2" data-tooltip="Reconciliation" title={sidebarCollapsed ? "Reconciliation" : undefined}>
             <Sparkles className="text-purple-400" />
-            <span>Reconciliation 2.0</span>
+            <span>Reconciliation</span>
           </NavLink>
-          <NavLink to="/client-profiles" data-tooltip="Client Profiles" title={sidebarCollapsed ? "Client Profiles" : undefined}>
-            <Building2 />
-            <span>Client Profiles</span>
-          </NavLink>
-          <NavLink to="/rules" data-tooltip="Rules Wiki" title={sidebarCollapsed ? "Rules Wiki" : undefined}>
-            <BookOpenCheck />
+          <NavLink to="/rules-v2" data-tooltip="Rules Wiki" title={sidebarCollapsed ? "Rules Wiki" : undefined}>
+            <SlidersHorizontal className="text-blue-400" />
             <span>Rules Wiki</span>
           </NavLink>
-          <NavLink to="/rules-v2" data-tooltip="Rules Wiki 2.0" title={sidebarCollapsed ? "Rules Wiki 2.0" : undefined}>
-            <SlidersHorizontal className="text-blue-400" />
-            <span>Rules Wiki 2.0</span>
-          </NavLink>
-          <NavLink to="/audit" data-tooltip="Audit" title={sidebarCollapsed ? "Audit" : undefined}>
-            <History />
-            <span>Audit</span>
-          </NavLink>
-          <NavLink to="/audit-v2" data-tooltip="Audit 2.0" title={sidebarCollapsed ? "Audit 2.0" : undefined}>
+          <NavLink to="/audit-v2" data-tooltip="Audit" title={sidebarCollapsed ? "Audit" : undefined}>
             <History className="text-emerald-400" />
-            <span>Audit 2.0</span>
+            <span>Audit</span>
           </NavLink>
           <button
             type="button"
             ref={copilotTriggerRef}
             className="sidebar-copilot-btn"
             onClick={() => setCopilotMode((m) => (m === "closed" ? "floating" : "closed"))}
-            data-tooltip="TARS Copilot"
-            title={sidebarCollapsed ? "TARS Copilot (Ctrl+K)" : undefined}
+            data-tooltip="Katalyst"
+            title={sidebarCollapsed ? "Katalyst (Ctrl+K)" : undefined}
             aria-haspopup="dialog"
             aria-expanded={copilotMode !== "closed"}
           >
-            <Sparkles size={16} />
-            <span>TARS Copilot</span>
+            <KatalystKBadge size={16} variant="icon" glow={false} />
+            <span>Katalyst</span>
             {!sidebarCollapsed && <kbd className="sidebar-kbd">Ctrl+K</kbd>}
           </button>
         </nav>
@@ -1595,11 +1568,7 @@ export default function App() {
               path="/"
               element={
                 <Navigate
-                  to={
-                    sessionId
-                      ? `/reconciliations/${sessionId}/${nextStage}`
-                      : "/overview"
-                  }
+                  to="/reconciliations-v2"
                   replace
                 />
               }
@@ -1648,11 +1617,7 @@ export default function App() {
                                 Session {sessionId.slice(0, 8)} ·{" "}
                                 {hasCurrentExport
                                   ? "Export current"
-                                  : canExceptions
-                                    ? "Exception review ready"
-                                  : summary
-                                    ? "Reconciliation complete"
-                                    : "In progress"}
+                                  : "Draft run"}
                               </p>
                             </div>
                             <span className="health">
@@ -1991,11 +1956,11 @@ export default function App() {
         type="button"
         className="tars-copilot-fab-launcher"
         onClick={() => setCopilotMode("floating")}
-        title="Open TARS Copilot (Ctrl+K)"
-        aria-label="Open TARS Copilot"
+        title="Open Katalyst (Ctrl+K)"
+        aria-label="Open Katalyst"
       >
         <span className="tars-copilot-fab-pulse" />
-        <MessageSquareText size={24} />
+        <KatalystKBadge size={30} variant="orb" glow={true} />
       </button>
     )}
       {selected && (

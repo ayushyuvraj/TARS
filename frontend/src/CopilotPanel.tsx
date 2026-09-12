@@ -24,6 +24,7 @@ import {
   Sun,
   Moon,
 } from "lucide-react";
+import { KatalystKBadge } from "./KatalystKBadge";
 import "./copilot_agentic.css";
 
 export type CopilotDisplayMode = "closed" | "floating" | "fullscreen" | "pill" | "parallel" | "drawer";
@@ -745,14 +746,14 @@ export function CopilotPanel({
             )
           );
         } catch (fbErr) {
-          setError(fbErr instanceof Error ? fbErr.message : "Copilot could not complete the request.");
+          setError(fbErr instanceof Error ? fbErr.message : "Katalyst could not complete the request.");
           setMessages((current) =>
             current.map((m) =>
               m.id === assistantId
                 ? {
                     ...m,
                     content:
-                      "Could not retrieve response from Copilot server. Please verify backend service connectivity.",
+                      "Could not retrieve response from Katalyst server. Please verify backend service connectivity.",
                   }
                 : m
             )
@@ -901,7 +902,7 @@ export function CopilotPanel({
       return `Ask about ${v2Context.stageLabel} (or 'map X to Y', 'add rule...', 'reconcile')…`;
     }
     if (reconciliationId) return "Ask about this reconciliation…";
-    return "Ask TARS Copilot (press Enter to send)…";
+    return "Ask Katalyst (press Enter to send)…";
   };
 
   return (
@@ -964,27 +965,28 @@ export function CopilotPanel({
             </button>
           )}
 
-          <div className="tars-copilot-brand-icon">
-            <Sparkles size={16} />
+          <KatalystKBadge size={28} variant="badge" />
+          <div className="tars-copilot-header-titles">
+            <div className="tars-copilot-header-title-row">
+              <h2 id="copilot-title" className="tars-copilot-header-title">
+                Katalyst
+              </h2>
+              <span className={`tars-copilot-header-status ${busy ? "is-thinking" : ""}`}>
+                {busy ? (
+                  <>
+                    <span className="tars-copilot-cli-spinner">{CLI_SPINNER_FRAMES[spinnerIndex]}</span>
+                    <span>REASONING</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="status-dot-pulse" />
+                    <span>ONLINE</span>
+                  </>
+                )}
+              </span>
+            </div>
+            <span className="tars-copilot-header-sub">KPMG Autonomous Tax Intelligence</span>
           </div>
-          <div>
-            <h2 id="copilot-title" className="tars-copilot-header-title">
-              TARS Copilot
-            </h2>
-          </div>
-          <span className={`tars-copilot-header-status ${busy ? "is-thinking" : ""}`}>
-            {busy ? (
-              <>
-                <span className="tars-copilot-cli-spinner">{CLI_SPINNER_FRAMES[spinnerIndex]}</span>
-                <span>THINKING</span>
-              </>
-            ) : (
-              <>
-                <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#10b981" }} />
-                <span>ONLINE</span>
-              </>
-            )}
-          </span>
         </div>
 
         <div className="tars-copilot-header-actions">
@@ -1145,8 +1147,8 @@ export function CopilotPanel({
             {messages.length === 0 && (
               <div className="tars-copilot-empty-state">
                 <div className="tars-copilot-empty-title">
-                  <Sparkles size={18} style={{ color: "var(--kpmg-atlantic, #0091da)" }} />
-                  <span>Welcome to TARS Copilot</span>
+                  <KatalystKBadge size={26} variant="badge" />
+                  <span>Welcome to Katalyst</span>
                 </div>
                 <p className="tars-copilot-empty-desc">
                   {v2Context
@@ -1182,7 +1184,7 @@ export function CopilotPanel({
               const sessionSwitched = Boolean(
                 prevCtx?.sessionId &&
                   currCtx?.sessionId &&
-                  prevCtx.sessionId !== currCtx.sessionId
+                prevCtx.sessionId !== currCtx.sessionId
               );
 
               const stageSwitched = Boolean(
@@ -1213,8 +1215,8 @@ export function CopilotPanel({
                   <article className={`tars-msg ${isUser ? "is-user" : "is-assistant"}`}>
                     <div className="tars-msg-header">
                       <span className={`tars-msg-author ${isUser ? "" : "is-copilot"}`}>
-                        {!isUser && <Sparkles size={12} />}
-                        {isUser ? "You" : "TARS Copilot"}
+                        {!isUser && <KatalystKBadge size={14} variant="icon" glow={false} />}
+                        {isUser ? "You" : "Katalyst"}
                       </span>
                       {currCtx && (currCtx.stageLabel || currCtx.sessionId) && (
                         <span className="tars-msg-badge">

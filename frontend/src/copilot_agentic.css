@@ -46,31 +46,31 @@
   bottom: 24px;
   right: 24px;
   z-index: 1000;
-  width: 56px;
-  height: 56px;
-  min-width: 56px !important;
-  min-height: 56px !important;
-  max-width: 56px !important;
-  max-height: 56px !important;
+  width: 60px;
+  height: 60px;
+  min-width: 60px !important;
+  min-height: 60px !important;
+  max-width: 60px !important;
+  max-height: 60px !important;
   border-radius: 50% !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: var(--kpmg-midnight-card, #0c1626) !important;
-  border: 1px solid var(--kpmg-border-blue, rgba(0, 145, 218, 0.35)) !important;
-  box-shadow: 0 12px 32px -4px rgba(0, 12, 28, 0.75), 0 0 18px rgba(0, 94, 184, 0.22) !important;
+  background: radial-gradient(circle at 35% 30%, #1a335a 0%, #0c1728 65%, #050a12 100%) !important;
+  border: 1.5px solid rgba(0, 145, 218, 0.45) !important;
+  box-shadow: 0 16px 36px -4px rgba(0, 12, 28, 0.85), 0 0 24px rgba(0, 145, 218, 0.35), inset 0 1px 2px rgba(255, 255, 255, 0.25) !important;
   cursor: pointer !important;
   color: var(--kpmg-text-primary, #f8fafc) !important;
-  transition: all 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  transition: all 0.24s cubic-bezier(0.16, 1, 0.3, 1) !important;
   padding: 0 !important;
   outline: none;
 }
 
 .tars-copilot-fab-launcher:hover {
-  transform: scale(1.08) translateY(-2px) !important;
-  background: var(--kpmg-midnight-elevated, #112035) !important;
-  border-color: var(--kpmg-atlantic, #0091da) !important;
-  box-shadow: 0 16px 36px -4px rgba(0, 12, 28, 0.85), 0 0 24px rgba(0, 145, 218, 0.35) !important;
+  transform: scale(1.12) translateY(-3px) !important;
+  background: radial-gradient(circle at 35% 30%, #214376 0%, #112036 65%, #070e17 100%) !important;
+  border-color: #72cdf4 !important;
+  box-shadow: 0 20px 48px -4px rgba(0, 12, 28, 0.95), 0 0 36px rgba(0, 145, 218, 0.6), inset 0 1px 3px rgba(255, 255, 255, 0.35) !important;
 }
 
 .tars-copilot-fab-launcher:active {
@@ -275,12 +275,11 @@
   border-top-right-radius: 16px;
 }
 
-/* Mode: Overlapping Floating Card Window (OpenAI Support Style) */
 .tars-copilot-container.mode-floating {
   position: fixed;
   bottom: 24px;
   right: 24px;
-  width: 420px;
+  width: 440px;
   height: 640px;
   min-width: 370px;
   min-height: 420px;
@@ -288,8 +287,8 @@
   max-height: calc(100vh - 48px);
   z-index: 1500;
   border-radius: 16px;
-  border: 1px solid var(--kpmg-border-blue, rgba(0, 145, 218, 0.28));
-  box-shadow: 0 24px 64px -8px rgba(0, 10, 24, 0.85), 0 0 24px rgba(0, 94, 184, 0.2);
+  border: 1px solid rgba(0, 145, 218, 0.38);
+  box-shadow: 0 28px 72px -10px rgba(0, 18, 48, 0.85), 0 0 32px rgba(0, 145, 218, 0.35), 0 0 0 1px rgba(0, 145, 218, 0.25);
   overflow: hidden;
   animation: copilotCardEnter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -501,15 +500,59 @@
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: var(--kpmg-midnight-card, #0c1626);
-  border-bottom: 1px solid rgba(0, 145, 218, 0.14);
+  background: linear-gradient(180deg, #0e1a2e 0%, #08111d 100%);
+  border-bottom: 1px solid rgba(0, 145, 218, 0.22);
   flex-shrink: 0;
 }
 
 .tars-copilot-header-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+}
+
+.tars-copilot-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tars-copilot-header-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tars-copilot-header-sub {
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--kpmg-glacier, #72cdf4);
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.status-dot-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 6px #10b981;
+  display: inline-block;
+  animation: statusDotPulse 2s infinite ease-in-out;
+}
+
+@keyframes statusDotPulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+    box-shadow: 0 0 6px #10b981;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 0.75;
+    box-shadow: 0 0 12px #34d399;
+  }
 }
 
 .tars-copilot-brand-icon {
@@ -526,7 +569,7 @@
 
 .tars-copilot-header-title {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 14px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--kpmg-text-primary, #f8fafc);
