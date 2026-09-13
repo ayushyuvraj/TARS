@@ -5,6 +5,7 @@
 - **Checkpoint Name**: `Rules Wiki & Audit Screen Telemetry & Dark Cobalt Hero Banner Standardization`
 - **Current Branch**: `stable-copilot-quickreconcile`
 - **Checkpoint Tag**: `tars-2026-09-13-ruleswiki-audit-hero-checkpoint`
+- **Current HEAD Commit**: `105c1b2`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
   1. *Top Telemetry Ribbon (`v2-telemetry-ribbon`)*:
