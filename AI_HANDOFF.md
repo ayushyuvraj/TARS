@@ -4,6 +4,8 @@
 
 - **Checkpoint Name**: `Stage 1 Modal Boundary Containment & Stage 2 Execution Time Synchronization`
 - **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-13-stage1-bounds-and-time-sync-checkpoint`
+- **Current HEAD Commit**: `45591b7`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
   1. *Modal HUD Rightmost Tile Boundary Containment*:
