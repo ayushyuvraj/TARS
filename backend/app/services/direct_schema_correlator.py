@@ -271,7 +271,7 @@ class DirectSchemaCorrelator:
         thoughts.append(
             AgentThought(
                 step="fast_probe_ingestion",
-                message=f"Ingested GSTR-2B ({gstr_profile.column_count} columns) and Purchase Register ({pr_profile.column_count} columns) in {gstr_profile.extraction_time_ms + pr_profile.extraction_time_ms:.1f}ms.",
+                message=f"Ingested GSTR-2B ({gstr_profile.column_count} columns) and Purchase Register ({pr_profile.column_count} columns).",
                 timestamp_ms=time.time() * 1000,
                 duration_ms=gstr_profile.extraction_time_ms + pr_profile.extraction_time_ms,
             )
@@ -300,7 +300,7 @@ class DirectSchemaCorrelator:
         thoughts.append(
             AgentThought(
                 step="deterministic_matcher",
-                message=f"Deterministically matched {det_count} primary GST/tax fields with 99% confidence in {det_duration:.1f}ms.",
+                message=f"Deterministically matched {det_count} primary GST/tax fields with 99% confidence.",
                 timestamp_ms=time.time() * 1000,
                 duration_ms=det_duration,
             )
@@ -318,22 +318,42 @@ class DirectSchemaCorrelator:
                 )
             )
 
-            llm_results = self._invoke_llm_correlation(unresolved_gstr, pr_profile.columns)
+            llm_results, llm_error = self._invoke_llm_correlation(unresolved_gstr, pr_profile.columns)
             llm_duration = (time.perf_counter() - t_llm_start) * 1000.0
 
             for g_col in unresolved_gstr:
                 if g_col.name in llm_results:
                     resolved_correlations[g_col.name] = llm_results[g_col.name]
                 else:
-                    # Deterministic fallback if LLM omitted
                     resolved_correlations[g_col.name] = self._lexical_fallback(g_col, pr_profile.columns)
 
+            if llm_error:
+                thoughts.append(
+                    AgentThought(
+                        step="llm_inference_failed",
+                        message=f"LLM inference unavailable ({llm_error}). Applied deterministic fallback rules.",
+                        timestamp_ms=time.time() * 1000,
+                        duration_ms=llm_duration,
+                        model="GenAI Multi-Agent Fabric",
+                    )
+                )
+            else:
+                thoughts.append(
+                    AgentThought(
+                        step="llm_semantic_analysis_completed",
+                        message=f"Completed Autonomous GenAI semantic correlation for {len(unresolved_gstr)} columns.",
+                        timestamp_ms=time.time() * 1000,
+                        duration_ms=llm_duration,
+                        model="GenAI Multi-Agent Fabric",
+                    )
+                )
+        else:
             thoughts.append(
                 AgentThought(
-                    step="llm_semantic_analysis_completed",
-                    message=f"Completed Autonomous GenAI semantic correlation for {len(unresolved_gstr)} columns in {llm_duration:.1f}ms.",
+                    step="llm_semantic_analysis_bypassed",
+                    message=f"LLM inference bypassed: 100% of columns ({det_count}) matched deterministically with high confidence (≥70%). LLM agent standing by.",
                     timestamp_ms=time.time() * 1000,
-                    duration_ms=llm_duration,
+                    duration_ms=0.0,
                     model="GenAI Multi-Agent Fabric",
                 )
             )
@@ -490,19 +510,20 @@ class DirectSchemaCorrelator:
         self,
         unresolved_gstr: list[FastColumnSummary],
         pr_cols: list[FastColumnSummary],
-    ) -> dict[str, DirectColumnCorrelation]:
+    ) -> tuple[dict[str, DirectColumnCorrelation], str | None]:
         if not self.llm_provider:
             logger.warning("LLM provider not configured; falling back to lexical correlation.")
-            return {
-                g.name: self._lexical_fallback(g, pr_cols)
-                for g in unresolved_gstr
-            }
+            return (
+                {g.name: self._lexical_fallback(g, pr_cols) for g in unresolved_gstr},
+                "LLM provider API key or credentials not configured",
+            )
 
         import concurrent.futures
 
         results: dict[str, DirectColumnCorrelation] = {}
         batch_size = 15
         pr_names_set = {p.name for p in pr_cols}
+        captured_error: list[str] = []
 
         chunks = [unresolved_gstr[i : i + batch_size] for i in range(0, len(unresolved_gstr), batch_size)]
 
@@ -585,10 +606,12 @@ class DirectSchemaCorrelator:
                     else:
                         chunk_results[g_col.name] = self._lexical_fallback(g_col, pr_cols)
             except Exception as exc:
-                logger.error(f"LLM correlation chunk failed: {exc}; using deterministic lexical fallback")
+                err_text = str(exc)
+                logger.error(f"LLM correlation chunk failed: {err_text}; using deterministic lexical fallback")
+                captured_error.append(err_text)
                 for g_col in chunk:
                     chunk_results[g_col.name] = self._lexical_fallback(
-                        g_col, pr_cols, fallback_reason=f"Deterministic fallback (LLM chunk failed: {exc})"
+                        g_col, pr_cols, fallback_reason=f"Deterministic fallback (LLM chunk failed: {err_text})"
                     )
             return chunk_results
 
@@ -603,8 +626,10 @@ class DirectSchemaCorrelator:
                         results.update(f.result())
                     except Exception as err:
                         logger.error(f"Parallel chunk execution error: {err}")
+                        captured_error.append(str(err))
 
-        return results
+        err_summary = captured_error[0] if captured_error else None
+        return results, err_summaryts
 
     def _lexical_fallback(
         self,

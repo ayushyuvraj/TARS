@@ -36,11 +36,23 @@ export const AgentThinkingConsole: React.FC<AgentThinkingConsoleProps> = ({
         return { label: "LLM_DISPATCH", icon: <Sparkles size={13} style={{ color: "#a855f7" }} /> };
       case "llm_semantic_analysis_completed":
         return { label: "LLM_INFERENCE", icon: <Cpu size={13} style={{ color: "#38bdf8" }} /> };
+      case "llm_semantic_analysis_bypassed":
+        return { label: "LLM_STANDBY", icon: <Sparkles size={13} style={{ color: "#a855f7" }} /> };
+      case "llm_inference_failed":
+        return { label: "LLM_API_ERROR", icon: <Zap size={13} style={{ color: "#ef4444" }} /> };
+      case "llm_provider_unavailable":
+        return { label: "LLM_UNAVAILABLE", icon: <Zap size={13} style={{ color: "#f59e0b" }} /> };
       case "schema_graph_checkpointed":
         return { label: "STATE_CHECKPOINT", icon: <Layers size={13} style={{ color: "#6366f1" }} /> };
       default:
         return { label: step.toUpperCase(), icon: <Terminal size={13} style={{ color: "#94a3b8" }} /> };
     }
+  };
+
+  const cleanMessage = (msg: string) => {
+    return msg
+      .replace(/\s+in\s+\d+(\.\d+)?ms\.?$/i, ".")
+      .replace(/\s+\d+(\.\d+)?ms\.?$/i, ".");
   };
 
   const thoughtsSum = thoughts && thoughts.length > 0
@@ -131,7 +143,7 @@ export const AgentThinkingConsole: React.FC<AgentThinkingConsoleProps> = ({
                     </div>
 
                     <div className="v2-thought-msg">
-                      {thought.message}
+                      {cleanMessage(thought.message)}
                     </div>
 
                     {thought.duration_ms > 0 && (
