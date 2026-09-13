@@ -769,12 +769,7 @@ export const RulesWikiV2: React.FC = () => {
             <div
               key={rule.id}
               id={`v2-rule-card-${rule.id}`}
-              className={`v2-rule-item-card ${!rule.is_enabled ? "disabled" : ""} ${isExpanded ? "is-expanded" : ""} ${rule.is_ai_suggested ? "is-ai-suggested-rule" : ""}`}
-              style={{
-                background: !rule.is_enabled ? "#f8fafc" : "#ffffff",
-                borderColor: isSelected ? "#2563eb" : isExpanded ? "#93c5fd" : rule.is_enabled ? "#cbd5e1" : "#e2e8f0",
-                boxShadow: isSelected ? "0 0 0 2px rgba(37, 99, 235, 0.2)" : undefined,
-              }}
+              className={`v2-rule-item-card ${!rule.is_enabled ? "disabled" : ""} ${isExpanded ? "is-expanded" : ""} ${isSelected ? "is-selected" : ""} ${rule.is_ai_suggested ? "is-ai-suggested-rule" : ""}`}
             >
               {/* Compact Main Row */}
               <div
@@ -798,27 +793,15 @@ export const RulesWikiV2: React.FC = () => {
                     checked={rule.is_enabled}
                     onChange={() => handleToggleRule(rule.id)}
                     onClick={(e) => e.stopPropagation()}
-                    style={{ width: 17, height: 17, cursor: "pointer" }}
+                    style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#00338d" }}
                     title={rule.is_enabled ? "Active in reconciliation engine. Click to disable" : "Disabled in engine. Click to enable"}
                   />
 
-                  <span className="v2-wf-tier-tag" style={{ fontSize: 10.5, padding: "2px 7px" }}>
+                  <span className="v2-rule-order-badge">
                     #{idx + 1}
                   </span>
 
-                  <span
-                    style={{
-                      fontSize: 10.5,
-                      fontWeight: 700,
-                      textTransform: "uppercase",
-                      color: "#475569",
-                      background: "#f1f5f9",
-                      padding: "2px 7px",
-                      borderRadius: 4,
-                      letterSpacing: "0.02em",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
+                  <span className="v2-rule-category-pill">
                     {rule.category.replaceAll("_", " ")}
                   </span>
 
@@ -1013,24 +996,10 @@ export const RulesWikiV2: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setExplainingRule(rule)}
-                      className="v2-browse-button"
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: 6,
-                        padding: "5px 12px",
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: "#1d4ed8",
-                        background: "#eff6ff",
-                        border: "1px solid #bfdbfe",
-                        borderRadius: 7,
-                        cursor: "pointer",
-                        flexShrink: 0,
-                      }}
+                      className="v2-explain-pill-btn"
                       title="Click to view plain-English explanation, target columns & accounting rationale"
                     >
-                      <Info size={14} />
+                      <Sparkles size={13} />
                       <span>Explain Rule</span>
                     </button>
                   </div>
