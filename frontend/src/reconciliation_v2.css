@@ -691,7 +691,7 @@
 .v2-stage-canvas--setup {
   overflow-y: auto !important;
   overflow-x: auto !important;
-  padding: 8px 20px 24px 20px !important;
+  padding: 16px 20px 24px 20px !important;
 }
 
 .v2-stage-canvas--scrollable {
