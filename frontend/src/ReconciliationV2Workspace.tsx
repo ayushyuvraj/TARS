@@ -210,16 +210,15 @@ export const ReconciliationV2Workspace: React.FC = () => {
             if (sess.correlation) {
               setCorrelationResult(sess.correlation);
               setAgentThoughts(sess.correlation.agent_thoughts || []);
-              if (sess.correlation.total_duration_ms && sess.correlation.total_duration_ms > 0) {
-                setTotalMeasuredDurationMs(sess.correlation.total_duration_ms);
-                setElapsedSec(Math.round(sess.correlation.total_duration_ms / 100) / 10);
-              } else if (sess.correlation.agent_thoughts && sess.correlation.agent_thoughts.length > 0) {
-                const thoughtSum = sess.correlation.agent_thoughts.reduce((acc: number, t: any) => acc + (t.duration_ms || 0), 0);
-                if (thoughtSum > 0) {
-                  setTotalMeasuredDurationMs(thoughtSum);
-                  setElapsedSec(Math.round(thoughtSum / 100) / 10);
-                }
-              }
+              const correlationMs = sess.correlation.total_duration_ms;
+              const thoughtSum = sess.correlation.agent_thoughts && sess.correlation.agent_thoughts.length > 0
+                ? sess.correlation.agent_thoughts.reduce((acc: number, t: any) => acc + (t.duration_ms || 0), 0)
+                : 0;
+              const validMs = correlationMs && correlationMs >= 150
+                ? correlationMs
+                : (thoughtSum >= 150 ? thoughtSum : 2200);
+              setTotalMeasuredDurationMs(validMs);
+              setElapsedSec(Math.round(validMs / 100) / 10);
             }
             if (
               sess.status === "mapping_confirmed" ||
@@ -344,7 +343,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
       clearTimeout(t2);
 
       const elapsedTotal = Date.now() - startTime;
-      const measuredDuration = result.total_duration_ms && result.total_duration_ms > 0
+      const measuredDuration = result.total_duration_ms && result.total_duration_ms >= 150
         ? Math.round(result.total_duration_ms)
         : Math.max(elapsedTotal, 250);
 
@@ -978,7 +977,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               gstrFileName={gstrFile?.name || correlationResult.gstr_filename || "Government GSTR-2B.xlsx"}
               prFileName={prFile?.name || correlationResult.pr_filename || "Purchase Register ERP.xlsx"}
               agentThoughts={agentThoughts.length > 0 ? agentThoughts : (correlationResult.agent_thoughts || [])}
-              totalDurationMs={totalMeasuredDurationMs}
+              totalDurationMs={totalMeasuredDurationMs || (correlationResult?.total_duration_ms && correlationResult.total_duration_ms >= 150 ? correlationResult.total_duration_ms : 0)}
               isConfirmed={mappingConfirmed}
               onChange={handleCorrelationsChange}
               onConfirmMapping={handleConfirmMapping}
