@@ -535,27 +535,27 @@ export const ReconciliationV2Workspace: React.FC = () => {
           </div>
 
           {sessionId && (
-            <div
-              className="v2-session-badge"
-              title={`Session ID: ${sessionId} (Click to copy)`}
-              onClick={() => {
-                navigator.clipboard.writeText(sessionId);
-              }}
-            >
-              <span className="v2-session-id">{sessionId}</span>
+            <div className="v2-session-badge-group">
+              <div
+                className="v2-session-badge"
+                title={`Session ID: ${sessionId} (Click to copy)`}
+                onClick={() => {
+                  navigator.clipboard.writeText(sessionId);
+                }}
+              >
+                <span className="v2-session-id">{sessionId}</span>
+              </div>
+              <button
+                type="button"
+                onClick={resetAll}
+                className="v2-btn-reset-icon"
+                title="Reset Reconciliation Session"
+              >
+                <RefreshCw size={13} />
+              </button>
             </div>
           )}
-          {(gstrFile || correlationResult) && (
-            <button
-              type="button"
-              onClick={resetAll}
-              className="v2-btn-reset"
-              title="Reset Reconciliation"
-            >
-              <RefreshCw size={11} />
-              <span>Reset</span>
-            </button>
-          )}
+
         </div>
       </div>
 
