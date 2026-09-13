@@ -5,6 +5,7 @@
 - **Checkpoint Name**: `Stage 5 & 6 Dark Cobalt Hero Banner Standardization`
 - **Current Branch**: `stable-copilot-quickreconcile`
 - **Checkpoint Tag**: `tars-2026-09-13-stage5-6-hero-banner-checkpoint`
+- **Current HEAD Commit**: `fa6a913`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
   1. *Unified Dark Royal Cobalt Hero Banner (`.v2-results-hero`)*:
