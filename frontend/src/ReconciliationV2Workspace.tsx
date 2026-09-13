@@ -111,6 +111,50 @@ export const ReconciliationV2Workspace: React.FC = () => {
   const [agentThoughts, setAgentThoughts] = useState<AgentThought[]>([]);
   const [mappingConfirmed, setMappingConfirmed] = useState(false);
   const [rulesConfirmed, setRulesConfirmed] = useState(false);
+  const [hasVisitedResults, setHasVisitedResults] = useState(false);
+  const [hasVisitedSummary, setHasVisitedSummary] = useState(false);
+  const [sessionStatus, setSessionStatus] = useState<string>("initialized");
+
+  // Dynamic progressive stage unlocking predicate
+  const isStageUnlocked = (stageKey: V2Stage): boolean => {
+    switch (stageKey) {
+      case "setup":
+        return true;
+      case "mapping":
+        return Boolean(
+          correlationResult !== null ||
+          (gstrFile && prFile) ||
+          (sessionStatus && sessionStatus !== "initialized")
+        );
+      case "rules":
+      case "policy":
+        return Boolean(
+          mappingConfirmed ||
+          rulesConfirmed ||
+          hasVisitedResults ||
+          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "results", "summary", "export"].includes(sessionStatus))
+        );
+      case "results":
+        return Boolean(
+          rulesConfirmed ||
+          hasVisitedResults ||
+          (sessionStatus && ["rules_confirmed", "results", "summary", "export"].includes(sessionStatus))
+        );
+      case "summary":
+        return Boolean(
+          hasVisitedResults ||
+          hasVisitedSummary ||
+          (sessionStatus && ["results", "summary", "export"].includes(sessionStatus))
+        );
+      case "export":
+        return Boolean(
+          hasVisitedSummary ||
+          (sessionStatus && ["summary", "export"].includes(sessionStatus))
+        );
+      default:
+        return false;
+    }
+  };
 
   // Auto-trigger when both files are selected
   const hasAutoTriggered = useRef(false);
@@ -131,15 +175,24 @@ export const ReconciliationV2Workspace: React.FC = () => {
     return () => clearInterval(timer);
   }, [isUploadingAndCorrelating]);
 
-  // Sync route stage with internal stage
+  // Sync route stage with internal stage and enforce progressive stage unlocking
   useEffect(() => {
-    if (routeStage) {
+    if (routeStage && !isHydrating) {
       const normalizedStage = routeStage === "policy" ? "rules" : (routeStage as V2Stage);
-      if (normalizedStage !== currentStage) {
-        setCurrentStage(normalizedStage);
+      if (isStageUnlocked(normalizedStage)) {
+        if (normalizedStage !== currentStage) {
+          setCurrentStage(normalizedStage);
+        }
+      } else {
+        // If user tries to navigate to an unreached/locked stage, redirect to highest unlocked stage
+        const highestUnlocked = [...V2_STAGES].reverse().find((s) => isStageUnlocked(s.key))?.key || "setup";
+        setCurrentStage(highestUnlocked);
+        if (sessionId) {
+          navigate(`/reconciliations-v2/${sessionId}/${highestUnlocked}`, { replace: true });
+        }
       }
     }
-  }, [routeStage, currentStage]);
+  }, [routeStage, currentStage, isHydrating, correlationResult, mappingConfirmed, rulesConfirmed, hasVisitedResults, hasVisitedSummary, sessionStatus]);
 
   // Synchronize V2 workspace context to Copilot Bridge
   useEffect(() => {
@@ -206,6 +259,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
           .getSession(routeSessionId)
           .then((sess) => {
             setSessionId(sess.id);
+            setSessionStatus(sess.status || "initialized");
             localStorage.setItem("tars_v2_active_session_id", sess.id);
             if (sess.correlation) {
               setCorrelationResult(sess.correlation);
@@ -224,6 +278,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
               sess.status === "mapping_confirmed" ||
               sess.status === "rules_confirmed" ||
               sess.status === "results" ||
+              sess.status === "summary" ||
+              sess.status === "export" ||
               (sess.selected_rule_ids && sess.selected_rule_ids.length > 0) ||
               (routeStage && ["rules", "results", "summary", "export"].includes(routeStage))
             ) {
@@ -232,10 +288,27 @@ export const ReconciliationV2Workspace: React.FC = () => {
             if (
               sess.status === "rules_confirmed" ||
               sess.status === "results" ||
+              sess.status === "summary" ||
+              sess.status === "export" ||
               (sess.selected_rule_ids && sess.selected_rule_ids.length > 0) ||
               (routeStage && ["results", "summary", "export"].includes(routeStage))
             ) {
               setRulesConfirmed(true);
+            }
+            if (
+              sess.status === "results" ||
+              sess.status === "summary" ||
+              sess.status === "export" ||
+              (routeStage && ["summary", "export"].includes(routeStage))
+            ) {
+              setHasVisitedResults(true);
+            }
+            if (
+              sess.status === "summary" ||
+              sess.status === "export" ||
+              (routeStage && ["export"].includes(routeStage))
+            ) {
+              setHasVisitedSummary(true);
             }
           })
           .catch((err) => {
@@ -376,6 +449,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
       setCorrelationResult(result);
       setAgentThoughts(result.agent_thoughts || []);
+      setSessionStatus("mapped");
 
       // Clean swift transition to Mapping stage
       setTimeout(() => {
@@ -406,6 +480,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
     try {
       await apiV2.confirmMapping(sessionId, correlationResult.correlations);
       setMappingConfirmed(true);
+      setSessionStatus("mapping_confirmed");
       setCurrentStage("rules");
       navigate(`/reconciliations-v2/${sessionId}/rules`);
     } catch (err: any) {
@@ -436,6 +511,9 @@ export const ReconciliationV2Workspace: React.FC = () => {
       navigate(`/reconciliations-v2`);
     }
   };
+
+  const effectiveGstrName = gstrFile?.name || correlationResult?.gstr_filename || null;
+  const effectivePrName = prFile?.name || correlationResult?.pr_filename || null;
 
   return (
     <div className="v2-executive-root">
@@ -496,25 +574,23 @@ export const ReconciliationV2Workspace: React.FC = () => {
             };
             const currentStageNum = stageOrder[currentStage] || 1;
             const isActive = currentStage === s.key;
-            const isCompleted =
-              (s.key === "setup" && (correlationResult !== null || currentStageNum > 1)) ||
-              (s.key === "mapping" && (mappingConfirmed || rulesConfirmed || currentStageNum > 2)) ||
-              (s.key === "rules" && (rulesConfirmed || currentStageNum > 3)) ||
-              (s.key === "results" && currentStageNum > 4) ||
-              (s.key === "summary" && currentStageNum > 5);
-            const isAvailable = true;
+            const isUnlocked = isStageUnlocked(s.key);
+            const isCompleted = isUnlocked && currentStageNum > s.number;
+            const isLocked = !isUnlocked;
 
             return (
               <React.Fragment key={s.key}>
                 <button
                   type="button"
+                  disabled={isLocked}
+                  title={isLocked ? `Stage ${s.number} (${s.label}) is locked until previous steps are completed` : undefined}
                   onClick={() => {
-                    if (sessionId) {
+                    if (sessionId && isUnlocked) {
                       setCurrentStage(s.key);
                       navigate(`/reconciliations-v2/${sessionId}/${s.key}`);
                     }
                   }}
-                  className={`v2-pipeline-node ${isActive ? "is-active" : ""} ${isCompleted ? "is-completed" : ""}`}
+                  className={`v2-pipeline-node ${isActive ? "is-active" : ""} ${isCompleted ? "is-completed" : ""} ${isLocked ? "is-locked" : ""}`}
                 >
                   <div className="v2-node-number-ring">
                     {isCompleted ? <Check size={12} strokeWidth={2.5} /> : s.number}
@@ -526,7 +602,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
                   {isActive && <div className="v2-node-active-bar" />}
                 </button>
                 {idx < V2_STAGES.length - 1 && (
-                  <div className={`v2-pipeline-connector ${isCompleted ? "is-filled" : ""}`} />
+                  <div className={`v2-pipeline-connector ${isUnlocked && currentStageNum > s.number ? "is-filled" : ""}`} />
                 )}
               </React.Fragment>
             );
@@ -577,13 +653,15 @@ export const ReconciliationV2Workspace: React.FC = () => {
               </div>
 
               <div className="v2-stage-hero-actions">
-                {(gstrFile || prFile) && (
+                {(effectiveGstrName || effectivePrName) && (
                   <button
                     type="button"
                     className="v2-hero-btn-secondary"
                     onClick={() => {
                       setGstrFile(null);
                       setPrFile(null);
+                      setCorrelationResult(null);
+                      hasAutoTriggered.current = false;
                     }}
                     title="Clear selected workbooks"
                   >
@@ -610,6 +688,11 @@ export const ReconciliationV2Workspace: React.FC = () => {
                       <RefreshCw size={14} className="v2-spin" />
                       <span>Correlating Schemas…</span>
                     </>
+                  ) : correlationResult ? (
+                    <>
+                      <span>Resume Schema Mapping</span>
+                      <ArrowRight size={14} />
+                    </>
                   ) : (
                     <>
                       <span>Proceed to Schema Mapping</span>
@@ -634,7 +717,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
                   setIsDraggingOver(null);
                   if (e.dataTransfer.files?.[0]) setGstrFile(e.dataTransfer.files[0]);
                 }}
-                className={`v2-dock-shell gstr ${isDraggingOver === "gstr" ? "is-dragging" : ""} ${gstrFile ? "has-payload" : ""}`}
+                className={`v2-dock-shell gstr ${isDraggingOver === "gstr" ? "is-dragging" : ""} ${effectiveGstrName ? "has-payload" : ""}`}
               >
                 <div className="v2-dock-core">
                   {/* Terminal Header Bar */}
@@ -648,16 +731,16 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
                   {/* Content Bay */}
                   <div className="v2-terminal-body">
-                    {gstrFile ? (
+                    {effectiveGstrName ? (
                       <div className="v2-payload-card">
                         <div className="v2-payload-glyph">
                           <CheckCircle2 size={24} />
                         </div>
                         <div className="v2-payload-meta">
                           <span className="v2-payload-state-chip">SOURCE 1 READY</span>
-                          <h4 className="v2-payload-title" title={gstrFile.name}>{gstrFile.name}</h4>
+                          <h4 className="v2-payload-title" title={effectiveGstrName}>{effectiveGstrName}</h4>
                           <div className="v2-payload-specs">
-                            <span>{formatFileSize(gstrFile.size)}</span>
+                            <span>{gstrFile ? formatFileSize(gstrFile.size) : "Ingested"}</span>
                             <span>•</span>
                             <span>Ready to Correlate</span>
                           </div>
@@ -667,6 +750,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
                           onClick={(e) => {
                             e.stopPropagation();
                             setGstrFile(null);
+                            if (correlationResult) setCorrelationResult(null);
                             hasAutoTriggered.current = false;
                           }}
                           className="v2-payload-remove-btn"
@@ -736,7 +820,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
                   setIsDraggingOver(null);
                   if (e.dataTransfer.files?.[0]) setPrFile(e.dataTransfer.files[0]);
                 }}
-                className={`v2-dock-shell pr ${isDraggingOver === "pr" ? "is-dragging" : ""} ${prFile ? "has-payload" : ""}`}
+                className={`v2-dock-shell pr ${isDraggingOver === "pr" ? "is-dragging" : ""} ${effectivePrName ? "has-payload" : ""}`}
               >
                 <div className="v2-dock-core">
                   {/* Terminal Header Bar */}
@@ -750,16 +834,16 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
                   {/* Content Bay */}
                   <div className="v2-terminal-body">
-                    {prFile ? (
+                    {effectivePrName ? (
                       <div className="v2-payload-card">
                         <div className="v2-payload-glyph">
                           <CheckCircle2 size={24} />
                         </div>
                         <div className="v2-payload-meta">
                           <span className="v2-payload-state-chip">SOURCE 2 READY</span>
-                          <h4 className="v2-payload-title" title={prFile.name}>{prFile.name}</h4>
+                          <h4 className="v2-payload-title" title={effectivePrName}>{effectivePrName}</h4>
                           <div className="v2-payload-specs">
-                            <span>{formatFileSize(prFile.size)}</span>
+                            <span>{prFile ? formatFileSize(prFile.size) : "Ingested"}</span>
                             <span>•</span>
                             <span>Ready to Correlate</span>
                           </div>
@@ -769,6 +853,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
                           onClick={(e) => {
                             e.stopPropagation();
                             setPrFile(null);
+                            if (correlationResult) setCorrelationResult(null);
                             hasAutoTriggered.current = false;
                           }}
                           className="v2-payload-remove-btn"
@@ -811,7 +896,28 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
             {/* Action Bar (Static In-Flow Height - Zero Layout Shift) */}
             <div className="v2-action-terminal-bar">
-              {gstrFile && prFile ? (
+              {correlationResult ? (
+                <div className="v2-ready-action-card">
+                  <div className="v2-ready-meta">
+                    <span className="v2-ready-icon">✦</span>
+                    <div>
+                      <strong>Schema correlation active for this session.</strong>
+                      <p>Both workbooks are correlated and schema linkages are ready for review.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCurrentStage("mapping");
+                      if (sessionId) navigate(`/reconciliations-v2/${sessionId}/mapping`);
+                    }}
+                    className="v2-btn-launch-correlator"
+                  >
+                    <span>RESUME SCHEMA CORRELATION (STAGE 2)</span>
+                    <ArrowRight size={16} />
+                  </button>
+                </div>
+              ) : gstrFile && prFile ? (
                 <div className="v2-ready-action-card">
                   <div className="v2-ready-meta">
                     <span className="v2-ready-icon">✦</span>
@@ -833,13 +939,13 @@ export const ReconciliationV2Workspace: React.FC = () => {
               ) : (
                 <div className="v2-telemetry-conduit">
                   <div className="v2-conduit-node">
-                    <span className={`v2-conduit-pip ${gstrFile ? "is-primed" : ""}`} />
-                    <span>Sovereign 2B {gstrFile ? "Primed" : "Awaiting"}</span>
+                    <span className={`v2-conduit-pip ${effectiveGstrName ? "is-primed" : ""}`} />
+                    <span>Sovereign 2B {effectiveGstrName ? "Primed" : "Awaiting"}</span>
                   </div>
                   <span className="v2-conduit-divider">•</span>
                   <div className="v2-conduit-node">
-                    <span className={`v2-conduit-pip ${prFile ? "is-primed" : ""}`} />
-                    <span>Client ERP {prFile ? "Primed" : "Awaiting"}</span>
+                    <span className={`v2-conduit-pip ${effectivePrName ? "is-primed" : ""}`} />
+                    <span>Client ERP {effectivePrName ? "Primed" : "Awaiting"}</span>
                   </div>
                 </div>
               )}
@@ -983,7 +1089,11 @@ export const ReconciliationV2Workspace: React.FC = () => {
               onConfirmMapping={handleConfirmMapping}
               onBackToSetup={() => {
                 setCurrentStage("setup");
-                navigate("/reconciliations-v2");
+                if (sessionId) {
+                  navigate(`/reconciliations-v2/${sessionId}/setup`);
+                } else {
+                  navigate("/reconciliations-v2");
+                }
               }}
             />
           ) : isHydrating ? (
@@ -1016,7 +1126,11 @@ export const ReconciliationV2Workspace: React.FC = () => {
                 style={{ margin: "10px auto 0 auto" }}
                 onClick={() => {
                   setCurrentStage("setup");
-                  navigate("/reconciliations-v2");
+                  if (sessionId) {
+                    navigate(`/reconciliations-v2/${sessionId}/setup`);
+                  } else {
+                    navigate("/reconciliations-v2");
+                  }
                 }}
               >
                 ← Return to Ingestion Setup
@@ -1039,6 +1153,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
             }}
             onProceedToResults={(selectedRuleIds, executionOrder) => {
               setRulesConfirmed(true);
+              setHasVisitedResults(true);
+              setSessionStatus("rules_confirmed");
               setCurrentStage("results");
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/results`);
             }}
@@ -1056,6 +1172,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/rules`);
             }}
             onProceedToSummary={() => {
+              setHasVisitedSummary(true);
+              setSessionStatus("results");
               setCurrentStage("summary");
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/summary`);
             }}
@@ -1073,6 +1191,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/results`);
             }}
             onProceedToExport={() => {
+              setSessionStatus("export");
               setCurrentStage("export");
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/export`);
             }}

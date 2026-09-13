@@ -629,7 +629,7 @@ class DirectSchemaCorrelator:
                         captured_error.append(str(err))
 
         err_summary = captured_error[0] if captured_error else None
-        return results, err_summaryts
+        return results, err_summary
 
     def _lexical_fallback(
         self,

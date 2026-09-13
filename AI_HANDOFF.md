@@ -1,5 +1,34 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Session-Preserving Back Navigation & Real-Time Progressive Stage Unlocking (13th September 2026)
+
+- **Checkpoint Name**: `Session-Preserving Back Navigation & Real-Time Progressive Stage Unlocking`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-13-session-preserving-nav-checkpoint`
+- **Current HEAD Commit**: `db80240`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Session-Preserving Back Navigation on Stage 2*:
+     - Root cause: Stage 2 "Back" (`v2-btn-back`) and "Back to Ingestion Setup" (`ReconciliationV2ActionBar`) previously routed to generic `/reconciliations-v2` which lacked session context and created a brand new session, discarding all uploaded workbooks and correlation state.
+     - Updated navigation in `ReconciliationV2Workspace.tsx` to navigate directly to `/reconciliations-v2/${sessionId}/setup` retaining the active session ID.
+     - Updated Stage 1 Setup docking bays to read `effectiveGstrName` (`gstrFile?.name || correlationResult?.gstr_filename`) and `effectivePrName` (`prFile?.name || correlationResult?.pr_filename`) so workbooks remain visible when returning from Stage 2.
+     - Added `Resume Schema Mapping` / `RESUME SCHEMA CORRELATION (STAGE 2)` action button when correlation state already exists for the session.
+  2. *Real-Time Progressive Stage Unlocking*:
+     - Implemented dynamic `isStageUnlocked(stageKey: V2Stage)` predicate:
+       - `setup`: always unlocked (Stage 1).
+       - `mapping`: unlocked once files are loaded, `correlationResult` exists, or session status is mapped (Stage 2).
+       - `rules` / `policy`: unlocked once mapping is confirmed or visited (Stage 3).
+       - `results`: unlocked once rules are confirmed or visited (Stage 4).
+       - `summary`: unlocked once results are generated or visited (Stage 5).
+       - `export`: unlocked once summary is reached or visited (Stage 6).
+     - Applied `.v2-pipeline-node.is-locked` with `opacity: 0.35; filter: blur(0.45px); cursor: not-allowed; pointer-events: none;` and disabled attribute to all unreached stages.
+     - Stages unlock in real time as the user advances through the pipeline.
+     - Users can freely navigate backward to any previously completed stage of the same session ID via stepper or back buttons.
+     - Direct URL tampering (e.g. attempting to skip to `/results` on a fresh session) is automatically intercepted and redirected to the highest unlocked stage.
+  3. *Zero Functional Drift*: 100% of underlying matching algorithms, ingestion pipelines, database models, and financial integrity rules remain completely untouched.
+
+---
+
 ## Stage 1 Modal Boundary Containment & Stage 2 Execution Time Synchronization (13th September 2026)
 
 - **Checkpoint Name**: `Stage 1 Modal Boundary Containment & Stage 2 Execution Time Synchronization`

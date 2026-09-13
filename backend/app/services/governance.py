@@ -300,13 +300,22 @@ class GovernanceService:
         seen_fields = set()
         for idx, cond in enumerate(conditions or []):
             field_name = str(cond.field).strip() if cond.field else ""
-            if not field_name or not re.match(r'^[A-Za-z0-9_\-\s\.]+$', field_name):
-                issues.append(RuleValidationIssue(
-                    code="UNSUPPORTED_CANONICAL_FIELD",
-                    message=f"Condition {idx + 1}: Field '{cond.field}' must be a valid column identifier.",
-                    field=f"conditions[{idx}].field",
-                    severity="error",
-                ))
+            if cond.operator in {"NOT_NULL", "IS_NOT_NULL"}:
+                if not field_name or not re.match(r'^[A-Za-z0-9_\-\s\.]+$', field_name):
+                    issues.append(RuleValidationIssue(
+                        code="UNSUPPORTED_CANONICAL_FIELD",
+                        message=f"Condition {idx + 1}: Field '{cond.field}' must be a valid column identifier.",
+                        field=f"conditions[{idx}].field",
+                        severity="error",
+                    ))
+            else:
+                if field_name not in allowed_canonical:
+                    issues.append(RuleValidationIssue(
+                        code="UNSUPPORTED_CANONICAL_FIELD",
+                        message=f"Condition {idx + 1}: Field '{cond.field}' is not a supported canonical field. Allowed: {sorted(allowed_canonical)}.",
+                        field=f"conditions[{idx}].field",
+                        severity="error",
+                    ))
 
             if cond.operator not in allowed_operators:
                 issues.append(RuleValidationIssue(
