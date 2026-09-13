@@ -1,6 +1,30 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Stage 6 Completion Tick, 6/6 Audit Ledger Sync & Completed Session Inspection Mode (13th September 2026)
+## Stage 3-4 Layout Harmonization, Stage 1 Alignment, & Stage 4 Dynamic 5-Pass Reconciliation Modal (13th September 2026)
+
+- **Checkpoint Name**: `Stage 3-4 Layout Harmonization, Stage 1 Alignment, & Stage 4 Dynamic 5-Pass Reconciliation Modal`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-13-stage3-4-layout-flow-checkpoint`
+- **Current HEAD Commit**: `5518165`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Stage 3 & 4 Layout Harmonization*:
+     - Standardized Stage 3 top hero banner (`.v2-results-hero`) to match Stage 4 and Stage 2 exactly.
+     - Updated `.v2-rules-container` in `rules_v2.css` to `width: 100%; max-width: 100%; min-width: 0` to eliminate narrow 1200px max-width boundary so Stage 3 spans full width identically to Stage 4.
+     - Removed redundant top action bar in Stage 3.
+     - Moved Stage 3 AI Suggested Rules section into a modal dialog popup (`showAiSuggestionsModal`) triggered by the hero banner action button.
+  2. *Stage 1 Vertical Alignment*:
+     - Adjusted `.v2-stage-canvas--setup` top padding to `16px 20px 24px 20px !important` in `reconciliation_v2.css` to align Stage 1 hero box vertical position with Stages 2–4.
+  3. *Stage 4 Flow & Visual Transformation*:
+     - Removed separate pre-execution Launchpad screen (Screenshot 1). User lands directly on full Deterministic Match Matrix canvas (Screenshot 3 layout).
+     - Hero banner button state machine: displays **"Reconcile"** on arrival, disables **"Proceed to Summary Dashboard"** (`opacity: 0.5`, `cursor: not-allowed`) prior to execution.
+     - Dynamic 5-pass modal HUD popup (`v2-cot-modal-overlay` matching Stage 1 ingestion modal style) during waterfall execution with live elapsed timer, 5-pass step tiles (Pass 01 to 05), active status spinners, completed checkmarks, and progress track animation.
+     - Post-execution: modal automatically dismisses, hero button updates to **"Rerun Reconciliation"**, **"Proceed to Summary Dashboard"** enables, and all accuracy cards, KPI cards, waterfall flows, and records table populate with live session data.
+  4. *Zero Functional Drift & Full Verification*:
+     - `npm run build`: 0 TypeScript / compilation errors.
+     - `pytest backend/tests/test_reconciliation_v2.py`: 11 passed (100%).
+
+---
 
 - **Checkpoint Name**: `Stage 6 Completion Tick, 6/6 Audit Ledger Sync & Completed Session Inspection Mode`
 - **Current Branch**: `stable-copilot-quickreconcile`
