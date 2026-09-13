@@ -359,6 +359,10 @@ def _ensure_session(session_id: str) -> dict[str, Any]:
         elif not isinstance(saved.get("_cached_pr_df"), pd.DataFrame):
             saved["_cached_pr_df"] = None
 
+        if saved.get("status") in ["completed", "exported"] or saved.get("is_completed") is True:
+            saved["is_completed"] = True
+            saved["completed_stages_count"] = 6
+
         _V2_SESSIONS[session_id] = saved
         return saved
 

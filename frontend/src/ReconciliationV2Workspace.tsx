@@ -120,6 +120,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
   // Dynamic progressive stage unlocking predicate
   const isStageUnlocked = (stageKey: V2Stage): boolean => {
+    if (isSessionCompleted) return true;
+
     switch (stageKey) {
       case "setup":
         return true;
@@ -378,9 +380,13 @@ export const ReconciliationV2Workspace: React.FC = () => {
             ) {
               setHasVisitedSummary(true);
             }
-            if (sess.status === "exported" || sess.status === "completed") {
+            if (sess.status === "exported" || sess.status === "completed" || (sess as any).completed_stages_count === 6) {
               setHasExported(true);
               setSessionStatus("completed");
+              setMappingConfirmed(true);
+              setRulesConfirmed(true);
+              setHasVisitedResults(true);
+              setHasVisitedSummary(true);
             }
           })
           .catch((err) => {
