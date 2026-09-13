@@ -638,6 +638,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               >
                 <span className="v2-session-id">{sessionId}</span>
               </div>
+              {!isSessionCompleted && (
               <button
                 type="button"
                 onClick={resetAll}
@@ -647,6 +648,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               >
                 <RefreshCw size={13} />
               </button>
+              )}
             </div>
           )}
         </div>
@@ -716,6 +718,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
         {/* STAGE 1: DUAL PRECISION NEURAL DOCKING BAYS (ZERO-SCROLL VIEWPORT)        */}
         {/* ========================================================================= */}
         {currentStage === "setup" && (
+          <div className={isSessionCompleted ? "v2-read-only-wrapper" : ""}>
+            {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
           <div className="v2-setup-flow">
             {/* 1. HERO BANNER (Unified Dark Royal Cobalt matching Stage 4) */}
             <div className="v2-stage-hero">
@@ -1161,13 +1165,16 @@ export const ReconciliationV2Workspace: React.FC = () => {
             </div>
 
           </div>
+          </div>
         )}
 
         {/* ========================================================================= */}
         {/* STAGE 2: HIGH-END DYNAMIC MAPPING GRID V2                                 */}
         {/* ========================================================================= */}
         {currentStage === "mapping" && (
-          correlationResult ? (
+          <div className={isSessionCompleted ? "v2-read-only-wrapper" : ""}>
+            {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
+          {correlationResult ? (
             <DynamicMappingGridV2
               correlations={correlationResult.correlations || []}
               prColumns={correlationResult.pr_columns || []}
@@ -1176,6 +1183,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               agentThoughts={agentThoughts.length > 0 ? agentThoughts : (correlationResult.agent_thoughts || [])}
               totalDurationMs={totalMeasuredDurationMs || (correlationResult?.total_duration_ms && correlationResult.total_duration_ms >= 150 ? correlationResult.total_duration_ms : 0)}
               isConfirmed={mappingConfirmed}
+              disabled={isSessionCompleted}
               onChange={handleCorrelationsChange}
               onConfirmMapping={handleConfirmMapping}
               onBackToSetup={() => {
@@ -1227,13 +1235,16 @@ export const ReconciliationV2Workspace: React.FC = () => {
                 ← Return to Ingestion Setup
               </button>
             </div>
-          )
+          )}
+          </div>
         )}
 
         {/* ========================================================================= */}
         {/* STAGE 3: RULES PIPELINE & GOVERNANCE PLANE                                */}
         {/* ========================================================================= */}
         {(currentStage === "rules" || currentStage === "policy") && (
+          <div className={isSessionCompleted ? "v2-read-only-wrapper" : ""}>
+            {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
           <ReconciliationV2RulesStage
             sessionId={sessionId || ""}
             correlations={correlationResult?.correlations || []}
@@ -1250,12 +1261,15 @@ export const ReconciliationV2Workspace: React.FC = () => {
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/results`);
             }}
           />
+          </div>
         )}
 
         {/* ========================================================================= */}
         {/* STAGE 4: DETERMINISTIC RESULTS & AMBIGUITY HUB                            */}
         {/* ========================================================================= */}
         {currentStage === "results" && (
+          <div className={isSessionCompleted ? "v2-read-only-wrapper" : ""}>
+            {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
           <ReconciliationV2ResultsStage
             sessionId={sessionId || ""}
             onBackToRules={() => {
@@ -1269,12 +1283,15 @@ export const ReconciliationV2Workspace: React.FC = () => {
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/summary`);
             }}
           />
+          </div>
         )}
 
         {/* ========================================================================= */}
         {/* STAGE 5: EXECUTIVE SUMMARY DASHBOARD & COMPLIANCE INTELLIGENCE            */}
         {/* ========================================================================= */}
         {currentStage === "summary" && (
+          <div className={isSessionCompleted ? "v2-read-only-wrapper" : ""}>
+            {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
           <ReconciliationV2SummaryStage
             sessionId={sessionId || ""}
             onBack={() => {
@@ -1287,6 +1304,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/export`);
             }}
           />
+          </div>
         )}
 
         {/* ========================================================================= */}

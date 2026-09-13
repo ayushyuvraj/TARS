@@ -653,6 +653,23 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
+/* --- Read-Only Wrapper & Invisible Shield (Completed Session Inspection Mode) --- */
+.v2-read-only-wrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  user-select: text;              /* Allow text selection for viewing */
+}
+
+.v2-read-only-shield {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  cursor: not-allowed;
+  background: transparent;
+  /* Blocks ALL pointer events (clicks, drags, hovers on interactive elements) */
+}
+
 .v2-stage-canvas::-webkit-scrollbar {
   width: 8px;
   height: 8px;
