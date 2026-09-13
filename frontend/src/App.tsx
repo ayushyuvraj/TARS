@@ -1556,7 +1556,7 @@ export default function App() {
           className={
             loc.pathname === "/dashboard"
               ? "workspace workspace--dashboard"
-              : loc.pathname.startsWith("/reconciliations-v2")
+              : loc.pathname.startsWith("/reconciliations-v2") || loc.pathname.startsWith("/rules-v2") || loc.pathname === "/rules"
               ? "workspace workspace--v2"
               : loc.pathname.startsWith("/audit-v2")
               ? "workspace workspace--audit-v2"

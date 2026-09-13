@@ -442,21 +442,6 @@ export const RulesWikiV2: React.FC = () => {
             <span className="v2-status-dot-pulse" />
             <span>AGENT ACTIVE</span>
           </div>
-
-          <div className="v2-session-badge-group">
-            <div className="v2-session-badge" title="Master Declarative Governance Catalog Version">
-              <span className="v2-session-id">Catalog v2.0 &bull; {rules.filter((r) => r.is_enabled).length} of {rules.length} Active</span>
-            </div>
-            <button
-              type="button"
-              onClick={loadMasterCatalog}
-              className={`v2-btn-reset-icon ${isLoading ? "is-spinning" : ""}`}
-              title="Sync Rules Catalog"
-              disabled={isLoading}
-            >
-              <RefreshCw size={13} />
-            </button>
-          </div>
         </div>
       </div>
 
