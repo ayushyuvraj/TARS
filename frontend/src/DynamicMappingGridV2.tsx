@@ -16,7 +16,13 @@ import {
   SlidersHorizontal,
   FileSpreadsheet,
   ArrowLeft,
-  Check
+  Check,
+  Cpu,
+  Terminal,
+  Zap,
+  Layers,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 
@@ -50,6 +56,45 @@ export const DynamicMappingGridV2: React.FC<DynamicMappingGridV2Props> = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<"all" | "deterministic" | "llm" | "attention" | "unmapped">("all");
   const [inspectedCorrelation, setInspectedCorrelation] = useState<DirectColumnCorrelation | null>(null);
+  const [showThoughtsModal, setShowThoughtsModal] = useState(false);
+
+  // Compute agent reasoning duration for hero button label
+  const thoughtsSum = agentThoughts && agentThoughts.length > 0
+    ? agentThoughts.reduce((acc, t) => acc + (t.duration_ms || 0), 0)
+    : 0;
+  const effectiveMs = totalDurationMs && totalDurationMs >= 150
+    ? totalDurationMs
+    : (thoughtsSum >= 150 ? thoughtsSum : 0);
+  const reasoningSeconds = effectiveMs > 0 ? (effectiveMs / 1000).toFixed(1) : null;
+
+  const formatStep = (step: string) => {
+    switch (step) {
+      case "fast_probe_ingestion":
+        return { label: "FAST_INGESTION", icon: <Zap size={13} style={{ color: "#f59e0b" }} /> };
+      case "deterministic_matcher":
+        return { label: "DETERMINISTIC_RULES", icon: <CheckCircle2 size={13} style={{ color: "#10b981" }} /> };
+      case "llm_semantic_analysis_started":
+        return { label: "LLM_DISPATCH", icon: <Sparkles size={13} style={{ color: "#a855f7" }} /> };
+      case "llm_semantic_analysis_completed":
+        return { label: "LLM_INFERENCE", icon: <Cpu size={13} style={{ color: "#38bdf8" }} /> };
+      case "llm_semantic_analysis_bypassed":
+        return { label: "LLM_STANDBY", icon: <Sparkles size={13} style={{ color: "#a855f7" }} /> };
+      case "llm_inference_failed":
+        return { label: "LLM_API_ERROR", icon: <Zap size={13} style={{ color: "#ef4444" }} /> };
+      case "llm_provider_unavailable":
+        return { label: "LLM_UNAVAILABLE", icon: <Zap size={13} style={{ color: "#f59e0b" }} /> };
+      case "schema_graph_checkpointed":
+        return { label: "STATE_CHECKPOINT", icon: <Layers size={13} style={{ color: "#6366f1" }} /> };
+      default:
+        return { label: step.toUpperCase(), icon: <Terminal size={13} style={{ color: "#94a3b8" }} /> };
+    }
+  };
+
+  const cleanMessage = (msg: string) => {
+    return msg
+      .replace(/\s+in\s+\d+(\.\d+)?ms\.?$/i, ".")
+      .replace(/\s+\d+(\.\d+)?ms\.?$/i, ".");
+  };
 
   // Register UPDATE_MAPPING action handler from Copilot Chat
   useEffect(() => {
@@ -153,74 +198,115 @@ export const DynamicMappingGridV2: React.FC<DynamicMappingGridV2Props> = ({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* 1. TOP FLIGHT CONTROL HEADER BAR */}
-      <div className="v2-mapping-action-header">
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          {onBackToSetup && (
+      {/* 1. UNIFIED HERO BANNER (Identical to Stage 4) */}
+      <div className="v2-results-hero">
+        {onBackToSetup && (
+          <div className="v2-hero-nav-left">
             <button
               type="button"
+              className="v2-hero-btn-back"
               onClick={onBackToSetup}
-              className="v2-btn-back"
-              title="Return to Ingestion Setup"
+              title="Return to Stage 1: Ingestion Setup"
+              aria-label="Back to setup"
             >
-              <ArrowLeft size={14} />
-              <span>Back</span>
+              <ArrowLeft size={15} />
+              <span>Back to Setup</span>
             </button>
-          )}
-
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span className="v2-stage-kicker">STAGE 2 OF 6</span>
-              <span className="v2-status-chip green">
-                <Check size={11} />
-                Schema Correlation Active
-              </span>
-            </div>
-            <h2 className="v2-mapping-head-title">Direct Schema Coupling Matrix</h2>
           </div>
+        )}
+
+        <div className="v2-results-hero-content">
+          <div className="v2-results-hero-title-row">
+            <h2 className="v2-results-hero-title">Direct Schema Coupling Matrix</h2>
+            <div className="v2-results-stage-tag">
+              <Sparkles size={12} />
+              <span>Stage 2 of 6 &bull; AI Schema Coupling</span>
+            </div>
+          </div>
+          <p className="v2-results-hero-desc">
+            Autonomous agents have matched <strong>{gstrFileName}</strong> columns against <strong>{prFileName}</strong> schema.
+            Review, calibrate, and confirm field linkages below.
+          </p>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div className="v2-file-badge-pill">
-            <FileSpreadsheet size={13} style={{ color: "#0091da" }} />
-            <span>{gstrFileName}</span>
-            <span style={{ color: "#94a3b8" }}>⟷</span>
-            <FileSpreadsheet size={13} style={{ color: "#6d2077" }} />
-            <span>{prFileName}</span>
-          </div>
-
+        <div className="v2-results-hero-actions">
+          {agentThoughts && agentThoughts.length > 0 && (
+            <button
+              type="button"
+              className="v2-btn-rerun"
+              onClick={() => setShowThoughtsModal(true)}
+              title="View agent reasoning trace"
+            >
+              <Sparkles size={14} />
+              <span>{reasoningSeconds ? `Reasoned in ${reasoningSeconds}s` : "Agent Reasoning"}</span>
+            </button>
+          )}
           {onConfirmMapping && (
             <button
               type="button"
-              disabled={disabled || isConfirmed}
+              className="v2-btn-primary-action"
               onClick={onConfirmMapping}
-              className="v2-btn-confirm-mapping"
+              disabled={disabled || isConfirmed}
+              title={isConfirmed ? "Schema mapping already confirmed" : "Confirm mappings and proceed to Rules"}
             >
               <span>{isConfirmed ? "Mapping Confirmed" : "Confirm Schema & Proceed"}</span>
-              <ArrowRight size={15} />
+              {isConfirmed ? <Check size={14} /> : <ArrowRight size={14} />}
             </button>
           )}
         </div>
       </div>
 
-      {/* Top Stage Action Bar */}
-      <ReconciliationV2ActionBar
-        position="top"
-        stageNumber={2}
-        backLabel="Back to Ingestion Setup"
-        onBack={onBackToSetup}
-        nextLabel={isConfirmed ? "Mapping Confirmed" : "Confirm Schema & Proceed"}
-        onNext={onConfirmMapping}
-        nextDisabled={disabled || isConfirmed}
-      />
-
-      {/* 2. AGENT OBSERVABLE TELEMETRY CONSOLE */}
-      {agentThoughts && agentThoughts.length > 0 && (
-        <AgentThinkingConsole
-          thoughts={agentThoughts}
-          modelUsed="Autonomous AgentAI"
-          totalDurationMs={totalDurationMs}
-        />
+      {/* AGENT THOUGHTS MODAL POPUP */}
+      {showThoughtsModal && agentThoughts && agentThoughts.length > 0 && (
+        <div className="v2-thoughts-modal-overlay" onClick={() => setShowThoughtsModal(false)}>
+          <div className="v2-thoughts-modal-shell" onClick={(e) => e.stopPropagation()}>
+            <div className="v2-thoughts-modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Terminal size={14} style={{ color: "#38bdf8" }} />
+                <span>Agent Telemetry Trace &bull; Reconciliation 2.0</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span className="v2-thoughts-modal-engine-badge">
+                  Engine: Autonomous AgentAI
+                </span>
+                {reasoningSeconds && (
+                  <span className="v2-thoughts-modal-duration">
+                    {reasoningSeconds}s total
+                  </span>
+                )}
+                <button
+                  type="button"
+                  className="v2-thoughts-modal-close"
+                  onClick={() => setShowThoughtsModal(false)}
+                  title="Close"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <div className="v2-thoughts-modal-body">
+              {agentThoughts.map((thought, idx) => {
+                const { label, icon } = formatStep(thought.step);
+                return (
+                  <div key={idx} className="v2-thought-item">
+                    <div className="v2-thought-step">
+                      {icon}
+                      <span>{label}</span>
+                    </div>
+                    <div className="v2-thought-msg">
+                      {cleanMessage(thought.message)}
+                    </div>
+                    {thought.duration_ms > 0 && (
+                      <span className="v2-thought-ms">
+                        {thought.duration_ms.toFixed(1)}ms
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 3. MAIN INTERACTIVE N x M SCHEMA STREAM CARD */}
