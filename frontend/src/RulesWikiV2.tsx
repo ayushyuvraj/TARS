@@ -1548,6 +1548,8 @@ export const RulesWikiV2: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+        </div>
       </div>
     </div>
   );
