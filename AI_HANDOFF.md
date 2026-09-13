@@ -1,5 +1,24 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Rules Wiki Top Ribbon Logo & Animation Standardization (14th September 2026)
+
+- **Checkpoint Name**: `Rules Wiki Top Ribbon Logo & Animation Standardization`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-14-ruleswiki-ribbon-logo-animation-checkpoint`
+- **Current HEAD Commit**: `067a96b`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Brand Logo Synchronization*:
+     - Replaced generic `Sparkles` icon in the top telemetry ribbon on `RulesWikiV2.tsx` with the official Rules Wiki icon (`SlidersHorizontal`) from the left navigation sidebar panel.
+  2. *Rotation & Glow Animation (`.v2-rules-icon-spin`)*:
+     - Applied continuous 12s linear rotation with cyan drop-shadow halo glow, accelerating to 4s on hover.
+  3. *Cross-Workspace Parity*:
+     - Synchronized 1:1 with Reconciliation (`Sparkles` + `.v2-sparkle-spin`) and Audit (`History` + `.v2-sparkle-spin`).
+  4. *Zero Functional Drift*:
+     - Strictly UI and visual telemetry synchronization; zero logic or database changes.
+
+---
+
 ## Rules Wiki Mac Studio Pro 2-Column Bento Inspector Redesign (14th September 2026)
 
 - **Checkpoint Name**: `Rules Wiki Mac Studio Pro 2-Column Bento Inspector Redesign`

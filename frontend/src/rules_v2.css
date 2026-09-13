@@ -1432,6 +1432,19 @@
   white-space: nowrap;
 }
 
+/* Rules Top Ribbon Brand Icon Spin & Glow Animation */
+.v2-rules-icon-spin {
+  animation: v2SlowSpin 12s linear infinite;
+  color: #72cdf4;
+  filter: drop-shadow(0 0 4px rgba(114, 205, 244, 0.5));
+  transition: filter 0.2s ease;
+}
+
+.v2-brand-icon-halo:hover .v2-rules-icon-spin {
+  animation-duration: 4s;
+  filter: drop-shadow(0 0 7px rgba(114, 205, 244, 0.85));
+}
+
 /* Apple-Style macOS Fluid Toggle Switch */
 .v2-apple-switch {
   position: relative;

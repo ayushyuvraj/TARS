@@ -18,6 +18,7 @@ import {
   Clock,
   ShieldCheck,
   Sliders,
+  SlidersHorizontal,
   X,
   StopCircle,
   Activity,
@@ -431,7 +432,7 @@ export const RulesWikiV2: React.FC = () => {
         <div className="v2-telemetry-left">
           <div className="v2-brand-pill">
             <div className="v2-brand-icon-halo">
-              <Sparkles size={13} className="v2-sparkle-spin" />
+              <SlidersHorizontal size={13} className="v2-rules-icon-spin" />
             </div>
             <span className="v2-brand-title">RULES WIKI</span>
           </div>
