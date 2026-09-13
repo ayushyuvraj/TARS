@@ -156,6 +156,43 @@ export const ReconciliationV2Workspace: React.FC = () => {
     }
   };
 
+  // Independent stage completion predicate (uncoupled from active stage navigation pointer)
+  const isStageCompleted = (stageKey: V2Stage): boolean => {
+    switch (stageKey) {
+      case "setup":
+        return Boolean(
+          correlationResult !== null ||
+          (gstrFile && prFile) ||
+          (sessionStatus && sessionStatus !== "initialized")
+        );
+      case "mapping":
+        return Boolean(
+          mappingConfirmed ||
+          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "results", "summary", "export"].includes(sessionStatus))
+        );
+      case "rules":
+      case "policy":
+        return Boolean(
+          rulesConfirmed ||
+          (sessionStatus && ["rules_confirmed", "results", "summary", "export"].includes(sessionStatus))
+        );
+      case "results":
+        return Boolean(
+          hasVisitedResults ||
+          (sessionStatus && ["results", "summary", "export"].includes(sessionStatus))
+        );
+      case "summary":
+        return Boolean(
+          hasVisitedSummary ||
+          (sessionStatus && ["summary", "export"].includes(sessionStatus))
+        );
+      case "export":
+        return Boolean(sessionStatus === "export");
+      default:
+        return false;
+    }
+  };
+
   // Auto-trigger when both files are selected
   const hasAutoTriggered = useRef(false);
 
@@ -358,6 +395,11 @@ export const ReconciliationV2Workspace: React.FC = () => {
   const executeFastUploadAndMapping = async (file1: File, file2: File) => {
     setIsUploadingAndCorrelating(true);
     setErrorMessage(null);
+    // Upstream Data Change Invalidation: Reset downstream completion flags when re-ingesting files
+    setMappingConfirmed(false);
+    setRulesConfirmed(false);
+    setHasVisitedResults(false);
+    setHasVisitedSummary(false);
     const startTime = Date.now();
 
     // Reset and begin Step 1
@@ -480,6 +522,10 @@ export const ReconciliationV2Workspace: React.FC = () => {
     try {
       await apiV2.confirmMapping(sessionId, correlationResult.correlations);
       setMappingConfirmed(true);
+      // Upstream Data Change Invalidation: Reset downstream completion flags when mapping is modified/confirmed
+      setRulesConfirmed(false);
+      setHasVisitedResults(false);
+      setHasVisitedSummary(false);
       setSessionStatus("mapping_confirmed");
       setCurrentStage("rules");
       navigate(`/reconciliations-v2/${sessionId}/rules`);
@@ -503,6 +549,9 @@ export const ReconciliationV2Workspace: React.FC = () => {
     setCorrelationResult(null);
     setAgentThoughts([]);
     setMappingConfirmed(false);
+    setRulesConfirmed(false);
+    setHasVisitedResults(false);
+    setHasVisitedSummary(false);
     hasAutoTriggered.current = false;
     setCurrentStage("setup");
     try {
@@ -544,7 +593,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
             <div className="v2-session-badge-group">
               <div
                 className="v2-session-badge"
-                title={`Session ID: ${sessionId} (Click to copy)`}
+                title={`Click to copy Session UUID: ${sessionId}`}
                 onClick={() => {
                   navigator.clipboard.writeText(sessionId);
                 }}
@@ -570,19 +619,9 @@ export const ReconciliationV2Workspace: React.FC = () => {
       <nav className="v2-pipeline-ribbon">
         <div className="v2-pipeline-track">
           {V2_STAGES.map((s, idx) => {
-            const stageOrder: Record<string, number> = {
-              setup: 1,
-              mapping: 2,
-              rules: 3,
-              policy: 3,
-              results: 4,
-              summary: 5,
-              export: 6,
-            };
-            const currentStageNum = stageOrder[currentStage] || 1;
             const isActive = currentStage === s.key;
             const isUnlocked = isStageUnlocked(s.key);
-            const isCompleted = isUnlocked && currentStageNum > s.number;
+            const isCompleted = isStageCompleted(s.key);
             const isLocked = !isUnlocked;
 
             return (
@@ -609,7 +648,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
                   {isActive && <div className="v2-node-active-bar" />}
                 </button>
                 {idx < V2_STAGES.length - 1 && (
-                  <div className={`v2-pipeline-connector ${isUnlocked && currentStageNum > s.number ? "is-filled" : ""}`} />
+                  <div className={`v2-pipeline-connector ${isCompleted ? "is-filled" : ""}`} />
                 )}
               </React.Fragment>
             );

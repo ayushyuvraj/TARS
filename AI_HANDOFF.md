@@ -31,6 +31,11 @@
      - Anchored `AGENT ACTIVE` pill (`.v2-agent-badge`) and `Session ID` badge (`.v2-session-badge`) so their horizontal base positions never shift or jump rightward when clicking refresh or during session resets.
      - Added unboxed refresh icon button (`.v2-btn-reset-icon`) in `.v2-session-badge-group` with `@keyframes v2RefreshIconPopIn` (subtle scale & rotate entrance) and smooth `@keyframes v2RefreshSpin` (360° spin feedback when active).
      - Live browser measurement confirmed 0px horizontal shift across all session interactions.
+  5. *Persistent Stage Completion Ticks & Data Invalidation Cascades*:
+     - Decoupled stage completion (`isCompleted`) in the executive stepper ribbon from the active navigation pointer (`currentStageNum`).
+     - Added `isStageCompleted(stageKey)` predicate based on completed session indicators (`correlationResult`, `mappingConfirmed`, `rulesConfirmed`, `hasVisitedResults`, `hasVisitedSummary`).
+     - Navigating backward (e.g. from Stage 4 to Stage 1) preserves checkmarks (`✓`) on all previously completed stages.
+     - Modifying upstream data at earlier stages (e.g. re-ingesting files in Stage 1 or re-confirming column mappings in Stage 2) invalidates downstream stage flags and clears downstream checkmarks for re-execution.
 
 ---
 
