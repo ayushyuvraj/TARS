@@ -1,5 +1,24 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Stage 5 & 6 Dark Cobalt Hero Banner Standardization (13th September 2026)
+
+- **Checkpoint Name**: `Stage 5 & 6 Dark Cobalt Hero Banner Standardization`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-13-stage5-6-hero-banner-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Unified Dark Royal Cobalt Hero Banner (`.v2-results-hero`)*:
+     - Standardized Stage 5 (`ReconciliationV2SummaryStage.tsx`) and Stage 6 (`ReconciliationV2ExportStage.tsx`) top banners to match Stage 4 (`ReconciliationV2ResultsStage.tsx`), Stage 3, Stage 2, and Stage 1.
+     - Replaced separate light white header card (`v2-stage-header-card`) and top action bar with unified 156px dark royal cobalt hero banner.
+  2. *Standardized Navigation & Action Button Layout*:
+     - Left navigation (`.v2-hero-nav-left`): Back button embedded directly inside the banner (`Back to Results Matrix` on Stage 5, `Back to Summary Dashboard` on Stage 6).
+     - Center hero content (`.v2-results-hero-content`): Title, stage eyebrow tag, and operational description.
+     - Right primary actions (`.v2-results-hero-actions`): Next / Action button embedded directly on the right (`Proceed to Ledger Export` on Stage 5, `Quick Export (.xlsx)` & `Complete` on Stage 6).
+  3. *Zero Functional Drift & Code Cleanliness*:
+     - Preserved all financial ledger export logic, summary KPI metrics, ambiguity classifications, and session state intact.
+
+---
+
 ## Stage 3-4 Layout Harmonization, Stage 1 Alignment, & Stage 4 Dynamic 5-Pass Reconciliation Modal (13th September 2026)
 
 - **Checkpoint Name**: `Stage 3-4 Layout Harmonization, Stage 1 Alignment, & Stage 4 Dynamic 5-Pass Reconciliation Modal`

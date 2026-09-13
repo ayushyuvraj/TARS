@@ -13,6 +13,7 @@ import {
 } from "./api_v2";
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import "./summary_export_v2.css";
+import "./results_v2.css";
 import {
   Sparkles,
   ShieldCheck,
@@ -21,6 +22,7 @@ import {
   CheckCircle2,
   Layers,
   ArrowRight,
+  ArrowLeft,
   Filter,
   Check,
   Info,
@@ -378,28 +380,45 @@ export const ReconciliationV2SummaryStage: React.FC<ReconciliationV2SummaryStage
 
   return (
     <div className="v2-summary-container">
-      {/* Header Info */}
-      <header className="v2-stage-header-card">
-        <span className="v2-stage-eyebrow">
-          <Sparkles size={13} />
-          Stage 5 of 6: Executive Reconciliation Intelligence
-        </span>
-        <h1 className="v2-stage-title">Executive Summary & Operational Process Flight Deck</h1>
-        <p className="v2-stage-desc">
-          Holistic synthesis of match disposition, ambiguity classification, data quality highlights, and forward-looking
-          operational directives prior to month-end financial ledger export.
-        </p>
-      </header>
+      {/* 1. HERO BANNER */}
+      <div className="v2-results-hero">
+        <div className="v2-hero-nav-left">
+          <button
+            type="button"
+            className="v2-hero-btn-back"
+            onClick={onBack}
+            title="Return to Stage 4: Reconciliation Results Matrix"
+            aria-label="Back to previous screen"
+          >
+            <ArrowLeft size={15} />
+            <span>Back to Results Matrix</span>
+          </button>
+        </div>
 
-      {/* Top Action Bar */}
-      <ReconciliationV2ActionBar
-        position="top"
-        stageNumber={5}
-        backLabel="Back to Results Matrix"
-        onBack={onBack}
-        nextLabel="Proceed to Ledger Export"
-        onNext={onProceedToExport}
-      />
+        <div className="v2-results-hero-content">
+          <div className="v2-results-hero-title-row">
+            <h2 className="v2-results-hero-title">Executive Summary &amp; Operational Process Flight Deck</h2>
+            <div className="v2-results-stage-tag">
+              <Sparkles size={12} />
+              <span>Stage 5 of 6 &bull; Executive Reconciliation Intelligence</span>
+            </div>
+          </div>
+          <p className="v2-results-hero-desc">
+            Holistic synthesis of match disposition, ambiguity classification, data quality highlights, and forward-looking operational directives prior to month-end financial ledger export.
+          </p>
+        </div>
+
+        <div className="v2-results-hero-actions">
+          <button
+            type="button"
+            className="v2-btn-primary-action"
+            onClick={onProceedToExport}
+          >
+            <span>Proceed to Ledger Export</span>
+            <ArrowRight size={14} />
+          </button>
+        </div>
+      </div>
 
       {/* 4 Core Operational & Quality KPIs (Zero Rupee Sums) */}
       <section className="v2-kpi-grid">

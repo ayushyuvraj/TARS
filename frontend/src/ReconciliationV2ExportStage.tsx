@@ -11,8 +11,10 @@ import {
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import { ExcelColorPicker } from "./ExcelColorPicker";
 import "./summary_export_v2.css";
+import "./results_v2.css";
 import {
   Sparkles,
+  ArrowLeft,
   FileSpreadsheet,
   Download,
   AlertTriangle,
@@ -369,28 +371,44 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
 
   return (
     <div className="v2-export-container">
-      {/* Top Header Card */}
-      <header className="v2-stage-header-card">
-        <span className="v2-stage-eyebrow">
-          <Sparkles size={13} />
-          Stage 6 of 6: Visual Export Studio & Ledger Designer
-        </span>
-        <h1 className="v2-stage-title">Custom Export Studio & Financial Ledger Designer</h1>
-        <p className="v2-stage-desc">
-          Select, reorder, style, and apply conditional formatting across all GSTR portal columns, ERP purchase
-          register columns, and computed reconciliation metrics. Save designs as reusable presets.
-        </p>
-      </header>
+      {/* 1. HERO BANNER */}
+      <div className="v2-results-hero">
+        <div className="v2-hero-nav-left">
+          <button
+            type="button"
+            className="v2-hero-btn-back"
+            onClick={onBack}
+            title="Return to Stage 5: Executive Summary Dashboard"
+            aria-label="Back to previous screen"
+          >
+            <ArrowLeft size={15} />
+            <span>Back to Summary Dashboard</span>
+          </button>
+        </div>
 
-      {/* Action Bar */}
-      <ReconciliationV2ActionBar
-        position="top"
-        stageNumber={6}
-        backLabel="Back to Summary Dashboard"
-        onBack={onBack}
-        nextLabel={isDownloading ? "Exporting..." : "Quick Export (.xlsx)"}
-        onNext={() => handleCustomExport("xlsx")}
-        extraRight={
+        <div className="v2-results-hero-content">
+          <div className="v2-results-hero-title-row">
+            <h2 className="v2-results-hero-title">Custom Export Studio &amp; Financial Ledger Designer</h2>
+            <div className="v2-results-stage-tag">
+              <Sparkles size={12} />
+              <span>Stage 6 of 6 &bull; Visual Export Studio &amp; Ledger Designer</span>
+            </div>
+          </div>
+          <p className="v2-results-hero-desc">
+            Select, reorder, style, and apply conditional formatting across all GSTR portal columns, ERP purchase register columns, and computed reconciliation metrics. Save designs as reusable presets.
+          </p>
+        </div>
+
+        <div className="v2-results-hero-actions">
+          <button
+            type="button"
+            className="v2-btn-primary-action"
+            onClick={() => handleCustomExport("xlsx")}
+            disabled={isDownloading}
+          >
+            <span>{isDownloading ? "Exporting..." : "Quick Export (.xlsx)"}</span>
+            <Download size={14} />
+          </button>
           <button
             type="button"
             className="v2-btn-complete-kpmg"
@@ -401,8 +419,8 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
             {isCompleting ? <RefreshCw className="animate-spin" size={15} /> : <CheckCircle2 size={16} />}
             <span>Complete</span>
           </button>
-        }
-      />
+        </div>
+      </div>
 
       {/* TOP BAR CONTROLS: Presets + Format Dropdown */}
       <section className="v2-export-studio-topbar">
