@@ -30,7 +30,7 @@
 .v2-results-hero {
   background: linear-gradient(135deg, #0a192f 0%, #0d274c 50%, #00338d 100%);
   border-radius: 12px;
-  padding: 12px 20px;
+  padding: 20px 24px;
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -42,7 +42,10 @@
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  gap: 16px;
+  gap: 20px;
+  min-height: 156px;
+  height: 156px;
+  flex-shrink: 0;
 }
 
 .v2-results-hero::before {
@@ -61,8 +64,9 @@
   align-items: center;
   z-index: 1;
   flex-shrink: 0;
-  padding-right: 14px;
+  padding-right: 18px;
   border-right: 1px solid rgba(255, 255, 255, 0.14);
+  align-self: stretch;
 }
 
 .v2-hero-btn-back {

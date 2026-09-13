@@ -25,6 +25,7 @@ import {
   ShieldCheck,
   RefreshCw,
   ArrowRight,
+  ArrowLeft,
   ArrowLeftRight,
   Check,
   Trash2,
@@ -426,48 +427,33 @@ export const ReconciliationV2Workspace: React.FC = () => {
             <div className="v2-brand-icon-halo">
               <Sparkles size={13} className="v2-sparkle-spin" />
             </div>
-            <span className="v2-brand-title">RECONCILIATION 2.0</span>
-            <span className="v2-chip-vector">VECTORIZED</span>
-          </div>
-
-          <div className="v2-agent-status-pill">
-            <span className="v2-status-dot-pulse" />
-            <span>AUTONOMOUS AGENT FABRIC ACTIVE</span>
-          </div>
-        </div>
-
-        <div className="v2-telemetry-center">
-          <div className="v2-hud-metric">
-            <Zap size={12} className="v2-metric-icon" />
-            <span className="v2-metric-label">SPEED:</span>
-            <span className="v2-metric-value">&lt;180MS</span>
-          </div>
-          <span className="v2-hud-divider" />
-          <div className="v2-hud-metric">
-            <Layers size={12} className="v2-metric-icon" />
-            <span className="v2-metric-label">CAPACITY:</span>
-            <span className="v2-metric-value">5 LAKH ROWS</span>
-          </div>
-          <span className="v2-hud-divider" />
-          <div className="v2-hud-metric">
-            <ShieldCheck size={12} className="v2-metric-icon" />
-            <span className="v2-metric-label">GUARDRAIL:</span>
-            <span className="v2-metric-value">100% AUDIT ACCURACY</span>
+            <span className="v2-brand-title">RECONCILIATION</span>
           </div>
         </div>
 
         <div className="v2-telemetry-right">
+          <div className="v2-agent-status-pill" title="Autonomous Agent Fabric Active">
+            <span className="v2-status-dot-pulse" />
+            <span>AGENT ACTIVE</span>
+          </div>
+
           {sessionId && (
-            <span className="v2-session-badge">
-              SESSION: {sessionId.slice(0, 8)}
-            </span>
+            <div
+              className="v2-session-badge"
+              title={`Session ID: ${sessionId} (Click to copy)`}
+              onClick={() => {
+                navigator.clipboard.writeText(sessionId);
+              }}
+            >
+              <span className="v2-session-id">{sessionId}</span>
+            </div>
           )}
           {(gstrFile || correlationResult) && (
             <button
               type="button"
               onClick={resetAll}
               className="v2-btn-reset"
-              title="Reset Reconciliation 2.0"
+              title="Reset Reconciliation"
             >
               <RefreshCw size={11} />
               <span>Reset</span>
@@ -512,7 +498,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
                   className={`v2-pipeline-node ${isActive ? "is-active" : ""} ${isCompleted ? "is-completed" : ""}`}
                 >
                   <div className="v2-node-number-ring">
-                    {isCompleted ? <Check size={11} strokeWidth={3} /> : s.number}
+                    {isCompleted ? <Check size={12} strokeWidth={2.5} /> : s.number}
                   </div>
                   <div className="v2-node-text-col">
                     <span className="v2-node-label">{s.label}</span>
@@ -545,43 +531,77 @@ export const ReconciliationV2Workspace: React.FC = () => {
         {/* ========================================================================= */}
         {currentStage === "setup" && (
           <div className="v2-setup-flow">
-            {/* Hero Section (Compact Zero-Scroll Header) */}
-            <div className="v2-hero-deck">
-              <div className="v2-hero-kicker-pill">
-                <Sparkles size={12} />
-                <span>AUTONOMOUS HIGH-SPEED INGESTION</span>
+            {/* 1. HERO BANNER (Unified Dark Royal Cobalt matching Stage 4) */}
+            <div className="v2-stage-hero">
+              <div className="v2-hero-nav-left">
+                <button
+                  type="button"
+                  className="v2-hero-btn-back"
+                  onClick={() => navigate("/dashboard")}
+                  title="Return to Executive Dashboard"
+                  aria-label="Back to Dashboard"
+                >
+                  <ArrowLeft size={15} />
+                  <span>Dashboard</span>
+                </button>
               </div>
-              <h1 className="v2-hero-heading">Bring the two ledgers together.</h1>
-              <p className="v2-hero-subheading">
-                Upload your Government GSTR-2B extract and Purchase Register. Intelligent agents automatically match columns in seconds.
-              </p>
+
+              <div className="v2-stage-hero-center">
+                <h2 className="v2-stage-hero-title">Bring the two ledgers together.</h2>
+                <div className="v2-stage-hero-tag">
+                  <Sparkles size={12} />
+                  <span>Stage 1 of 6 • Dual Ingestion Docking Bay</span>
+                </div>
+                <p className="v2-stage-hero-desc">
+                  Upload your Government GSTR-2B extract and Purchase Register. Intelligent agents automatically match columns in seconds.
+                </p>
+              </div>
+
+              <div className="v2-stage-hero-actions">
+                {(gstrFile || prFile) && (
+                  <button
+                    type="button"
+                    className="v2-hero-btn-secondary"
+                    onClick={() => {
+                      setGstrFile(null);
+                      setPrFile(null);
+                    }}
+                    title="Clear selected workbooks"
+                  >
+                    <Trash2 size={13} />
+                    <span>Clear Files</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="v2-btn-primary-action"
+                  onClick={() => {
+                    if (correlationResult) {
+                      setCurrentStage("mapping");
+                      if (sessionId) navigate(`/reconciliations-v2/${sessionId}/mapping`);
+                    } else if (gstrFile && prFile) {
+                      executeFastUploadAndMapping(gstrFile, prFile);
+                    }
+                  }}
+                  disabled={(!gstrFile || !prFile) && !correlationResult}
+                  title="Proceed to Stage 2: Schema Mapping"
+                >
+                  {isUploadingAndCorrelating ? (
+                    <>
+                      <RefreshCw size={14} className="v2-spin" />
+                      <span>Correlating Schemas…</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Proceed to Schema Mapping</span>
+                      <ArrowRight size={14} />
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
-            {/* Top Stage Action Bar */}
-            <ReconciliationV2ActionBar
-              position="top"
-              stageNumber={1}
-              nextLabel={isUploadingAndCorrelating ? "Correlating Schemas…" : "Proceed to Schema Mapping"}
-              onNext={() => {
-                if (correlationResult) {
-                  setCurrentStage("mapping");
-                  if (sessionId) navigate(`/reconciliations-v2/${sessionId}/mapping`);
-                } else if (gstrFile && prFile) {
-                  executeFastUploadAndMapping(gstrFile, prFile);
-                }
-              }}
-              nextDisabled={(!gstrFile || !prFile) && !correlationResult}
-              isNextLoading={isUploadingAndCorrelating}
-              nextLoadingText="Correlating Schemas…"
-              extraLeft={
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
-                  <Sparkles size={14} color="#00338d" />
-                  <span>Stage 1 of 6: Dual Ingestion Docking Bay</span>
-                </div>
-              }
-            />
-
-            {/* Ingestion Docking Bay Terminals */}
+            {/* Ingestion Docking Bay Terminals (Doppelrand Architecture) */}
             <div className="v2-docking-grid">
               {/* TERMINAL 1: GOVERNMENT GSTR-2B */}
               <div
@@ -595,81 +615,85 @@ export const ReconciliationV2Workspace: React.FC = () => {
                   setIsDraggingOver(null);
                   if (e.dataTransfer.files?.[0]) setGstrFile(e.dataTransfer.files[0]);
                 }}
-                className={`v2-dock-terminal gstr ${isDraggingOver === "gstr" ? "is-dragging" : ""} ${gstrFile ? "has-payload" : ""}`}
+                className={`v2-dock-shell gstr ${isDraggingOver === "gstr" ? "is-dragging" : ""} ${gstrFile ? "has-payload" : ""}`}
               >
-                {/* Terminal Header Bar */}
-                <div className="v2-terminal-header">
-                  <div className="v2-terminal-tag">
-                    <span className="v2-dot-indicator blue" />
-                    <span>TAX AUTHORITY LEDGER</span>
+                <div className="v2-dock-core">
+                  {/* Terminal Header Bar */}
+                  <div className="v2-terminal-header">
+                    <div className="v2-terminal-tag">
+                      <span className="v2-dot-indicator blue" />
+                      <span>TAX AUTHORITY LEDGER</span>
+                    </div>
+                    <span className="v2-format-badge">OFFICIAL GSTN PORTAL</span>
                   </div>
-                  <span className="v2-format-badge">OFFICIAL GSTN PORTAL</span>
-                </div>
 
-                {/* Content Bay */}
-                <div className="v2-terminal-body">
-                  {gstrFile ? (
-                    <div className="v2-payload-card">
-                      <div className="v2-payload-glyph blue">
-                        <CheckCircle2 size={26} />
-                      </div>
-                      <div className="v2-payload-meta">
-                        <span className="v2-payload-state-chip">SOURCE 1 READY</span>
-                        <h4 className="v2-payload-title" title={gstrFile.name}>{gstrFile.name}</h4>
-                        <div className="v2-payload-specs">
-                          <span>{formatFileSize(gstrFile.size)}</span>
-                          <span>•</span>
-                          <span>Ready to Correlate</span>
+                  {/* Content Bay */}
+                  <div className="v2-terminal-body">
+                    {gstrFile ? (
+                      <div className="v2-payload-card">
+                        <div className="v2-payload-glyph">
+                          <CheckCircle2 size={24} />
                         </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setGstrFile(null);
-                          hasAutoTriggered.current = false;
-                        }}
-                        className="v2-payload-remove-btn"
-                        title="Remove file"
-                      >
-                        <Trash2 size={12} />
-                        <span>Remove</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="v2-drop-prompt">
-                      <div className="v2-holographic-halo blue">
-                        <FileSpreadsheet size={28} className="v2-holo-icon" />
-                      </div>
-                      <h3 className="v2-drop-title">Government GSTR-2B</h3>
-                      <p className="v2-drop-subtitle">
-                        Drag & drop official GST portal download or browse local files
-                      </p>
-
-                      <label className="v2-browse-button blue">
-                        <UploadCloud size={15} />
-                        <span>Select GSTR-2B File</span>
-                        <input
-                          type="file"
-                          accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                          style={{ display: "none" }}
-                          onChange={(e) => {
-                            if (e.target.files?.[0]) setGstrFile(e.target.files[0]);
+                        <div className="v2-payload-meta">
+                          <span className="v2-payload-state-chip">SOURCE 1 READY</span>
+                          <h4 className="v2-payload-title" title={gstrFile.name}>{gstrFile.name}</h4>
+                          <div className="v2-payload-specs">
+                            <span>{formatFileSize(gstrFile.size)}</span>
+                            <span>•</span>
+                            <span>Ready to Correlate</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setGstrFile(null);
+                            hasAutoTriggered.current = false;
                           }}
-                        />
-                      </label>
-                    </div>
-                  )}
+                          className="v2-payload-remove-btn"
+                          title="Remove file"
+                        >
+                          <Trash2 size={12} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="v2-drop-prompt">
+                        <div className="v2-holographic-halo blue">
+                          <FileSpreadsheet size={22} className="v2-holo-icon" />
+                        </div>
+                        <h3 className="v2-drop-title">Government GSTR-2B</h3>
+                        <p className="v2-drop-subtitle">
+                          Drag & drop official GST portal download or browse local files
+                        </p>
+
+                        <label className="v2-browse-button blue">
+                          <span className="v2-btn-icon-capsule">
+                            <UploadCloud size={13} />
+                          </span>
+                          <span>Select GSTR-2B File</span>
+                          <input
+                            type="file"
+                            accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            style={{ display: "none" }}
+                            onChange={(e) => {
+                              if (e.target.files?.[0]) setGstrFile(e.target.files[0]);
+                            }}
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* CENTER NEURAL NEXUS (AI BRIDGE) */}
+              {/* CENTER NEURAL NEXUS (AI OPTICAL BRIDGE) */}
               <div className="v2-neural-nexus">
                 <div className="v2-nexus-core">
                   <div className="v2-pulse-ring-outer" />
                   <div className="v2-pulse-ring-inner" />
                   <div className="v2-nexus-badge">
-                    <Sparkles size={18} className="v2-sparkle-spin" />
+                    <Sparkles size={16} className="v2-sparkle-spin" />
                   </div>
                 </div>
                 <div className="v2-nexus-label-col">
@@ -677,7 +701,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
                   <span className="v2-nexus-sub">Autonomous Correlator</span>
                 </div>
                 <div className="v2-nexus-flow-arrow">
-                  <ArrowLeftRight size={16} />
+                  <ArrowLeftRight size={15} />
                 </div>
               </div>
 
@@ -693,71 +717,75 @@ export const ReconciliationV2Workspace: React.FC = () => {
                   setIsDraggingOver(null);
                   if (e.dataTransfer.files?.[0]) setPrFile(e.dataTransfer.files[0]);
                 }}
-                className={`v2-dock-terminal pr ${isDraggingOver === "pr" ? "is-dragging" : ""} ${prFile ? "has-payload" : ""}`}
+                className={`v2-dock-shell pr ${isDraggingOver === "pr" ? "is-dragging" : ""} ${prFile ? "has-payload" : ""}`}
               >
-                {/* Terminal Header Bar */}
-                <div className="v2-terminal-header">
-                  <div className="v2-terminal-tag">
-                    <span className="v2-dot-indicator purple" />
-                    <span>CLIENT ACCOUNTING LEDGER</span>
+                <div className="v2-dock-core">
+                  {/* Terminal Header Bar */}
+                  <div className="v2-terminal-header">
+                    <div className="v2-terminal-tag">
+                      <span className="v2-dot-indicator steel" />
+                      <span>CLIENT ACCOUNTING LEDGER</span>
+                    </div>
+                    <span className="v2-format-badge">ERP REGISTER</span>
                   </div>
-                  <span className="v2-format-badge">ERP REGISTER</span>
-                </div>
 
-                {/* Content Bay */}
-                <div className="v2-terminal-body">
-                  {prFile ? (
-                    <div className="v2-payload-card">
-                      <div className="v2-payload-glyph purple">
-                        <CheckCircle2 size={26} />
-                      </div>
-                      <div className="v2-payload-meta">
-                        <span className="v2-payload-state-chip purple">SOURCE 2 READY</span>
-                        <h4 className="v2-payload-title" title={prFile.name}>{prFile.name}</h4>
-                        <div className="v2-payload-specs">
-                          <span>{formatFileSize(prFile.size)}</span>
-                          <span>•</span>
-                          <span>Ready to Correlate</span>
+                  {/* Content Bay */}
+                  <div className="v2-terminal-body">
+                    {prFile ? (
+                      <div className="v2-payload-card">
+                        <div className="v2-payload-glyph">
+                          <CheckCircle2 size={24} />
                         </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPrFile(null);
-                          hasAutoTriggered.current = false;
-                        }}
-                        className="v2-payload-remove-btn"
-                        title="Remove file"
-                      >
-                        <Trash2 size={12} />
-                        <span>Remove</span>
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="v2-drop-prompt">
-                      <div className="v2-holographic-halo purple">
-                        <Database size={28} className="v2-holo-icon" />
-                      </div>
-                      <h3 className="v2-drop-title">Purchase Register / ERP</h3>
-                      <p className="v2-drop-subtitle">
-                        Drag & drop your client accounts workbook or browse local storage
-                      </p>
-
-                      <label className="v2-browse-button purple">
-                        <UploadCloud size={15} />
-                        <span>Select Purchase Register</span>
-                        <input
-                          type="file"
-                          accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                          style={{ display: "none" }}
-                          onChange={(e) => {
-                            if (e.target.files?.[0]) setPrFile(e.target.files[0]);
+                        <div className="v2-payload-meta">
+                          <span className="v2-payload-state-chip">SOURCE 2 READY</span>
+                          <h4 className="v2-payload-title" title={prFile.name}>{prFile.name}</h4>
+                          <div className="v2-payload-specs">
+                            <span>{formatFileSize(prFile.size)}</span>
+                            <span>•</span>
+                            <span>Ready to Correlate</span>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPrFile(null);
+                            hasAutoTriggered.current = false;
                           }}
-                        />
-                      </label>
-                    </div>
-                  )}
+                          className="v2-payload-remove-btn"
+                          title="Remove file"
+                        >
+                          <Trash2 size={12} />
+                          <span>Remove</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="v2-drop-prompt">
+                        <div className="v2-holographic-halo steel">
+                          <Database size={22} className="v2-holo-icon" />
+                        </div>
+                        <h3 className="v2-drop-title">Purchase Register / ERP</h3>
+                        <p className="v2-drop-subtitle">
+                          Drag & drop your client accounts workbook or browse local storage
+                        </p>
+
+                        <label className="v2-browse-button steel">
+                          <span className="v2-btn-icon-capsule">
+                            <UploadCloud size={13} />
+                          </span>
+                          <span>Select Purchase Register</span>
+                          <input
+                            type="file"
+                            accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            style={{ display: "none" }}
+                            onChange={(e) => {
+                              if (e.target.files?.[0]) setPrFile(e.target.files[0]);
+                            }}
+                          />
+                        </label>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -821,73 +849,71 @@ export const ReconciliationV2Workspace: React.FC = () => {
                   </button>
                 </div>
               ) : (
-                <div className="v2-awaiting-guidance">
-                  <span className="v2-guidance-pill">
-                    Awaiting both workbooks to deploy the TARS Agentic AI vectorized engine.
-                  </span>
+                <div className="v2-telemetry-conduit">
+                  <div className="v2-conduit-node">
+                    <span className={`v2-conduit-pip ${gstrFile ? "is-primed" : ""}`} />
+                    <span>Sovereign 2B {gstrFile ? "Primed" : "Awaiting"}</span>
+                  </div>
+                  <span className="v2-conduit-divider">•</span>
+                  <div className="v2-conduit-node">
+                    <span className={`v2-conduit-pip ${prFile ? "is-primed" : ""}`} />
+                    <span>Client ERP {prFile ? "Primed" : "Awaiting"}</span>
+                  </div>
                 </div>
               )}
             </div>
 
-            {/* Trust Architecture Cards (Functional, Non-Technical Plain English) */}
+            {/* Precision Enterprise Assurance Modules */}
             <div className="v2-trust-grid">
-              <div className="v2-trust-card">
-                <div className="v2-trust-icon-box blue">
-                  <Zap size={18} />
+              <div className="v2-trust-shell">
+                <div className="v2-trust-core">
+                  <span className="v2-trust-badge">High-Throughput Engine</span>
+                  <div className="v2-trust-header-row">
+                    <div className="v2-trust-icon-box blue">
+                      <Zap size={15} />
+                    </div>
+                    <h4>Instant Ingestion for 5 Lakh+ Rows</h4>
+                  </div>
+                  <p>
+                    Processes large multi-sheet Excel workbooks in seconds with zero browser freezing and memory virtualization.
+                  </p>
+                  <div className="v2-trust-foot">Tested up to 500,000 Line Items</div>
                 </div>
-                <h4>Instant Upload for 5 Lakh+ Rows</h4>
-                <p>
-                  Upload large Excel workbooks in less than a second. Built to handle 5 lakh rows smoothly with zero browser freezing.
-                </p>
-                <div className="v2-trust-foot">Tested up to 5 Lakh Rows</div>
               </div>
 
-              <div className="v2-trust-card">
-                <div className="v2-trust-icon-box purple">
-                  <Cpu size={18} />
+              <div className="v2-trust-shell">
+                <div className="v2-trust-core">
+                  <span className="v2-trust-badge">Autonomous Alignment</span>
+                  <div className="v2-trust-header-row">
+                    <div className="v2-trust-icon-box steel">
+                      <Cpu size={15} />
+                    </div>
+                    <h4>Smart Column Auto-Match</h4>
+                  </div>
+                  <p>
+                    Intelligent agents read varied ERP column headers (Bill No, Taxable Value, etc.) and accurately map to GSTN standards.
+                  </p>
+                  <div className="v2-trust-foot">Automatic Schema Detection</div>
                 </div>
-                <h4>Smart Column Auto-Match</h4>
-                <p>
-                  Intelligent agents read your ERP column names (like 'Bill No' or 'Taxable Amt') and automatically match them to official GST portal fields.
-                </p>
-                <div className="v2-trust-foot">Automatic Schema Detection</div>
               </div>
 
-              <div className="v2-trust-card">
-                <div className="v2-trust-icon-box green">
-                  <ShieldCheck size={18} />
+              <div className="v2-trust-shell">
+                <div className="v2-trust-core">
+                  <span className="v2-trust-badge">Statutory Integrity</span>
+                  <div className="v2-trust-header-row">
+                    <div className="v2-trust-icon-box green">
+                      <ShieldCheck size={15} />
+                    </div>
+                    <h4>Deterministic Tax Accuracy</h4>
+                  </div>
+                  <p>
+                    All GSTIN checksums and arithmetic computations verified down to the rupee. Autonomous advice, human authority.
+                  </p>
+                  <div className="v2-trust-foot">Auditable & Human-Governed</div>
                 </div>
-                <h4>100% Tax Accuracy Guarantee</h4>
-                <p>
-                  All tax calculations, GSTINs, and numbers are strictly verified down to the rupee. AI suggests matches, but you always stay in control.
-                </p>
-                <div className="v2-trust-foot">Auditable & Human-Governed</div>
               </div>
             </div>
 
-            {/* Bottom Stage Action Bar */}
-            <ReconciliationV2ActionBar
-              position="bottom"
-              stageNumber={1}
-              nextLabel={isUploadingAndCorrelating ? "Correlating Schemas…" : "Proceed to Schema Mapping"}
-              onNext={() => {
-                if (correlationResult) {
-                  setCurrentStage("mapping");
-                  if (sessionId) navigate(`/reconciliations-v2/${sessionId}/mapping`);
-                } else if (gstrFile && prFile) {
-                  executeFastUploadAndMapping(gstrFile, prFile);
-                }
-              }}
-              nextDisabled={(!gstrFile || !prFile) && !correlationResult}
-              isNextLoading={isUploadingAndCorrelating}
-              nextLoadingText="Correlating Schemas…"
-              extraLeft={
-                <div style={{ fontSize: 12.5, fontWeight: 600, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
-                  <Sparkles size={14} color="#00338d" />
-                  <span>Stage 1 of 6: Dual Ingestion Docking Bay</span>
-                </div>
-              }
-            />
           </div>
         )}
 

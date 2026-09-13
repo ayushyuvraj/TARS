@@ -806,8 +806,8 @@ export const Audit2Workspace: React.FC = () => {
                   onClick={() => handleSelectSession(sess)}
                 >
                   <div className="v2-audit-run-top">
-                    <span className="v2-audit-run-id" title={sess.session_id}>
-                      {sess.session_id.length > 20 ? sess.session_id.substring(0, 18) + "..." : sess.session_id}
+                    <span className="v2-audit-run-id" title={`Session ID: ${sess.session_id}`}>
+                      {sess.session_id}
                     </span>
                     <span
                       className={`v2-audit-status-badge ${
@@ -971,15 +971,14 @@ export const Audit2Workspace: React.FC = () => {
 
               {/* Meta Bar: Monospace Session Pill + Initiated + Last Mutation Timestamps (Full Width) */}
               <div className="v2-audit-header-meta-bar">
-                <div className="v2-audit-id-badge-wrap">
-                  <span className="v2-id-badge-label">SESSION</span>
-                  <code className="v2-id-badge-code" title={selectedSession.session_id}>
+                <div className="v2-audit-id-badge-wrap" title={`Session ID: ${selectedSession.session_id}`}>
+                  <code className="v2-id-badge-code">
                     {selectedSession.session_id}
                   </code>
                   <button
                     className="v2-inline-copy-btn"
                     onClick={() => handleCopyText(selectedSession.session_id, "session-id")}
-                    title="Copy full Session ID"
+                    title={`Copy full Session ID (${selectedSession.session_id})`}
                   >
                     {copyStatus === "session-id" ? <Check size={11} className="text-emerald-600" /> : <Copy size={11} />}
                   </button>
