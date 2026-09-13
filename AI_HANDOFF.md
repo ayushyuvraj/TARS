@@ -1,5 +1,25 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Rules Wiki & Audit Screen Telemetry & Dark Cobalt Hero Banner Standardization (13th September 2026)
+
+- **Checkpoint Name**: `Rules Wiki & Audit Screen Telemetry & Dark Cobalt Hero Banner Standardization`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-13-ruleswiki-audit-hero-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Top Telemetry Ribbon (`v2-telemetry-ribbon`)*:
+     - Added the signature 42px royal cobalt telemetry bar to `RulesWikiV2.tsx` with logo icon, spinning sparkle halo, brand title (`RULES WIKI`), `AGENT ACTIVE` pulse indicator, and real-time active rules counter (`Catalog v2.0 • 16 of 17 Active`).
+     - Standardized brand title on `Audit2Workspace.tsx` (`AUDIT LEDGER`) for 1:1 cross-workspace telemetry ribbon consistency.
+  2. *Universal Dark Royal Cobalt Hero Box (`.v2-results-hero`)*:
+     - Replaced light white header box on Rules Wiki (`RulesWikiV2.tsx`) with the exact 156px royal cobalt blue hero box matching Reconciliation Stage 1.
+     - Embedded left navigation button (`← Dashboard`), center title (`Rules Wiki 2.0`), eyebrow badge (`ENTERPRISE GOVERNANCE CATALOG`), operational description, and right primary action button (`Simulate`).
+  3. *Resolution & Layout Alignment*:
+     - Removed fixed `maxWidth: 1240` boundary on Rules Wiki, wrapping it in `<div className="v2-executive-root">` and `<div className="v2-stage-canvas">` so screen resolution, horizontal position, padding, and alignment match Reconciliation Stage 1 across all display sizes.
+  4. *Zero Functional Drift*:
+     - Zero underlying business logic, rule evaluation engines, simulation pipelines, or backend models modified.
+
+---
+
 ## Stage 5 & 6 Dark Cobalt Hero Banner Standardization (13th September 2026)
 
 - **Checkpoint Name**: `Stage 5 & 6 Dark Cobalt Hero Banner Standardization`

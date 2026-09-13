@@ -721,9 +721,11 @@ export const Audit2Workspace: React.FC = () => {
       {/* 1. TOP EXECUTIVE TELEMETRY BAR */}
       <header className="v2-audit-telemetry-bar">
         <div className="v2-audit-telemetry-left">
-          <div className="v2-audit-logo-pill">
-            <History size={14} className="text-emerald-400" />
-            <span>AUDIT 2.0 CONVERSATION LIFECYCLE</span>
+          <div className="v2-brand-pill">
+            <div className="v2-brand-icon-halo">
+              <History size={13} className="v2-sparkle-spin" />
+            </div>
+            <span className="v2-brand-title">AUDIT LEDGER</span>
           </div>
 
           <div className="v2-audit-statutory-pill" title="Indian Statutory GST Tax Compliance Invariant">

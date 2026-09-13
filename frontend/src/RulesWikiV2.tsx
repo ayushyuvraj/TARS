@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   apiV2,
   Rule2Item,
@@ -25,8 +26,12 @@ import {
   User,
   Layers,
   Sparkles,
+  ArrowLeft,
+  RefreshCw,
 } from "lucide-react";
 import "./rules_v2.css";
+import "./reconciliation_v2.css";
+import "./results_v2.css";
 
 const ALL_NORMALIZERS: { type: NormalizationType; label: string; description?: string }[] = [
   { type: "TRIM_WHITESPACE", label: "Clean Spaces", description: "Trim leading and trailing whitespace" },
@@ -54,6 +59,7 @@ function formatAuditDate(iso?: string | null): string {
 }
 
 export const RulesWikiV2: React.FC = () => {
+  const navigate = useNavigate();
   const [rules, setRules] = useState<Rule2Item[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
@@ -98,82 +104,78 @@ export const RulesWikiV2: React.FC = () => {
   const [explainingRule, setExplainingRule] = useState<Rule2Item | null>(null);
 
   // Load master catalog on mount with cross-storage synchronization
-  useEffect(() => {
-    let isMounted = true;
+  const loadMasterCatalog = useCallback(async () => {
     setIsLoading(true);
+    try {
+      const data = await apiV2.getRules2Catalog();
 
-    const loadCatalog = async () => {
+      let merged = [...(data || [])];
       try {
-        const data = await apiV2.getRules2Catalog();
-        if (!isMounted) return;
-
-        let merged = [...(data || [])];
-        try {
-          // 1. Check local master storage
-          const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
-          if (masterSaved) {
-            const parsedMaster: Rule2Item[] = JSON.parse(masterSaved);
-            for (const r of parsedMaster) {
-              if (!merged.some((m) => m.id === r.id || (r.canonical_concept && m.canonical_concept === r.canonical_concept))) {
-                merged.push(r);
-              }
+        // 1. Check local master storage
+        const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
+        if (masterSaved) {
+          const parsedMaster: Rule2Item[] = JSON.parse(masterSaved);
+          for (const r of parsedMaster) {
+            if (!merged.some((m) => m.id === r.id || (r.canonical_concept && m.canonical_concept === r.canonical_concept))) {
+              merged.push(r);
             }
           }
-          // 2. Check active session rules across localStorage
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && key.startsWith("tars_v2_rules_")) {
-              const raw = localStorage.getItem(key);
-              if (raw) {
-                const sessionRules: Rule2Item[] = JSON.parse(raw);
-                for (const sr of sessionRules) {
-                  if (
-                    (sr.is_custom || sr.is_ai_suggested || sr.category === "AI_SUGGESTED") &&
-                    !merged.some((m) => m.id === sr.id || (sr.canonical_concept && m.canonical_concept === sr.canonical_concept))
-                  ) {
-                    merged.push(sr);
-                  }
+        }
+        // 2. Check active session rules across localStorage
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith("tars_v2_rules_")) {
+            const raw = localStorage.getItem(key);
+            if (raw) {
+              const sessionRules: Rule2Item[] = JSON.parse(raw);
+              for (const sr of sessionRules) {
+                if (
+                  (sr.is_custom || sr.is_ai_suggested || sr.category === "AI_SUGGESTED") &&
+                  !merged.some((m) => m.id === sr.id || (sr.canonical_concept && m.canonical_concept === sr.canonical_concept))
+                ) {
+                  merged.push(sr);
                 }
               }
             }
           }
-        } catch (e) {
-          console.warn("Could not merge local rules into Rules Wiki 2.0:", e);
         }
-
-        merged = merged.map((r, idx) => ({
-          ...r,
-          execution_order: idx + 1,
-          created_at: r.created_at || "2026-08-01T00:00:00Z",
-          created_by: r.created_by || (r.is_ai_suggested ? "AI Data Engine (GPT-5.4-mini)" : "System Standard Baseline"),
-          created_in_run: r.created_in_run || "Master Catalog v2.0",
-          version: r.version || "1.0.0",
-        }));
-
-        setRules(merged);
-        try {
-          localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(merged));
-        } catch {}
-
-        if (data && merged.length > data.length) {
-          apiV2.saveRules2Catalog(merged).catch(() => {});
-        }
-      } catch (err) {
-        console.error("Failed to load Rules 2.0 catalog:", err);
-      } finally {
-        if (isMounted) setIsLoading(false);
+      } catch (e) {
+        console.warn("Could not merge local rules into Rules Wiki 2.0:", e);
       }
-    };
 
-    loadCatalog();
+      merged = merged.map((r, idx) => ({
+        ...r,
+        execution_order: idx + 1,
+        created_at: r.created_at || "2026-08-01T00:00:00Z",
+        created_by: r.created_by || (r.is_ai_suggested ? "AI Data Engine (GPT-5.4-mini)" : "System Standard Baseline"),
+        created_in_run: r.created_in_run || "Master Catalog v2.0",
+        version: r.version || "1.0.0",
+      }));
+
+      setRules(merged);
+      try {
+        localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(merged));
+      } catch {}
+
+      if (data && merged.length > data.length) {
+        apiV2.saveRules2Catalog(merged).catch(() => {});
+      }
+    } catch (err) {
+      console.error("Failed to load Rules 2.0 catalog:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadMasterCatalog();
 
     return () => {
-      isMounted = false;
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, []);
+  }, [loadMasterCatalog]);
 
   // Continuously persist any rule modifications to master catalog storage
   useEffect(() => {
@@ -423,33 +425,85 @@ export const RulesWikiV2: React.FC = () => {
   };
 
   return (
-    <div className="v2-rules-container" style={{ maxWidth: 1240, margin: "0 auto", padding: "24px 16px" }}>
-      {/* 1. Header Banner (No 'Make Rules with AI' button) */}
-      <header className="v2-rules-header">
-        <div className="v2-rules-header__info">
-          <span className="v2-rules-eyebrow">
-            <ShieldCheck size={13} />
-            Enterprise Governance Catalog
-          </span>
-          <h1 className="v2-rules-title">Rules Wiki 2.0</h1>
-          <p className="v2-rules-subtitle">
-            Master repository of declarative business rules configured for real-world enterprise GST reconciliation.
-            Audit provenance, inspect comparison logic, edit parameters, or manage catalog policies.
-          </p>
+    <div className="v2-executive-root">
+      {/* 1. TOP EXECUTIVE TELEMETRY RIBBON */}
+      <div className="v2-telemetry-ribbon">
+        <div className="v2-telemetry-left">
+          <div className="v2-brand-pill">
+            <div className="v2-brand-icon-halo">
+              <Sparkles size={13} className="v2-sparkle-spin" />
+            </div>
+            <span className="v2-brand-title">RULES WIKI</span>
+          </div>
         </div>
 
-        <div className="v2-rules-header__actions">
-          <button
-            type="button"
-            className="btn-sim-run"
-            disabled={isSimulating}
-            onClick={() => runSimulation()}
-          >
-            <Play size={15} fill="currentColor" />
-            <span>{isSimulating ? "Simulating..." : "Simulate"}</span>
-          </button>
+        <div className="v2-telemetry-right">
+          <div className="v2-agent-status-pill" title="Autonomous Agent Fabric Active">
+            <span className="v2-status-dot-pulse" />
+            <span>AGENT ACTIVE</span>
+          </div>
+
+          <div className="v2-session-badge-group">
+            <div className="v2-session-badge" title="Master Declarative Governance Catalog Version">
+              <span className="v2-session-id">Catalog v2.0 &bull; {rules.filter((r) => r.is_enabled).length} of {rules.length} Active</span>
+            </div>
+            <button
+              type="button"
+              onClick={loadMasterCatalog}
+              className={`v2-btn-reset-icon ${isLoading ? "is-spinning" : ""}`}
+              title="Sync Rules Catalog"
+              disabled={isLoading}
+            >
+              <RefreshCw size={13} />
+            </button>
+          </div>
         </div>
-      </header>
+      </div>
+
+      {/* 2. MAIN SCROLLABLE CANVAS */}
+      <div className="v2-stage-canvas" style={{ padding: "16px 20px 24px 20px" }}>
+        <div className="v2-rules-container">
+          {/* 3. HERO BANNER (Unified Dark Royal Cobalt matching Stage 1 & Stage 4) */}
+          <div className="v2-results-hero">
+            <div className="v2-hero-nav-left">
+              <button
+                type="button"
+                className="v2-hero-btn-back"
+                onClick={() => navigate("/dashboard")}
+                title="Return to Executive Dashboard"
+                aria-label="Back to Dashboard"
+              >
+                <ArrowLeft size={15} />
+                <span>Dashboard</span>
+              </button>
+            </div>
+
+            <div className="v2-results-hero-content">
+              <div className="v2-results-hero-title-row">
+                <h2 className="v2-results-hero-title">Rules Wiki 2.0</h2>
+                <div className="v2-results-stage-tag">
+                  <ShieldCheck size={12} />
+                  <span>Enterprise Governance Catalog</span>
+                </div>
+              </div>
+              <p className="v2-results-hero-desc">
+                Master repository of declarative business rules configured for real-world enterprise GST reconciliation. Audit provenance, inspect comparison logic, edit parameters, or manage catalog policies.
+              </p>
+            </div>
+
+            <div className="v2-results-hero-actions">
+              <button
+                type="button"
+                className="v2-btn-primary-action"
+                disabled={isSimulating}
+                onClick={() => runSimulation()}
+                title="Simulate active rules against representative dataset"
+              >
+                <Play size={14} fill="currentColor" />
+                <span>{isSimulating ? "Simulating..." : "Simulate"}</span>
+              </button>
+            </div>
+          </div>
 
       {/* Floating Bulk Action Bar when rules are selected */}
       {selectedRuleIds.size > 0 && (
@@ -1494,7 +1548,7 @@ export const RulesWikiV2: React.FC = () => {
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 };
