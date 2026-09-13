@@ -2694,3 +2694,84 @@
   background: #334155;
   border-radius: 9999px;
 }
+
+/* --- Thought Timeline Items Inside Modal --- */
+.v2-thoughts-modal-body .v2-thought-item {
+  display: grid;
+  grid-template-columns: 180px 1fr auto;
+  align-items: baseline;
+  gap: 16px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.8);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.35);
+  margin-bottom: 6px;
+  transition: background 0.15s ease;
+  animation: v2ThoughtSlideIn 0.3s ease-out both;
+}
+
+.v2-thoughts-modal-body .v2-thought-item:nth-child(1) { animation-delay: 0.04s; }
+.v2-thoughts-modal-body .v2-thought-item:nth-child(2) { animation-delay: 0.08s; }
+.v2-thoughts-modal-body .v2-thought-item:nth-child(3) { animation-delay: 0.12s; }
+.v2-thoughts-modal-body .v2-thought-item:nth-child(4) { animation-delay: 0.16s; }
+.v2-thoughts-modal-body .v2-thought-item:nth-child(5) { animation-delay: 0.20s; }
+
+@keyframes v2ThoughtSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.v2-thoughts-modal-body .v2-thought-item:hover {
+  background: rgba(30, 41, 59, 0.55);
+}
+
+.v2-thoughts-modal-body .v2-thought-item:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+}
+
+/* Step Label Pill (left column) */
+.v2-thoughts-modal-body .v2-thought-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--v2-font-mono);
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #93c5fd;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  padding: 3px 8px;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.12);
+  border-radius: 5px;
+  width: fit-content;
+}
+
+/* Message Content (center column) */
+.v2-thoughts-modal-body .v2-thought-msg {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: #e2e8f0;
+  line-height: 1.55;
+  letter-spacing: 0.005em;
+}
+
+/* Duration Badge (right column) */
+.v2-thoughts-modal-body .v2-thought-ms {
+  font-family: var(--v2-font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: #38bdf8;
+  white-space: nowrap;
+  padding: 2px 7px;
+  background: rgba(56, 189, 248, 0.08);
+  border-radius: 4px;
+  text-align: right;
+}
