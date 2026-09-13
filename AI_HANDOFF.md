@@ -1,24 +1,21 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Rules Wiki UI/UX Pro Max Luxury Corporate Redesign (14th September 2026)
+## Rules Wiki Mac Studio Pro 2-Column Bento Inspector Redesign (14th September 2026)
 
-- **Checkpoint Name**: `Rules Wiki UI/UX Pro Max Luxury Corporate Redesign`
+- **Checkpoint Name**: `Rules Wiki Mac Studio Pro 2-Column Bento Inspector Redesign`
 - **Current Branch**: `stable-copilot-quickreconcile`
-- **Checkpoint Tag**: `tars-2026-09-14-ruleswiki-ui-ux-pro-max-checkpoint`
-- **Current HEAD Commit**: `c936daf`
+- **Checkpoint Tag**: `tars-2026-09-14-ruleswiki-mac-bento-inspector-checkpoint`
+- **Current HEAD Commit**: `e712615`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
-  1. *Elevated Multi-Layer Rule Card Architecture (`.v2-rule-item-card`)*:
-     - Multi-layer depth shadow, crisp hairline border (`1px solid rgba(226, 232, 240, 0.85)`), and top rim highlight (`inset 0 1px 0 rgba(255, 255, 255, 0.9)`).
-     - Hover micro-lift (`transform: translateY(-1.5px)`) with expanded shadow and royal cobalt border highlight.
-     - Expanded state (`.is-expanded`) with signature 4px royal cobalt left accent bar (`border-left: 4px solid #005eb8`) and luminous depth glow.
-  2. *Refined Information Hierarchy & Semantic Badges*:
-     - Custom-styled select checkbox (`.v2-card-select-checkbox`) with deep navy checked state.
-     - Monospace order badge (`.v2-rule-order-badge`), calibrated category badge (`.v2-rule-category-pill`), and tactile ghost action buttons (`.v2-rule-action-btn`).
-  3. *Tactile Normalizer Chips & Segmented Controls*:
-     - Normalizer chips (`.v2-norm-chip`) with white resting state and royal cobalt gradient + checkmark when active.
-     - iOS/Linear-style segmented match mode toggle (`.v2-match-mode-selector`) with white active pill elevation.
-     - Luxury glass pill Explain Rule button (`.v2-explain-pill-btn`).
+  1. *2-Column Mac Studio Pro Bento Inspector Layout (`.v2-pro-grid-layout`)*:
+     - Eliminated all dead horizontal/vertical whitespace by replacing stacked full-width bands with a balanced 2-column responsive grid.
+     - **Left Pane**: Rule specification, plain-English description, statutory/accounting rationale callout (`.v2-pro-rationale-callout`), canonical concept pill, inline AI explanation trigger (`.v2-explain-pill-btn`), and audit lineage metadata.
+     - **Right Pane**: Pipeline normalizers grid (Section 1) and segmented match strategy / tolerance variance controls (Section 2).
+  2. *Apple-Style Fluid Switch (`.v2-apple-switch`)*:
+     - Replaced browser checkboxes with macOS/iOS spring-animated switches (`cubic-bezier(0.16, 1, 0.3, 1)`).
+  3. *Ultra-Dense Collapsed State*:
+     - Cards collapse into a single 40px compact strip containing all primary metadata, order tag, category badge, rule name, mapping connector, match status, and action buttons.
   4. *Zero Functional Drift*:
      - 100% of underlying reconciliation logic, rule parameters, normalizers, deletions, and simulation engines preserved intact.
 

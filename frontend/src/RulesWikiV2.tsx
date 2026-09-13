@@ -777,7 +777,7 @@ export const RulesWikiV2: React.FC = () => {
                 onClick={() => toggleRuleExpand(rule.id)}
                 title={isExpanded ? "Click to collapse details" : "Click to expand configuration & audit metadata"}
               >
-                {/* Left: Checkbox for batch selection, Rule enable toggle, Category, Name */}
+                {/* Left: Checkbox for batch selection, Apple switch enable toggle, Order #, Category, Name */}
                 <div className="v2-rule-compact-left">
                   <input
                     type="checkbox"
@@ -788,14 +788,18 @@ export const RulesWikiV2: React.FC = () => {
                     title={isSelected ? "Deselect rule" : "Select rule for bulk deletion"}
                   />
 
-                  <input
-                    type="checkbox"
-                    checked={rule.is_enabled}
-                    onChange={() => handleToggleRule(rule.id)}
+                  <label
+                    className="v2-apple-switch"
                     onClick={(e) => e.stopPropagation()}
-                    style={{ width: 17, height: 17, cursor: "pointer", accentColor: "#00338d" }}
-                    title={rule.is_enabled ? "Active in reconciliation engine. Click to disable" : "Disabled in engine. Click to enable"}
-                  />
+                    title={rule.is_enabled ? "Rule is Active. Click to disable" : "Rule is Disabled. Click to enable"}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={rule.is_enabled}
+                      onChange={() => handleToggleRule(rule.id)}
+                    />
+                    <span className="v2-apple-switch-slider" />
+                  </label>
 
                   <span className="v2-rule-order-badge">
                     #{idx + 1}
@@ -946,193 +950,200 @@ export const RulesWikiV2: React.FC = () => {
                 </div>
               </div>
 
-              {/* Audit & Governance Provenance Tray on each card */}
-              <div className="v2-audit-tray">
-                <div className="v2-audit-tray-left">
-                  <div className="v2-audit-item" title="Timestamp when this rule was created">
-                    <Clock size={12} color="#64748b" />
-                    <span>Created: <strong>{formatAuditDate(rule.created_at)}</strong></span>
-                  </div>
-
-                  <div className="v2-audit-item" title="Author or system agent that authored this rule">
-                    <User size={12} color="#64748b" />
-                    <span>By: <strong>{rule.created_by || "System Standard Baseline"}</strong></span>
-                  </div>
-
-                  <div className="v2-audit-item" title="Reconciliation run or catalog context where this rule originated">
-                    <Layers size={12} color="#64748b" />
-                    <span>In Run: <strong>{rule.created_in_run || "Master Catalog v2.0"}</strong></span>
-                  </div>
-                </div>
-
-                <div className="v2-audit-tray-right">
-                  <span className={`v2-audit-badge ${rule.is_ai_suggested ? "ai" : rule.is_custom ? "custom" : "system"}`}>
-                    v{rule.version || "1.0.0"}
-                  </span>
-                  {rule.last_modified_at && (
-                    <span style={{ fontSize: 10.5, color: "#94a3b8" }} title={`Last modified on ${formatAuditDate(rule.last_modified_at)} by ${rule.last_modified_by || "User"}`}>
-                      (Edited {formatAuditDate(rule.last_modified_at)})
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Expanded Ancillary Drawer */}
+              {/* Expanded Ancillary Drawer: 2-Column Mac Studio Pro Bento Layout */}
               {isExpanded && (
                 <div className="v2-rule-expanded-drawer" onClick={(e) => e.stopPropagation()}>
-                  {/* Top of Drawer: Description, Canonical Concept, Explain Rule Button */}
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14 }}>
-                    <div>
-                      <p style={{ fontSize: 13, color: "#475569", margin: "0 0 4px 0", lineHeight: 1.45 }}>
-                        {rule.description}
-                      </p>
-                      {rule.canonical_concept && (
-                        <span style={{ fontSize: 11, color: "#64748b", fontFamily: "monospace" }}>
-                          Canonical concept: <code>{rule.canonical_concept}</code>
-                        </span>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setExplainingRule(rule)}
-                      className="v2-explain-pill-btn"
-                      title="Click to view plain-English explanation, target columns & accounting rationale"
-                    >
-                      <Sparkles size={13} />
-                      <span>Explain Rule</span>
-                    </button>
-                  </div>
-
-                  {/* Unified 2 Sections */}
-                  <div className="v2-rule-sections-wrapper">
-                    {/* SECTION 1: NORMALISERS */}
-                    <div className="v2-rule-section-block">
-                      <div className="v2-rule-section-header">
-                        <span className="v2-rule-section-title">
-                          Section 1: Normalisers
-                        </span>
-                        <span className="v2-rule-section-count">
-                          {rule.normalizers.length} active
-                        </span>
-                      </div>
-                      <div className="v2-norm-chips-wrap">
-                        {ALL_NORMALIZERS.map((norm) => {
-                          const isActive = rule.normalizers.includes(norm.type);
-                          return (
-                            <button
-                              key={norm.type}
-                              type="button"
-                              className={`v2-norm-chip ${isActive ? "is-active" : ""}`}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleNormalizer(rule.id, norm.type);
-                              }}
-                              title={norm.description}
-                            >
-                              {isActive && <CheckCircle2 size={12} />}
-                              <span>{norm.label}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
-                    {/* SECTION 2: EXACT MATCH & TOLERANCE MATCH */}
-                    <div className="v2-rule-section-block">
-                      <div className="v2-rule-section-header">
-                        <span className="v2-rule-section-title">
-                          Section 2: Exact match & Tolerance match
-                        </span>
-                      </div>
-
-                      <div className="v2-match-mode-selector">
-                        <button
-                          type="button"
-                          className={`v2-mode-pill ${isExactMatch ? "is-active" : ""}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSetMatchMode(rule.id, "EXACT");
-                          }}
-                        >
-                          <CheckCircle2 size={13} />
-                          <span>Exact Match</span>
-                        </button>
-                        <button
-                          type="button"
-                          className={`v2-mode-pill ${!isExactMatch ? "is-active" : ""}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSetMatchMode(rule.id, "TOLERANCE");
-                          }}
-                        >
-                          <Sliders size={13} />
-                          <span>Tolerance Match</span>
-                        </button>
-                      </div>
-
-                      {isExactMatch ? (
-                        <div className="v2-exact-mode-info">
-                          <CheckCircle2 size={14} color="#059669" />
-                          <span>Strict 1-to-1 Equality: Permitting 0.00 variance after normalisation.</span>
+                  <div className="v2-pro-grid-layout">
+                    
+                    {/* LEFT COLUMN: Rule Intelligence, Rationale & Audit Lineage */}
+                    <div className="v2-pro-intelligence-card">
+                      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                        <div className="v2-pro-card-header">
+                          <ShieldCheck size={14} />
+                          <span>Rule Specification & Rationale</span>
                         </div>
-                      ) : (
-                        <div className="v2-tolerance-control-group">
-                          <span className="v2-tolerance-input-label">Permitted Variance:</span>
-                          <div className="v2-tolerance-inputs-row">
-                            <input
-                              type="number"
-                              min={0}
-                              step={!isDate && rule.tolerance_mode === "PERCENTAGE" ? 0.1 : 1}
-                              className="v2-input-number"
-                              value={isDate ? rule.date_tolerance_value : rule.tolerance_value}
-                              onChange={(e) => {
-                                e.stopPropagation();
-                                const val = parseFloat(e.target.value) || 0;
-                                if (isDate) {
-                                  handleUpdateDateTol(rule.id, Math.round(val));
-                                } else {
-                                  handleUpdateNumericTol(rule.id, val);
-                                }
-                              }}
-                            />
+                        
+                        <p className="v2-pro-desc">
+                          {rule.description}
+                        </p>
 
-                            {isDate ? (
-                              <select
-                                className="v2-select-mode"
-                                value={rule.date_tolerance_unit}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  handleUpdateDateTol(rule.id, rule.date_tolerance_value, e.target.value as DateToleranceUnit);
-                                }}
-                              >
-                                <option value="DAYS">Absolute Days</option>
-                                <option value="MONTHS">Months</option>
-                                <option value="YEARS">Years</option>
-                              </select>
-                            ) : (
-                              <select
-                                className="v2-select-mode"
-                                value={rule.tolerance_mode}
-                                onChange={(e) => {
-                                  e.stopPropagation();
-                                  handleUpdateNumericTol(rule.id, rule.tolerance_value, e.target.value as NumericToleranceMode);
-                                }}
-                              >
-                                <option value="ABSOLUTE_INR">Absolute Amount</option>
-                                <option value="PERCENTAGE">Percentage</option>
-                              </select>
-                            )}
-
-                            <span className="v2-tolerance-formula-hint">
-                              {isDate
-                                ? `(Matches if date difference does not exceed ± ${rule.date_tolerance_value} ${rule.date_tolerance_unit.toLowerCase()})`
-                                : `(Matches if |GSTR - PR| does not exceed ${rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹${rule.tolerance_value}`})`}
-                            </span>
+                        <div className="v2-pro-rationale-callout">
+                          <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                          <div>
+                            <strong>Accounting Context:</strong> {rule.why_it_matters || "Statutory reconciliation guardrail ensuring strict compliance with GST ITC claims."}
                           </div>
                         </div>
-                      )}
+
+                        {rule.canonical_concept && (
+                          <div className="v2-canonical-concept-chip">
+                            Canonical concept: <code>{rule.canonical_concept}</code>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom Action & Audit Strip */}
+                      <div className="v2-pro-lineage-footer">
+                        <button
+                          type="button"
+                          onClick={() => setExplainingRule(rule)}
+                          className="v2-explain-pill-btn"
+                          title="Click to view deep-dive plain-English explanation, target columns & statutory rationale"
+                        >
+                          <Sparkles size={13} />
+                          <span>Explain Rule with AI</span>
+                        </button>
+
+                        <div className="v2-pro-lineage-meta">
+                          <div className="v2-audit-item" title="Timestamp when this rule was created">
+                            <Clock size={11} color="#64748b" />
+                            <span>{formatAuditDate(rule.created_at)}</span>
+                          </div>
+
+                          <div className="v2-audit-item" title="Author or system agent that authored this rule">
+                            <User size={11} color="#64748b" />
+                            <span>{rule.created_by || "System Standard Baseline"}</span>
+                          </div>
+
+                          <span className={`v2-audit-badge ${rule.is_ai_suggested ? "ai" : rule.is_custom ? "custom" : "system"}`}>
+                            v{rule.version || "1.0.0"}
+                          </span>
+                        </div>
+                      </div>
                     </div>
+
+                    {/* RIGHT COLUMN: Interactive Engine Controls (Normalizers + Match Policy) */}
+                    <div className="v2-pro-controls-card">
+                      {/* SECTION 1: NORMALISERS */}
+                      <div className="v2-rule-section-block">
+                        <div className="v2-rule-section-header">
+                          <div className="v2-pro-card-header" style={{ color: "#334155" }}>
+                            <Sliders size={13} />
+                            <span>Section 1: Normalisation Pipeline</span>
+                          </div>
+                          <span className="v2-rule-section-count">
+                            {rule.normalizers.length} active
+                          </span>
+                        </div>
+                        <div className="v2-norm-chips-wrap">
+                          {ALL_NORMALIZERS.map((norm) => {
+                            const isActive = rule.normalizers.includes(norm.type);
+                            return (
+                              <button
+                                key={norm.type}
+                                type="button"
+                                className={`v2-norm-chip ${isActive ? "is-active" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleNormalizer(rule.id, norm.type);
+                                }}
+                                title={norm.description}
+                              >
+                                {isActive && <CheckCircle2 size={12} />}
+                                <span>{norm.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* SECTION 2: EXACT MATCH & TOLERANCE MATCH */}
+                      <div className="v2-rule-section-block">
+                        <div className="v2-rule-section-header">
+                          <div className="v2-pro-card-header" style={{ color: "#334155" }}>
+                            <CheckCircle2 size={13} />
+                            <span>Section 2: Match Policy & Variance</span>
+                          </div>
+                        </div>
+
+                        <div className="v2-match-mode-selector">
+                          <button
+                            type="button"
+                            className={`v2-mode-pill ${isExactMatch ? "is-active" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSetMatchMode(rule.id, "EXACT");
+                            }}
+                          >
+                            <CheckCircle2 size={13} />
+                            <span>Exact Match</span>
+                          </button>
+                          <button
+                            type="button"
+                            className={`v2-mode-pill ${!isExactMatch ? "is-active" : ""}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSetMatchMode(rule.id, "TOLERANCE");
+                            }}
+                          >
+                            <Sliders size={13} />
+                            <span>Tolerance Match</span>
+                          </button>
+                        </div>
+
+                        {isExactMatch ? (
+                          <div className="v2-exact-mode-info">
+                            <CheckCircle2 size={13} color="#059669" />
+                            <span>Strict 1-to-1 Equality: Permitting 0.00 variance after normalisation.</span>
+                          </div>
+                        ) : (
+                          <div className="v2-tolerance-control-group">
+                            <span className="v2-tolerance-input-label">Permitted Variance:</span>
+                            <div className="v2-tolerance-inputs-row">
+                              <input
+                                type="number"
+                                min={0}
+                                step={!isDate && rule.tolerance_mode === "PERCENTAGE" ? 0.1 : 1}
+                                className="v2-input-number"
+                                value={isDate ? rule.date_tolerance_value : rule.tolerance_value}
+                                onChange={(e) => {
+                                  e.stopPropagation();
+                                  const val = parseFloat(e.target.value) || 0;
+                                  if (isDate) {
+                                    handleUpdateDateTol(rule.id, Math.round(val));
+                                  } else {
+                                    handleUpdateNumericTol(rule.id, val);
+                                  }
+                                }}
+                              />
+
+                              {isDate ? (
+                                <select
+                                  className="v2-select-mode"
+                                  value={rule.date_tolerance_unit}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateDateTol(rule.id, rule.date_tolerance_value, e.target.value as DateToleranceUnit);
+                                  }}
+                                >
+                                  <option value="DAYS">Absolute Days</option>
+                                  <option value="MONTHS">Months</option>
+                                  <option value="YEARS">Years</option>
+                                </select>
+                              ) : (
+                                <select
+                                  className="v2-select-mode"
+                                  value={rule.tolerance_mode}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    handleUpdateNumericTol(rule.id, rule.tolerance_value, e.target.value as NumericToleranceMode);
+                                  }}
+                                >
+                                  <option value="ABSOLUTE_INR">Absolute Amount (INR)</option>
+                                  <option value="PERCENTAGE">Percentage (%)</option>
+                                </select>
+                              )}
+
+                              <span className="v2-tolerance-formula-hint">
+                                {isDate
+                                  ? `(± ${rule.date_tolerance_value} ${rule.date_tolerance_unit.toLowerCase()})`
+                                  : `(|GSTR - PR| ≤ ${rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹${rule.tolerance_value}`})`}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
                   </div>
                 </div>
               )}
