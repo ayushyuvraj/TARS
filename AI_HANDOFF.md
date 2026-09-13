@@ -6,6 +6,7 @@
 - **Current Branch**: `stable-copilot-quickreconcile`
 - **Checkpoint Tag**: `tars-2026-09-13-stage1-luxury-redesign-checkpoint`
 - **Previous Checkpoint Tag**: `tars-2026-09-13-audit-ledger-deferral-checkpoint`
+- **Current HEAD Commit**: `b8191fa`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
   1. *Audit Session ID Synchronization*: Standardized full session UUID across top bar and Audit 2.0 list/detail views using subtle, faded, tabular-numbers typography.
