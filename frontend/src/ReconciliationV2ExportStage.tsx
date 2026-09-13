@@ -306,6 +306,16 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
+
+      // Automatically finalize Stage 6 completion upon file export download
+      try {
+        await apiV2.completeSession(sessionId);
+      } catch (e) {
+        console.warn("Could not mark session complete:", e);
+      }
+      if (onComplete) {
+        onComplete();
+      }
     } catch (err: any) {
       alert(`Export dispatch failed: ${err?.message || "Unknown error"}`);
     } finally {

@@ -113,7 +113,10 @@ export const ReconciliationV2Workspace: React.FC = () => {
   const [rulesConfirmed, setRulesConfirmed] = useState(false);
   const [hasVisitedResults, setHasVisitedResults] = useState(false);
   const [hasVisitedSummary, setHasVisitedSummary] = useState(false);
+  const [hasExported, setHasExported] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<string>("initialized");
+
+  const isSessionCompleted = sessionStatus === "completed" || sessionStatus === "exported" || hasExported;
 
   // Dynamic progressive stage unlocking predicate
   const isStageUnlocked = (stageKey: V2Stage): boolean => {
@@ -132,24 +135,24 @@ export const ReconciliationV2Workspace: React.FC = () => {
           mappingConfirmed ||
           rulesConfirmed ||
           hasVisitedResults ||
-          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "results", "summary", "export"].includes(sessionStatus))
+          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "results":
         return Boolean(
           rulesConfirmed ||
           hasVisitedResults ||
-          (sessionStatus && ["rules_confirmed", "results", "summary", "export"].includes(sessionStatus))
+          (sessionStatus && ["rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "summary":
         return Boolean(
           hasVisitedResults ||
           hasVisitedSummary ||
-          (sessionStatus && ["results", "summary", "export"].includes(sessionStatus))
+          (sessionStatus && ["results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "export":
         return Boolean(
           hasVisitedSummary ||
-          (sessionStatus && ["summary", "export"].includes(sessionStatus))
+          (sessionStatus && ["summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       default:
         return false;
@@ -158,6 +161,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
   // Independent stage completion predicate (uncoupled from active stage navigation pointer)
   const isStageCompleted = (stageKey: V2Stage): boolean => {
+    if (isSessionCompleted) return true;
+
     switch (stageKey) {
       case "setup":
         return Boolean(
@@ -168,26 +173,31 @@ export const ReconciliationV2Workspace: React.FC = () => {
       case "mapping":
         return Boolean(
           mappingConfirmed ||
-          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "results", "summary", "export"].includes(sessionStatus))
+          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "rules":
       case "policy":
         return Boolean(
           rulesConfirmed ||
-          (sessionStatus && ["rules_confirmed", "results", "summary", "export"].includes(sessionStatus))
+          (sessionStatus && ["rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "results":
         return Boolean(
           hasVisitedResults ||
-          (sessionStatus && ["results", "summary", "export"].includes(sessionStatus))
+          (sessionStatus && ["results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "summary":
         return Boolean(
           hasVisitedSummary ||
-          (sessionStatus && ["summary", "export"].includes(sessionStatus))
+          (sessionStatus && ["summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "export":
-        return Boolean(sessionStatus === "export");
+        return Boolean(
+          hasExported ||
+          sessionStatus === "export" ||
+          sessionStatus === "exported" ||
+          sessionStatus === "completed"
+        );
       default:
         return false;
     }
@@ -221,53 +231,66 @@ export const ReconciliationV2Workspace: React.FC = () => {
           setCurrentStage(normalizedStage);
         }
       } else {
-        // If user tries to navigate to an unreached/locked stage, redirect to highest unlocked stage
         const highestUnlocked = [...V2_STAGES].reverse().find((s) => isStageUnlocked(s.key))?.key || "setup";
-        setCurrentStage(highestUnlocked);
-        if (sessionId) {
+        if (highestUnlocked !== currentStage && sessionId) {
+          setCurrentStage(highestUnlocked);
           navigate(`/reconciliations-v2/${sessionId}/${highestUnlocked}`, { replace: true });
         }
       }
     }
-  }, [routeStage, currentStage, isHydrating, correlationResult, mappingConfirmed, rulesConfirmed, hasVisitedResults, hasVisitedSummary, sessionStatus]);
+  }, [routeStage, routeSessionId, isHydrating]);
 
-  // Synchronize V2 workspace context to Copilot Bridge
+  // Register session context with Katalyst Copilot
   useEffect(() => {
-    const stageInfo = V2_STAGES.find((s) => s.key === currentStage);
+    const stageNumMap: Record<string, number> = {
+      setup: 1,
+      mapping: 2,
+      rules: 3,
+      results: 4,
+      summary: 5,
+      export: 6,
+    };
+    const currentNum = stageNumMap[currentStage] || 1;
+    const stageLabelMap: Record<string, string> = {
+      setup: "Setup & Dual Ingestion",
+      mapping: "Mapping 2.0 (Schema Coupling)",
+      rules: "Rules Studio & Tolerances",
+      results: "Waterfall Match Matrix",
+      summary: "Executive Tax Flight Deck",
+      export: "Visual Export Studio",
+    };
+
     copilotV2Bridge.setContext({
       activeStage: currentStage,
-      stageNumber: stageInfo ? stageInfo.number : 1,
-      stageLabel: stageInfo ? `${stageInfo.label} (${stageInfo.subtitle})` : currentStage,
+      stageNumber: currentNum,
+      stageLabel: stageLabelMap[currentStage] || "Reconciliation",
       sessionId: sessionId,
-      gstrFilename: gstrFile?.name || (correlationResult ? "GSTR-2B" : undefined),
-      prFilename: prFile?.name || (correlationResult ? "Purchase Register" : undefined),
-      correlations: correlationResult?.correlations || [],
-      availableColumnsGstr: correlationResult?.correlations?.map((c) => c.gstr_column) || [],
-      availableColumnsPr: correlationResult?.pr_columns || [],
+      gstrFilename: gstrFile?.name || correlationResult?.gstr_filename || undefined,
+      prFilename: prFile?.name || correlationResult?.pr_filename || undefined,
     });
   }, [currentStage, sessionId, gstrFile, prFile, correlationResult]);
 
-  // Register action handlers for Copilot chat actions
+  // Handle external copilot actions
   useEffect(() => {
-    const unregNav = copilotV2Bridge.registerActionHandler("NAVIGATE_STAGE", (payload) => {
-      if (payload.target_stage) {
+    const unregNav = copilotV2Bridge.registerActionHandler("NAVIGATE_STAGE", (payload: any) => {
+      if (payload?.target_stage) {
         const target = payload.target_stage as V2Stage;
-        setCurrentStage(target);
-        if (sessionId) {
+        if (sessionId && isStageUnlocked(target)) {
+          setCurrentStage(target);
           navigate(`/reconciliations-v2/${sessionId}/${target}`);
         }
       }
     });
 
     const unregReconcile = copilotV2Bridge.registerActionHandler("RUN_RECONCILIATION", () => {
-      if (sessionId) {
+      if (sessionId && isStageUnlocked("results")) {
         setCurrentStage("results");
         navigate(`/reconciliations-v2/${sessionId}/results`);
       }
     });
 
-    const unregAutoRec = copilotV2Bridge.registerActionHandler("AUTO_RECONCILE_SUCCESS", (payload) => {
-      if (payload.session_id) {
+    const unregAutoRec = copilotV2Bridge.registerActionHandler("AUTO_RECONCILE_SUCCESS", (payload: any) => {
+      if (payload?.session_id) {
         setSessionId(payload.session_id);
         setCurrentStage("results");
         navigate(`/reconciliations-v2/${payload.session_id}/results`);
@@ -317,6 +340,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
               sess.status === "results" ||
               sess.status === "summary" ||
               sess.status === "export" ||
+              sess.status === "exported" ||
+              sess.status === "completed" ||
               (sess.selected_rule_ids && sess.selected_rule_ids.length > 0) ||
               (routeStage && ["rules", "results", "summary", "export"].includes(routeStage))
             ) {
@@ -327,6 +352,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
               sess.status === "results" ||
               sess.status === "summary" ||
               sess.status === "export" ||
+              sess.status === "exported" ||
+              sess.status === "completed" ||
               (sess.selected_rule_ids && sess.selected_rule_ids.length > 0) ||
               (routeStage && ["results", "summary", "export"].includes(routeStage))
             ) {
@@ -336,6 +363,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
               sess.status === "results" ||
               sess.status === "summary" ||
               sess.status === "export" ||
+              sess.status === "exported" ||
+              sess.status === "completed" ||
               (routeStage && ["summary", "export"].includes(routeStage))
             ) {
               setHasVisitedResults(true);
@@ -343,9 +372,15 @@ export const ReconciliationV2Workspace: React.FC = () => {
             if (
               sess.status === "summary" ||
               sess.status === "export" ||
+              sess.status === "exported" ||
+              sess.status === "completed" ||
               (routeStage && ["export"].includes(routeStage))
             ) {
               setHasVisitedSummary(true);
+            }
+            if (sess.status === "exported" || sess.status === "completed") {
+              setHasExported(true);
+              setSessionStatus("completed");
             }
           })
           .catch((err) => {
@@ -368,6 +403,9 @@ export const ReconciliationV2Workspace: React.FC = () => {
       setAgentThoughts([]);
       setMappingConfirmed(false);
       setRulesConfirmed(false);
+      setHasVisitedResults(false);
+      setHasVisitedSummary(false);
+      setHasExported(false);
       hasAutoTriggered.current = false;
       apiV2
         .createSession()
@@ -658,6 +696,13 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
       {/* 3. CENTER WORKSPACE CANVAS (FLEX SCROLLABLE CONTAINER) */}
       <main className={`v2-stage-canvas ${currentStage === "setup" ? "v2-stage-canvas--setup" : "v2-stage-canvas--scrollable"}`}>
+        {isSessionCompleted && currentStage !== "export" && (
+          <div className="v2-read-only-banner">
+            <ShieldCheck size={14} style={{ flexShrink: 0 }} className="text-emerald-500" />
+            <span>Completed Audit Session — Read-Only Inspection Mode</span>
+          </div>
+        )}
+
         {errorMessage && (
           <div className="v2-alert-error">
             <AlertCircle size={16} style={{ flexShrink: 0 }} />
@@ -1255,8 +1300,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
               if (sessionId) navigate(`/reconciliations-v2/${sessionId}/summary`);
             }}
             onComplete={() => {
-              localStorage.removeItem("tars_v2_active_session_id");
-              navigate("/reconciliations-v2");
+              setHasExported(true);
+              setSessionStatus("completed");
             }}
           />
         )}
