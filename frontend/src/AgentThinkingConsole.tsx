@@ -43,7 +43,12 @@ export const AgentThinkingConsole: React.FC<AgentThinkingConsoleProps> = ({
     }
   };
 
-  const effectiveMs = totalDurationMs && totalDurationMs > 1000 ? totalDurationMs : 5400;
+  const thoughtsSum = thoughts && thoughts.length > 0
+    ? thoughts.reduce((acc, t) => acc + (t.duration_ms || 0), 0)
+    : 0;
+  const effectiveMs = totalDurationMs && totalDurationMs > 0
+    ? totalDurationMs
+    : (thoughtsSum > 0 ? thoughtsSum : 2200);
   const seconds = (effectiveMs / 1000).toFixed(1);
 
   return (

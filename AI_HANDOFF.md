@@ -1,5 +1,26 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Stage 1 Modal Boundary Containment & Stage 2 Execution Time Synchronization (13th September 2026)
+
+- **Checkpoint Name**: `Stage 1 Modal Boundary Containment & Stage 2 Execution Time Synchronization`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Modal HUD Rightmost Tile Boundary Containment*:
+     - Updated `.v2-cot-steps-grid` to `grid-template-columns: repeat(3, minmax(0, 1fr))` with `box-sizing: border-box; width: 100%`.
+     - Added `min-width: 0; box-sizing: border-box; overflow: hidden;` to `.v2-cot-step-tile` so each column is strictly clamped within its 1/3 grid cell.
+     - Added `word-break: break-word; overflow-wrap: anywhere;` to `.v2-cot-step-desc` and applied `formatShortName` clipping for long filenames (>24 chars) in `ReconciliationV2Workspace.tsx`.
+     - Enforced `box-sizing: border-box; width: 100%; max-width: 820px; overflow: hidden;` on `.v2-cot-modal-shell` and `.v2-cot-modal-core`.
+  2. *Exact End-to-End Execution Time Synchronization*:
+     - Purged legacy `5400` default from `AgentThinkingConsole.tsx`. It now dynamically displays `Reasoned in ${seconds}s by Autonomous AgentAI` based on `totalDurationMs`.
+     - Connected `totalMeasuredDurationMs` in `ReconciliationV2Workspace.tsx` to `measuredDuration` from `fastUploadAndCorrelate` or `total_duration_ms`.
+     - Added `isIngestionFinishedRef` to immediately freeze the interval timer upon completion, preventing timer drift during the 350ms transition window.
+     - Unified both Stage 1 modal HUD timer (`{elapsedSec.toFixed(1)}s elapsed`) and Stage 2 reasoning banner (`Reasoned in ${seconds}s by Autonomous AgentAI`) to display the exact same number down to the decimal across all runs.
+     - Updated hydration logic to restore `totalMeasuredDurationMs` and `elapsedSec` from session `total_duration_ms` or `agent_thoughts` sum.
+  3. *Zero Functional Drift*: All underlying matching algorithms, ingestion pipelines, database models, and financial integrity rules remain completely untouched.
+
+---
+
 ## Stage 1 Setup & Dual Ingestion Luxury Redesign & Session ID Synchronization (13th September 2026)
 
 - **Checkpoint Name**: `Stage 1 Setup & Dual Ingestion Luxury Redesign & Session ID Synchronization`

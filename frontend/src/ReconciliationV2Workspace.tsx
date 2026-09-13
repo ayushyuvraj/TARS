@@ -79,7 +79,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
   const [isHydrating, setIsHydrating] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSec, setElapsedSec] = useState<number>(0);
-  const [totalMeasuredDurationMs, setTotalMeasuredDurationMs] = useState<number>(5400);
+  const [totalMeasuredDurationMs, setTotalMeasuredDurationMs] = useState<number>(0);
 
   // Dynamic Visible Chain of Thought Steps
   const [chainSteps, setChainSteps] = useState<ChainStep[]>([
@@ -116,12 +116,16 @@ export const ReconciliationV2Workspace: React.FC = () => {
   const hasAutoTriggered = useRef(false);
 
   // Live timer during ingestion
+  const isIngestionFinishedRef = useRef(false);
   useEffect(() => {
     let timer: any;
     if (isUploadingAndCorrelating) {
+      isIngestionFinishedRef.current = false;
       const start = Date.now();
       timer = setInterval(() => {
-        setElapsedSec(Math.floor((Date.now() - start) / 100) / 10);
+        if (!isIngestionFinishedRef.current) {
+          setElapsedSec(Math.floor((Date.now() - start) / 100) / 10);
+        }
       }, 100);
     }
     return () => clearInterval(timer);
@@ -206,8 +210,15 @@ export const ReconciliationV2Workspace: React.FC = () => {
             if (sess.correlation) {
               setCorrelationResult(sess.correlation);
               setAgentThoughts(sess.correlation.agent_thoughts || []);
-              if (sess.correlation.total_duration_ms) {
+              if (sess.correlation.total_duration_ms && sess.correlation.total_duration_ms > 0) {
                 setTotalMeasuredDurationMs(sess.correlation.total_duration_ms);
+                setElapsedSec(Math.round(sess.correlation.total_duration_ms / 100) / 10);
+              } else if (sess.correlation.agent_thoughts && sess.correlation.agent_thoughts.length > 0) {
+                const thoughtSum = sess.correlation.agent_thoughts.reduce((acc: number, t: any) => acc + (t.duration_ms || 0), 0);
+                if (thoughtSum > 0) {
+                  setTotalMeasuredDurationMs(thoughtSum);
+                  setElapsedSec(Math.round(thoughtSum / 100) / 10);
+                }
               }
             }
             if (
@@ -278,12 +289,13 @@ export const ReconciliationV2Workspace: React.FC = () => {
     const startTime = Date.now();
 
     // Reset and begin Step 1
+    const formatShortName = (name: string) => (name.length > 24 ? name.slice(0, 20) + "..." : name);
     setChainSteps([
       {
         id: "step1",
         num: 1,
         title: "Fast Header & Sample Ingestion",
-        desc: `Stream-probing '${file1.name}' and '${file2.name}' (<180ms)`,
+        desc: `Stream-probing '${formatShortName(file1.name)}' and '${formatShortName(file2.name)}' (<180ms)`,
         status: "running"
       },
       {
@@ -333,9 +345,16 @@ export const ReconciliationV2Workspace: React.FC = () => {
 
       const elapsedTotal = Date.now() - startTime;
       const measuredDuration = result.total_duration_ms && result.total_duration_ms > 0
-        ? result.total_duration_ms
+        ? Math.round(result.total_duration_ms)
         : Math.max(elapsedTotal, 250);
+
+      // Exact end-to-end synchronization: Stage 1 modal HUD timer and Stage 2 reasoning banner show the exact same duration
+      isIngestionFinishedRef.current = true;
       setTotalMeasuredDurationMs(measuredDuration);
+      setElapsedSec(Math.round(measuredDuration / 100) / 10);
+      if (result) {
+        result.total_duration_ms = measuredDuration;
+      }
 
       // Extract real execution durations from agent thoughts if present
       let step1Ms = 65;
@@ -369,6 +388,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
       console.error("V2 Fast Ingestion Error:", err);
       setErrorMessage(err.message || "Failed to process workbooks.");
       hasAutoTriggered.current = false;
+      isIngestionFinishedRef.current = true;
       setIsUploadingAndCorrelating(false);
     }
   };
@@ -790,47 +810,9 @@ export const ReconciliationV2Workspace: React.FC = () => {
               </div>
             </div>
 
-            {/* Action Bar / High-Tech Visible Chain of Thought */}
+            {/* Action Bar (Static In-Flow Height - Zero Layout Shift) */}
             <div className="v2-action-terminal-bar">
-              {isUploadingAndCorrelating ? (
-                <div className="v2-cot-console">
-                  <div className="v2-cot-header">
-                    <div className="v2-cot-title-row">
-                      <span className="v2-status-dot-pulse" />
-                      <span className="v2-cot-title">Autonomous Ingestion & Multi-Agent Pipeline</span>
-                    </div>
-                    <span className="v2-cot-timer">{elapsedSec.toFixed(1)}s elapsed</span>
-                  </div>
-
-                  <div className="v2-cot-steps-grid">
-                    {chainSteps.map((st) => (
-                      <div key={st.id} className={`v2-cot-step-tile is-${st.status}`}>
-                        <div className="v2-cot-step-icon">
-                          {st.status === "completed" ? (
-                            <CheckCircle2 size={16} className="v2-step-check" />
-                          ) : st.status === "running" ? (
-                            <RefreshCw size={14} className="v2-spin text-blue-500" />
-                          ) : (
-                            <span className="v2-step-num-dot">{st.num}</span>
-                          )}
-                        </div>
-                        <div className="v2-cot-step-content">
-                          <div className="v2-cot-step-top">
-                            <span className="v2-cot-step-name">{st.title}</span>
-                            {st.status === "completed" && st.durationMs && (
-                              <span className="v2-cot-step-time">✓ {st.durationMs}ms</span>
-                            )}
-                            {st.status === "running" && (
-                              <span className="v2-cot-step-tag">IN PROGRESS...</span>
-                            )}
-                          </div>
-                          <p className="v2-cot-step-desc">{st.desc}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : gstrFile && prFile ? (
+              {gstrFile && prFile ? (
                 <div className="v2-ready-action-card">
                   <div className="v2-ready-meta">
                     <span className="v2-ready-icon">✦</span>
@@ -843,8 +825,9 @@ export const ReconciliationV2Workspace: React.FC = () => {
                     type="button"
                     onClick={() => executeFastUploadAndMapping(gstrFile, prFile)}
                     className="v2-btn-launch-correlator"
+                    disabled={isUploadingAndCorrelating}
                   >
-                    <span>ENGAGE AGENTIC AI CORRELATOR</span>
+                    <span>{isUploadingAndCorrelating ? "CORRELATING WORKBOOKS..." : "ENGAGE AGENTIC AI CORRELATOR"}</span>
                     <ArrowRight size={16} />
                   </button>
                 </div>
@@ -862,6 +845,73 @@ export const ReconciliationV2Workspace: React.FC = () => {
                 </div>
               )}
             </div>
+
+            {/* AGENTIC INGESTION PIPELINE MODAL HUD (Zero Layout Shift with Frosted Blur) */}
+            {isUploadingAndCorrelating && (
+              <div className="v2-cot-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="v2-cot-title">
+                <div className="v2-cot-modal-shell">
+                  <div className="v2-cot-modal-core">
+                    <div className="v2-cot-header">
+                      <div className="v2-cot-title-row">
+                        <span className="v2-status-dot-pulse" />
+                        <span id="v2-cot-title" className="v2-cot-title">Autonomous Ingestion & Multi-Agent Pipeline</span>
+                      </div>
+                      <span className="v2-cot-timer">{elapsedSec.toFixed(1)}s elapsed</span>
+                    </div>
+
+                    <p className="v2-cot-modal-sub">
+                      Correlating Sovereign GSTR-2B with Enterprise ERP across structural schema fields...
+                    </p>
+
+                    <div className="v2-cot-steps-grid">
+                      {chainSteps.map((st) => (
+                        <div key={st.id} className={`v2-cot-step-tile is-${st.status}`}>
+                          <div className="v2-cot-step-icon">
+                            {st.status === "completed" ? (
+                              <CheckCircle2 size={16} className="v2-step-check" />
+                            ) : st.status === "running" ? (
+                              <RefreshCw size={14} className="v2-spin text-blue-500" />
+                            ) : (
+                              <span className="v2-step-num-dot">{st.num}</span>
+                            )}
+                          </div>
+                          <div className="v2-cot-step-content">
+                            <div className="v2-cot-step-top">
+                              <span className="v2-cot-step-name">{st.title}</span>
+                              {st.status === "completed" && st.durationMs && (
+                                <span className="v2-cot-step-time">✓ {st.durationMs}ms</span>
+                              )}
+                              {st.status === "running" && (
+                                <span className="v2-cot-step-tag">IN PROGRESS...</span>
+                              )}
+                            </div>
+                            <p className="v2-cot-step-desc">{st.desc}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Bottom Micro-Progress Bar */}
+                    <div className="v2-cot-progress-track">
+                      <div
+                        className="v2-cot-progress-fill"
+                        style={{
+                          width: `${
+                            chainSteps.filter((s) => s.status === "completed").length === 3
+                              ? 100
+                              : chainSteps.filter((s) => s.status === "completed").length === 2
+                              ? 70
+                              : chainSteps.filter((s) => s.status === "completed").length === 1
+                              ? 35
+                              : 12
+                          }%`
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Precision Enterprise Assurance Modules */}
             <div className="v2-trust-grid">
