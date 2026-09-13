@@ -27,10 +27,12 @@ import {
   GripVertical,
   StopCircle,
   Activity,
+  RefreshCw,
 } from "lucide-react";
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import { copilotV2Bridge } from "./copilot_v2_bridge";
 import "./rules_v2.css";
+import "./results_v2.css";
 
 interface Props {
   sessionId: string;
@@ -483,6 +485,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
   // Modal states
   const [explainingRule, setExplainingRule] = useState<Rule2Item | null>(null);
   const [showAiModal, setShowAiModal] = useState<boolean>(false);
+  const [showAiSuggestionsModal, setShowAiSuggestionsModal] = useState<boolean>(false);
   const [aiPrompt, setAiPrompt] = useState<string>("");
   const [isAiCompiling, setIsAiCompiling] = useState<boolean>(false);
   const [compiledPreview, setCompiledPreview] = useState<Rule2Item | null>(null);
@@ -938,79 +941,86 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
 
   return (
     <div className="v2-rules-container">
-      {/* 1. Header Banner */}
-      <header className="v2-rules-header">
-        <div className="v2-rules-header__info">
-          <span className="v2-rules-eyebrow">
-            <Sliders size={13} />
-            Stage 3 of 6: Reconciliation Rules Engine
-          </span>
-          <h1 className="v2-rules-title">Configure Reconciliation Rules</h1>
-          <p className="v2-rules-subtitle">
+      {/* 1. HERO BANNER (Unified Dark Royal Cobalt matching Stage 4 & Stage 2) */}
+      <div className="v2-results-hero">
+        {onBackToMapping && (
+          <div className="v2-hero-nav-left">
+            <button
+              type="button"
+              className="v2-hero-btn-back"
+              onClick={onBackToMapping}
+              title="Return to Stage 2: Schema Mapping"
+              aria-label="Back to previous screen"
+            >
+              <ArrowLeft size={15} />
+              <span>Back to Schema Mapping</span>
+            </button>
+          </div>
+        )}
+
+        <div className="v2-results-hero-content">
+          <div className="v2-results-hero-title-row">
+            <h2 className="v2-results-hero-title">Configure Reconciliation Rules</h2>
+            <div className="v2-results-stage-tag">
+              <Sparkles size={12} />
+              <span>Stage 3 of 6 &bull; Reconciliation Rules Engine</span>
+            </div>
+          </div>
+          <p className="v2-results-hero-desc">
             Select and prioritize the exact matching rules and tolerances to run for this session.
             Click <strong>"Explain Rule"</strong> on any rule card to review its columns and accounting rationale.
           </p>
         </div>
 
-        <div className="v2-rules-header__actions">
+        <div className="v2-results-hero-actions">
           <button
             type="button"
-            className="btn-ai-sparkle"
-            style={{
-              background: "linear-gradient(135deg, #4338ca, #6366f1)",
-              color: "#ffffff",
-              boxShadow: "0 2px 6px rgba(67, 56, 202, 0.3)",
-            }}
-            onClick={() => {
-              const el = document.getElementById("v2-ai-suggestions-anchor");
-              if (el) {
-                el.scrollIntoView({ behavior: "smooth", block: "start" });
-              }
-            }}
+            className="v2-btn-rerun"
+            onClick={() => setShowAiSuggestionsModal(true)}
             title="View AI Suggested Rules synthesized from workbook data nuances"
           >
-            <Sparkles size={16} />
-            <span>AI Suggested Rules ({aiSuggestedRules.length})</span>
+            <Sparkles size={14} />
+            <span>AI Suggested Rules ({unmappedSuggestions.length})</span>
           </button>
 
           <button
             type="button"
-            className="btn-ai-sparkle"
+            className="v2-btn-rerun"
             onClick={() => {
               setAiPrompt("");
               setCompiledPreview(null);
               setAiError(null);
               setShowAiModal(true);
             }}
+            title="Synthesize custom matching rules using natural language"
           >
-            <Sparkles size={16} />
+            <Sparkles size={14} />
             <span>Make Rules with AI</span>
           </button>
 
           <button
             type="button"
-            className="btn-sim-run"
+            className="v2-btn-rerun"
             disabled={isSimulating}
             onClick={() => runSimulation()}
+            title="Simulate matching pipeline"
           >
-            <Play size={15} fill="currentColor" />
+            <Play size={14} fill="currentColor" />
             <span>{isSimulating ? "Simulating..." : "Simulate"}</span>
           </button>
-        </div>
-      </header>
 
-      {/* Top Stage Action Bar */}
-      <ReconciliationV2ActionBar
-        position="top"
-        stageNumber={3}
-        backLabel="Back to Schema Mapping"
-        onBack={onBackToMapping}
-        nextLabel={isConfirming ? "Freezing Rules…" : "Confirm & Freeze Rules"}
-        onNext={handleProceed}
-        nextDisabled={isConfirming || rules.filter((r) => r.is_enabled).length === 0}
-        isNextLoading={isConfirming}
-        nextLoadingText="Freezing Rules…"
-      />
+          <button
+            type="button"
+            className="v2-btn-primary-action"
+            onClick={handleProceed}
+            disabled={isConfirming || rules.filter((r) => r.is_enabled).length === 0}
+            title="Confirm rules and proceed to Stage 4"
+          >
+            <span>{isConfirming ? "Freezing Rules…" : "Confirm & Freeze Rules"}</span>
+            {isConfirming ? <RefreshCw size={14} className="v2-spin" /> : <ArrowRight size={14} />}
+          </button>
+        </div>
+      </div>
 
       {/* Agentic Simulation Deep Dive Console HUD */}
       {isSimulating && (
@@ -1225,175 +1235,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
         </section>
       )}
 
-      {/* 2.5 Dedicated Section: AI Suggested Rules (Contextual Intelligence) - Always Visible */}
-      <section id="v2-ai-suggestions-anchor" className="v2-ai-suggestions-section">
-        <div className="v2-ai-suggestions-header">
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                width: 34,
-                height: 34,
-                borderRadius: 9,
-                background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
-                color: "#ffffff",
-                boxShadow: "0 2px 6px rgba(124, 58, 237, 0.3)",
-                flexShrink: 0,
-              }}
-            >
-              <Sparkles size={18} />
-            </span>
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 700, color: "#1e1b4b" }}>
-                  ✨ AI Suggested Rules (Contextual Intelligence)
-                </h3>
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    color: unmappedSuggestions.length > 0 ? "#6d28d9" : "#059669",
-                    background: unmappedSuggestions.length > 0 ? "#ede9fe" : "#d1fae5",
-                    padding: "2px 8px",
-                    borderRadius: 12,
-                  }}
-                >
-                  {unmappedSuggestions.length > 0 ? `${unmappedSuggestions.length} Available` : "All Columns Identified"}
-                </span>
-              </div>
-              <p style={{ margin: "3px 0 0 0", fontSize: 12.5, color: "#4b5563" }}>
-                {unmappedSuggestions.length > 0
-                  ? `TARS studied sample rows from both workbooks and synthesized ${unmappedSuggestions.length} contextual rule recommendations based on your data schema. Review each rule and choose whether to accept it into your active reconciliation pipeline.`
-                  : "All standard and contextual columns detected in your uploaded dataset are actively mapped to rules in your pipeline."}
-              </p>
-            </div>
-          </div>
 
-          <button
-            type="button"
-            onClick={() => handleRefreshAiSuggestions(unmappedSuggestions.length === 0)}
-            disabled={isAiSuggesting}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 12.5,
-              fontWeight: 600,
-              color: "#6d28d9",
-              background: "#ffffff",
-              border: "1.5px solid #ddd6fe",
-              padding: "7px 15px",
-              borderRadius: 8,
-              cursor: isAiSuggesting ? "not-allowed" : "pointer",
-              boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-              flexShrink: 0,
-            }}
-          >
-            <Sparkles size={14} className={isAiSuggesting ? "spin" : ""} />
-            {isAiSuggesting ? "Analyzing Sample Rows..." : unmappedSuggestions.length > 0 ? "Re-Analyze Sample Rows" : "Scan Deep with AI"}
-          </button>
-        </div>
-
-        {unmappedSuggestions.length > 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
-            {unmappedSuggestions.map((sugRule) => (
-              <div key={sugRule.id} className="v2-ai-suggestion-card">
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 280 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
-                      <span
-                        style={{
-                          fontSize: 10.5,
-                          fontWeight: 700,
-                          textTransform: "uppercase",
-                          color: "#6d28d9",
-                          background: "#ede9fe",
-                          padding: "2px 8px",
-                          borderRadius: 4,
-                          letterSpacing: "0.03em",
-                        }}
-                      >
-                        {sugRule.category.replaceAll("_", " ")}
-                      </span>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: "#1e1b4b" }}>
-                        {sugRule.name}
-                      </span>
-                      <span className="v2-source-pill-compact" style={{ margin: 0 }}>
-                        <strong className="gov">{sugRule.gstr_column}</strong>
-                        <span style={{ color: "#94a3b8" }}>⟷</span>
-                        <strong className="pr">{sugRule.pr_column}</strong>
-                      </span>
-                    </div>
-
-                    <p style={{ margin: "0 0 8px 0", fontSize: 12.5, color: "#374151", lineHeight: 1.5 }}>
-                      {sugRule.description}
-                    </p>
-
-                    {/* AI Rationale / Observation callout */}
-                    {sugRule.ai_rationale && (
-                      <div className="v2-ai-rationale-box">
-                        <Sparkles size={14} style={{ color: "#7c3aed", marginTop: 2, flexShrink: 0 }} />
-                        <div style={{ fontSize: 12, lineHeight: 1.45 }}>
-                          <strong style={{ color: "#5b21b6" }}>AI Contextual Observation: </strong>
-                          <span>{sugRule.ai_rationale}</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, alignSelf: "center", flexShrink: 0 }}>
-                    <button
-                      type="button"
-                      className="btn-add-ai-rule"
-                      onClick={() => handleAcceptAiSuggestedRule(sugRule)}
-                      title="Adopt this AI rule into the active reconciliation pipeline"
-                    >
-                      <Check size={14} /> Accept & Add to Pipeline
-                    </button>
-                    <button
-                      type="button"
-                      className="btn-dismiss-ai-rule"
-                      onClick={() => handleDismissAiSuggestedRule(sugRule.id)}
-                      title="Dismiss this suggestion"
-                    >
-                      <X size={14} /> Dismiss
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="v2-all-identified-card">
-            <div className="v2-all-identified-content">
-              <div className="v2-all-identified-icon-badge">
-                <CheckCircle2 size={22} />
-              </div>
-              <div>
-                <h4 className="v2-all-identified-heading">
-                  The columns you are trying to identify are already there. Would you like to identify more?
-                </h4>
-                <p className="v2-all-identified-text">
-                  All standard and contextual columns detected in your uploaded dataset (such as GSTIN, Document Number, Date, Values, Place of Supply, HSN/SAC, Trade Name, and Cess) are actively mapped to rules in your pipeline.
-                </p>
-              </div>
-            </div>
-            <div className="v2-all-identified-actions">
-              <button
-                type="button"
-                className="btn-identify-more"
-                onClick={() => handleRefreshAiSuggestions(true)}
-                disabled={isAiSuggesting}
-              >
-                <Sparkles size={15} className={isAiSuggesting ? "spin" : ""} />
-                {isAiSuggesting ? "Scanning Sample Data with AI..." : "✨ Identify More with AI"}
-              </button>
-            </div>
-          </div>
-        )}
-      </section>
 
       {/* 3. Rules List */}
       <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -2130,6 +1972,217 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                   Add Rule to Pipeline
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: AI Suggested Rules & Contextual Intelligence */}
+      {showAiSuggestionsModal && (
+        <div className="v2-thoughts-modal-overlay" onClick={() => setShowAiSuggestionsModal(false)}>
+          <div className="v2-thoughts-modal-shell" style={{ maxWidth: 860 }} onClick={(e) => e.stopPropagation()}>
+            <div className="v2-thoughts-modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    background: "linear-gradient(135deg, #7c3aed, #4f46e5)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    color: "#ffffff",
+                    boxShadow: "0 2px 6px rgba(124, 58, 237, 0.3)",
+                  }}
+                >
+                  <Sparkles size={16} />
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#f8fafc" }}>
+                    AI Suggested Rules &amp; Contextual Intelligence
+                  </h3>
+                  <span style={{ fontSize: 12, color: "#94a3b8" }}>
+                    {unmappedSuggestions.length > 0
+                      ? `${unmappedSuggestions.length} Rule recommendation(s) synthesized from sample rows`
+                      : "All columns identified and mapped"}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="v2-thoughts-modal-close"
+                onClick={() => setShowAiSuggestionsModal(false)}
+                title="Close"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  width: 30,
+                  height: 30,
+                  borderRadius: 6,
+                  border: "1px solid rgba(255, 255, 255, 0.35)",
+                  background: "rgba(255, 255, 255, 0.15)",
+                  color: "#ffffff",
+                  cursor: "pointer",
+                }}
+              >
+                <X size={16} color="#ffffff" />
+              </button>
+            </div>
+
+            <div className="v2-thoughts-modal-body" style={{ maxHeight: "75vh", overflowY: "auto", padding: 20 }}>
+              <section className="v2-ai-suggestions-section" style={{ margin: 0, border: "none", boxShadow: "none" }}>
+                <div className="v2-ai-suggestions-header">
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#1e1b4b" }}>
+                          Contextual Rule Analysis
+                        </h4>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: unmappedSuggestions.length > 0 ? "#6d28d9" : "#059669",
+                            background: unmappedSuggestions.length > 0 ? "#ede9fe" : "#d1fae5",
+                            padding: "2px 8px",
+                            borderRadius: 12,
+                          }}
+                        >
+                          {unmappedSuggestions.length > 0 ? `${unmappedSuggestions.length} Available` : "All Columns Identified"}
+                        </span>
+                      </div>
+                      <p style={{ margin: "3px 0 0 0", fontSize: 12.5, color: "#4b5563" }}>
+                        {unmappedSuggestions.length > 0
+                          ? `TARS studied sample rows from both workbooks and synthesized ${unmappedSuggestions.length} contextual rule recommendations based on your data schema.`
+                          : "All standard and contextual columns detected in your uploaded dataset are actively mapped to rules in your pipeline."}
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRefreshAiSuggestions(unmappedSuggestions.length === 0)}
+                    disabled={isAiSuggesting}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      fontSize: 12.5,
+                      fontWeight: 600,
+                      color: "#6d28d9",
+                      background: "#ffffff",
+                      border: "1.5px solid #ddd6fe",
+                      padding: "7px 15px",
+                      borderRadius: 8,
+                      cursor: isAiSuggesting ? "not-allowed" : "pointer",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <Sparkles size={14} className={isAiSuggesting ? "spin" : ""} />
+                    {isAiSuggesting ? "Analyzing Sample Rows..." : unmappedSuggestions.length > 0 ? "Re-Analyze Sample Rows" : "Scan Deep with AI"}
+                  </button>
+                </div>
+
+                {unmappedSuggestions.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 14 }}>
+                    {unmappedSuggestions.map((sugRule) => (
+                      <div key={sugRule.id} className="v2-ai-suggestion-card">
+                        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+                          <div style={{ flex: 1, minWidth: 280 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                              <span
+                                style={{
+                                  fontSize: 10.5,
+                                  fontWeight: 700,
+                                  textTransform: "uppercase",
+                                  color: "#6d28d9",
+                                  background: "#ede9fe",
+                                  padding: "2px 8px",
+                                  borderRadius: 4,
+                                  letterSpacing: "0.03em",
+                                }}
+                              >
+                                {sugRule.category.replaceAll("_", " ")}
+                              </span>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: "#1e1b4b" }}>
+                                {sugRule.name}
+                              </span>
+                              <span className="v2-source-pill-compact" style={{ margin: 0 }}>
+                                <strong className="gov">{sugRule.gstr_column}</strong>
+                                <span style={{ color: "#94a3b8" }}>⟷</span>
+                                <strong className="pr">{sugRule.pr_column}</strong>
+                              </span>
+                            </div>
+
+                            <p style={{ margin: "0 0 8px 0", fontSize: 12.5, color: "#374151", lineHeight: 1.5 }}>
+                              {sugRule.description}
+                            </p>
+
+                            {sugRule.ai_rationale && (
+                              <div className="v2-ai-rationale-box">
+                                <Sparkles size={14} style={{ color: "#7c3aed", marginTop: 2, flexShrink: 0 }} />
+                                <div style={{ fontSize: 12, lineHeight: 1.45 }}>
+                                  <strong style={{ color: "#5b21b6" }}>AI Contextual Observation: </strong>
+                                  <span>{sugRule.ai_rationale}</span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, alignSelf: "center", flexShrink: 0 }}>
+                            <button
+                              type="button"
+                              className="btn-add-ai-rule"
+                              onClick={() => handleAcceptAiSuggestedRule(sugRule)}
+                              title="Adopt this AI rule into the active reconciliation pipeline"
+                            >
+                              <Check size={14} /> Accept &amp; Add to Pipeline
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-dismiss-ai-rule"
+                              onClick={() => handleDismissAiSuggestedRule(sugRule.id)}
+                              title="Dismiss this suggestion"
+                            >
+                              <X size={14} /> Dismiss
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="v2-all-identified-card">
+                    <div className="v2-all-identified-content">
+                      <div className="v2-all-identified-icon-badge">
+                        <CheckCircle2 size={22} />
+                      </div>
+                      <div>
+                        <h4 className="v2-all-identified-heading">
+                          The columns you are trying to identify are already there. Would you like to identify more?
+                        </h4>
+                        <p className="v2-all-identified-text">
+                          All standard and contextual columns detected in your uploaded dataset (such as GSTIN, Document Number, Date, Values, Place of Supply, HSN/SAC, Trade Name, and Cess) are actively mapped to rules in your pipeline.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="v2-all-identified-actions">
+                      <button
+                        type="button"
+                        className="btn-identify-more"
+                        onClick={() => handleRefreshAiSuggestions(true)}
+                        disabled={isAiSuggesting}
+                      >
+                        <Sparkles size={15} className={isAiSuggesting ? "spin" : ""} />
+                        {isAiSuggesting ? "Scanning Sample Data with AI..." : "✨ Identify More with AI"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
             </div>
           </div>
         </div>
