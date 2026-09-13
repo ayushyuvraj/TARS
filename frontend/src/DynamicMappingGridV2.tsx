@@ -279,8 +279,21 @@ export const DynamicMappingGridV2: React.FC<DynamicMappingGridV2Props> = ({
                   className="v2-thoughts-modal-close"
                   onClick={() => setShowThoughtsModal(false)}
                   title="Close"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 30,
+                    height: 30,
+                    borderRadius: 6,
+                    border: "1px solid rgba(255,255,255,0.4)",
+                    background: "rgba(255,255,255,0.15)",
+                    color: "#ffffff",
+                    cursor: "pointer",
+                    flexShrink: 0,
+                  }}
                 >
-                  <X size={16} />
+                  <X size={16} color="#ffffff" />
                 </button>
               </div>
             </div>
