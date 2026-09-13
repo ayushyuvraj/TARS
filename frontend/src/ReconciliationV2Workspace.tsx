@@ -493,7 +493,11 @@ export const ReconciliationV2Workspace: React.FC = () => {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
+  const [isResetting, setIsResetting] = useState(false);
+
   const resetAll = async () => {
+    if (isResetting) return;
+    setIsResetting(true);
     setGstrFile(null);
     setPrFile(null);
     setCorrelationResult(null);
@@ -509,6 +513,8 @@ export const ReconciliationV2Workspace: React.FC = () => {
     } catch (err) {
       setSessionId(null);
       navigate(`/reconciliations-v2`);
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -548,16 +554,17 @@ export const ReconciliationV2Workspace: React.FC = () => {
               <button
                 type="button"
                 onClick={resetAll}
-                className="v2-btn-reset-icon"
+                className={`v2-btn-reset-icon ${isResetting ? "is-spinning" : ""}`}
                 title="Reset Reconciliation Session"
+                disabled={isResetting}
               >
                 <RefreshCw size={13} />
               </button>
             </div>
           )}
-
         </div>
       </div>
+
 
       {/* 2. LINEAR-STYLE HORIZONTAL PIPELINE STEPPER */}
       <nav className="v2-pipeline-ribbon">

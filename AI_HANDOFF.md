@@ -26,10 +26,11 @@
      - Users can freely navigate backward to any previously completed stage of the same session ID via stepper or back buttons.
      - Direct URL tampering (e.g. attempting to skip to `/results` on a fresh session) is automatically intercepted and redirected to the highest unlocked stage.
   3. *Zero Functional Drift*: 100% of underlying matching algorithms, ingestion pipelines, database models, and financial integrity rules remain completely untouched.
-  4. *Streamlined Unboxed Top-Right Reset Icon*:
-     - Removed standalone boxed container and "Reset" text label from executive telemetry bar.
-     - Rendered unboxed refresh icon button (`.v2-btn-reset-icon`) directly adjacent to `.v2-session-badge`.
-     - Styled icon with cerulean hover glow (`#38bdf8`), smooth 180° rotation feedback, and streamlined alignment to the far right edge.
+  4. *Frozen Telemetry Header Positions & Subtle Animated Refresh Icon*:
+     - Sealed `.v2-session-badge` with `min-width: 250px; justify-content: center;` to lock exact 36-character monospace UUID dimensions.
+     - Anchored `AGENT ACTIVE` pill (`.v2-agent-badge`) and `Session ID` badge (`.v2-session-badge`) so their horizontal base positions never shift or jump rightward when clicking refresh or during session resets.
+     - Added unboxed refresh icon button (`.v2-btn-reset-icon`) in `.v2-session-badge-group` with `@keyframes v2RefreshIconPopIn` (subtle scale & rotate entrance) and smooth `@keyframes v2RefreshSpin` (360° spin feedback when active).
+     - Live browser measurement confirmed 0px horizontal shift across all session interactions.
 
 ---
 
