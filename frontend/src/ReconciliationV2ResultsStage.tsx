@@ -36,6 +36,7 @@ import {
 import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import { copilotV2Bridge } from "./copilot_v2_bridge";
 import "./results_v2.css";
+import "./reconciliation_v2.css";
 
 interface ResultsStageProps {
   sessionId: string;
@@ -92,15 +93,19 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
     setExecElapsedMs(0);
     const startTime = Date.now();
     const timer = setInterval(() => {
-      setExecElapsedMs(Date.now() - startTime);
-      setExecPass((prev) => (prev < 5 ? prev + 1 : prev));
-    }, 1200);
+      const elapsed = Date.now() - startTime;
+      setExecElapsedMs(elapsed);
+      const pass = Math.min(5, Math.floor(elapsed / 800) + 1);
+      setExecPass(pass);
+    }, 100);
 
     try {
       const resp = await apiV2.executeStage4Results(sessionId);
       setData(resp);
+      setExecPass(5);
+      await new Promise((r) => setTimeout(r, 350));
     } catch (err: any) {
-      setErrorMessage(err.message || "Failed to rerun reconciliation waterfall.");
+      setErrorMessage(err.message || "Failed to run reconciliation waterfall.");
     } finally {
       clearInterval(timer);
       setIsRerunning(false);
@@ -148,7 +153,34 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
     });
   }, []);
 
-  const summary = data?.summary;
+  const fallbackSummary: Stage4ResultsSummary = {
+    total_gstr_rows: 0,
+    total_pr_rows: 0,
+    exact_match_count: 0,
+    exact_match_itc: 0,
+    tolerance_match_count: 0,
+    tolerance_match_itc: 0,
+    near_match_count: 0,
+    near_match_itc: 0,
+    ambiguous_count: 0,
+    ambiguous_itc: 0,
+    gstr_only_count: 0,
+    gstr_only_itc: 0,
+    pr_only_count: 0,
+    pr_only_itc: 0,
+    total_reconciled_count: 0,
+    total_reconciled_itc: 0,
+    overall_reconciliation_rate: 0,
+    waterfall_passes: [
+      { tier: 1, name: "Exact Statutory Identity", matched_count: 0, retention_percentage: 0, matched_itc: 0 },
+      { tier: 2, name: "Enterprise Tolerances", matched_count: 0, retention_percentage: 0, matched_itc: 0 },
+      { tier: 3, name: "Semantic Near-Matching", matched_count: 0, retention_percentage: 0, matched_itc: 0 },
+      { tier: 4, name: "Ambiguity Clustering", matched_count: 0, retention_percentage: 0, matched_itc: 0 },
+      { tier: 5, name: "Single-Sided Residuals", matched_count: 0, retention_percentage: 0, matched_itc: 0 },
+    ],
+  };
+
+  const summary = data?.summary || fallbackSummary;
   const records = data?.records || [];
   const ambiguities = data?.ambiguities || [];
   const comparedColumns = data?.compared_columns || [];
@@ -222,223 +254,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
     { tier: 5, name: "Pass 5: Single-Sided Residuals", desc: "Categorizing GSTR-2B Only unclaimed credits vs Books-only DRC-01C risks" },
   ];
 
-  if (isRerunning && !data) {
-    const activePassInfo = WATERFALL_STEPS[execPass - 1] || WATERFALL_STEPS[0];
-    return (
-      <div className="v2-results-container">
-        <ReconciliationV2ActionBar
-          position="top"
-          stageNumber={4}
-          backLabel="Back to Stage 3 Rules"
-          onBack={onBackToRules}
-        />
 
-        <div className="v2-processing-state-card" style={{ margin: "40px auto", maxWidth: 760 }}>
-          <div className="v2-processing-header">
-            <div className="v2-processing-spinner">
-              <RefreshCw size={26} className="v2-spin text-blue-600" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                <h4 className="v2-processing-title" style={{ margin: 0 }}>
-                  Executing 5-Pass Reconciliation Waterfall
-                </h4>
-                <span style={{ background: "#eff6ff", color: "#1d4ed8", padding: "4px 10px", borderRadius: 6, fontWeight: 700, fontSize: 13, border: "1px solid #bfdbfe" }}>
-                  {(execElapsedMs / 1000).toFixed(1)}s elapsed
-                </span>
-              </div>
-              <p className="v2-processing-step" style={{ marginTop: 6, color: "#1e40af", fontWeight: 600 }}>
-                {activePassInfo.name}: <span style={{ fontWeight: 400, color: "#475569" }}>{activePassInfo.desc}</span>
-              </p>
-            </div>
-          </div>
-
-          <div className="v2-progress-rail" style={{ margin: "16px 0 20px 0" }}>
-            <div className="v2-progress-indeterminate" />
-          </div>
-
-          {/* 5-Pass Telemetry Stepper Visualizer */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, width: "100%" }}>
-            {WATERFALL_STEPS.map((step) => {
-              const isPast = step.tier < execPass;
-              const isCurrent = step.tier === execPass;
-              return (
-                <div
-                  key={step.tier}
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    padding: "8px 6px",
-                    borderRadius: 8,
-                    background: isCurrent ? "#eff6ff" : (isPast ? "#f0fdf4" : "#f8fafc"),
-                    border: `1px solid ${isCurrent ? "#93c5fd" : (isPast ? "#bbf7d0" : "#e2e8f0")}`,
-                    textAlign: "center",
-                    gap: 4,
-                  }}
-                >
-                  <span style={{ fontSize: 10, fontWeight: 750, color: isCurrent ? "#1d4ed8" : (isPast ? "#16a34a" : "#94a3b8") }}>
-                    PASS {step.tier}
-                  </span>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: isCurrent ? "#0f172a" : (isPast ? "#15803d" : "#64748b"), whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", width: "100%" }}>
-                    {step.name.split(":")[1]?.trim() || step.name}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (isLoading) {
-    return (
-      <div className="v2-results-container">
-        <div className="v2-processing-state-card" style={{ margin: "60px auto", maxWidth: 640 }}>
-          <div className="v2-processing-header">
-            <div className="v2-processing-spinner">
-              <RefreshCw size={24} className="v2-spin text-blue-600" />
-            </div>
-            <div>
-              <h4 className="v2-processing-title">Checking Reconciliation State</h4>
-              <p className="v2-processing-step">
-                Hydrating session waterfall results, deterministic matches, and ambiguity clusters...
-              </p>
-            </div>
-          </div>
-          <div className="v2-progress-rail">
-            <div className="v2-progress-indeterminate" />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!data && !isLoading) {
-    return (
-      <div className="v2-results-container">
-        {/* Hero Banner */}
-        <div className="v2-results-hero" style={{ background: "linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #1e40af 100%)" }}>
-          {onBackToRules && (
-            <div className="v2-hero-nav-left">
-              <button
-                type="button"
-                className="v2-hero-btn-back"
-                onClick={onBackToRules}
-                title="Return to Stage 3: Reconciliation Rules"
-                aria-label="Back to previous screen"
-              >
-                <ArrowLeft size={15} />
-                <span>Back to Rules</span>
-              </button>
-            </div>
-          )}
-          <div className="v2-results-hero-content">
-            <div className="v2-results-stage-tag" style={{ background: "rgba(59, 130, 246, 0.2)", color: "#93c5fd" }}>
-              <Sparkles size={13} />
-              <span>Stage 4 of 6 • Reconciliation Engine Launchpad</span>
-            </div>
-            <h2 className="v2-results-hero-title">Ready to Run Reconciliation Engine</h2>
-            <p className="v2-results-hero-desc">
-              Your reconciliation rules, numerical tolerances, and schema couplings are frozen and locked. Click <strong>"Run Reconciliation Engine"</strong> to execute vectorized multi-pass matching across both workbooks.
-            </p>
-          </div>
-        </div>
-
-        {/* Launchpad Card */}
-        <div className="v2-stage4-launchpad-card">
-          <div className="v2-launchpad-prep-grid">
-            <div className="v2-prep-item">
-              <div className="v2-prep-icon green">
-                <CheckCircle2 size={22} />
-              </div>
-              <div className="v2-prep-content">
-                <span className="v2-prep-label">Stage 1 Ingestion</span>
-                <span className="v2-prep-title">Dual Workbooks Primed</span>
-                <span className="v2-prep-desc">Government GSTR-2B & Purchase Register active</span>
-              </div>
-            </div>
-
-            <div className="v2-prep-item">
-              <div className="v2-prep-icon green">
-                <CheckCircle2 size={22} />
-              </div>
-              <div className="v2-prep-content">
-                <span className="v2-prep-label">Stage 2 Mapping</span>
-                <span className="v2-prep-title">AI Schema Coupled</span>
-                <span className="v2-prep-desc">Canonical field alignments confirmed</span>
-              </div>
-            </div>
-
-            <div className="v2-prep-item">
-              <div className="v2-prep-icon green">
-                <CheckCircle2 size={22} />
-              </div>
-              <div className="v2-prep-content">
-                <span className="v2-prep-label">Stage 3 Rules</span>
-                <span className="v2-prep-title">Matching Policy Frozen</span>
-                <span className="v2-prep-desc">Tolerances & pass order locked</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="v2-launchpad-action-deck">
-            <button
-              type="button"
-              className="v2-btn-run-reconciliation-main"
-              disabled={isRerunning}
-              onClick={handleRerunWaterfall}
-            >
-              {isRerunning ? (
-                <>
-                  <RefreshCw size={20} className="v2-spin" />
-                  <span>Executing Reconciliation Waterfall Engine…</span>
-                </>
-              ) : (
-                <>
-                  <Play size={20} fill="currentColor" />
-                  <span>Run Reconciliation Engine</span>
-                </>
-              )}
-            </button>
-            <p className="v2-launchpad-hint">
-              Executes 5-pass progressive elimination: exact identity, tolerance matching, near-match candidates, and ambiguity isolation.
-            </p>
-          </div>
-
-          {errorMessage && (
-            <div className="v2-alert-error" style={{ margin: "20px 0 0 0" }}>
-              <AlertCircle size={16} />
-              <span>{errorMessage}</span>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
-
-  if (errorMessage && !data) {
-    return (
-      <div className="v2-results-container">
-        <div className="v2-alert-error" style={{ maxWidth: 640, margin: "60px auto", textAlign: "center" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "center", marginBottom: 12 }}>
-            <AlertCircle size={24} />
-            <strong style={{ fontSize: 16 }}>Reconciliation Waterfall Failed</strong>
-          </div>
-          <p style={{ margin: 0, fontSize: 13, color: "#9f1239" }}>{errorMessage}</p>
-          <button
-            type="button"
-            className="v2-browse-button blue"
-            style={{ margin: "20px auto 0 auto" }}
-            onClick={loadResults}
-          >
-            ← Retry Reconciliation Execution
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="v2-results-container">
@@ -478,22 +294,45 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
             className="v2-btn-rerun"
             onClick={handleRerunWaterfall}
             disabled={isRerunning}
-            title="Re-run reconciliation waterfall with active rules"
+            title={!data ? "Execute 5-pass reconciliation engine across both workbooks" : "Re-run reconciliation waterfall with active rules"}
           >
-            <RefreshCw size={14} className={isRerunning ? "v2-spin" : ""} />
-            <span>{isRerunning ? "Re-running..." : "Re-run Waterfall"}</span>
+            {isRerunning ? (
+              <>
+                <RefreshCw size={14} className="v2-spin" />
+                <span>Reconciling...</span>
+              </>
+            ) : !data ? (
+              <>
+                <Play size={14} fill="currentColor" />
+                <span>Reconcile</span>
+              </>
+            ) : (
+              <>
+                <RefreshCw size={14} />
+                <span>Rerun Reconciliation</span>
+              </>
+            )}
           </button>
           <button
             type="button"
             className="v2-btn-primary-action"
             onClick={onProceedToSummary}
-            title="Proceed to Stage 5: Summary Dashboard"
+            disabled={!data || isRerunning}
+            title={!data ? "Please run reconciliation to proceed to Summary Dashboard" : "Proceed to Stage 5: Summary Dashboard"}
+            style={!data || isRerunning ? { opacity: 0.5, cursor: "not-allowed" } : undefined}
           >
             <span>Proceed to Summary Dashboard</span>
             <ArrowRight size={14} />
           </button>
         </div>
       </div>
+
+      {errorMessage && (
+        <div className="v2-alert-error" style={{ margin: "16px 0 0 0" }}>
+          <AlertCircle size={16} />
+          <span>{errorMessage}</span>
+        </div>
+      )}
 
       {/* 2. OVERALL RECONCILIATION ACCURACY UNIT (SEPARATE HIGHLIGHTED BOX) */}
       {summary && (
@@ -881,7 +720,21 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
               {filteredRecords.length === 0 ? (
                 <tr>
                   <td colSpan={10} style={{ textAlign: "center", padding: "40px 20px", color: "#64748b" }}>
-                    No records found matching current tab filter and search query.
+                    {!data ? (
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "28px 20px" }}>
+                        <div style={{ width: 44, height: 44, borderRadius: 12, background: "rgba(2, 132, 199, 0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <Play size={22} style={{ color: "#0284c7" }} fill="#0284c7" />
+                        </div>
+                        <span style={{ fontSize: 15, fontWeight: 700, color: "#0f172a" }}>
+                          Reconciliation Engine Ready to Execute
+                        </span>
+                        <span style={{ fontSize: 12.5, color: "#64748b", maxWidth: 480, textAlign: "center", lineHeight: 1.5 }}>
+                          Your dual workbooks and statutory matching policies are frozen. Click <strong>"Reconcile"</strong> in the top hero banner to run the 5-pass progressive elimination waterfall.
+                        </span>
+                      </div>
+                    ) : (
+                      "No records found matching current tab filter and search query."
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -1534,14 +1387,124 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
         </div>
       )}
 
+      {/* 5-PASS DYNAMIC RECONCILIATION MODAL HUD (Matching Stage 1) */}
+      {isRerunning && (
+        <div className="v2-cot-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="v2-reconcile-modal-title">
+          <div className="v2-cot-modal-shell" style={{ maxWidth: 880 }}>
+            <div className="v2-cot-modal-core">
+              <div className="v2-cot-header">
+                <div className="v2-cot-title-row">
+                  <span className="v2-status-dot-pulse" />
+                  <span id="v2-reconcile-modal-title" className="v2-cot-title">
+                    Autonomous 5-Pass Reconciliation Waterfall Engine
+                  </span>
+                </div>
+                <span className="v2-cot-timer">{(execElapsedMs / 1000).toFixed(1)}s elapsed</span>
+              </div>
+
+              <p className="v2-cot-modal-sub">
+                Progressively eliminating dual-ledger variance across 5 statutory, enterprise, and near-match passes...
+              </p>
+
+              {/* 5-Pass Telemetry Stepper Visualizer Grid */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(5, minmax(0, 1fr))",
+                  gap: 8,
+                  marginTop: 6,
+                }}
+              >
+                {WATERFALL_STEPS.map((step) => {
+                  const isPast = step.tier < execPass;
+                  const isCurrent = step.tier === execPass;
+                  const status = isPast ? "completed" : isCurrent ? "running" : "pending";
+                  return (
+                    <div
+                      key={step.tier}
+                      className={`v2-cot-step-tile is-${status}`}
+                      style={{
+                        padding: "10px 8px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                        minHeight: 120,
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 800,
+                            letterSpacing: "0.05em",
+                            color: isCurrent ? "#72cdf4" : isPast ? "#34d399" : "#64748b",
+                          }}
+                        >
+                          PASS 0{step.tier}
+                        </span>
+                        <div className="v2-cot-step-icon" style={{ margin: 0, width: 20, height: 20 }}>
+                          {isPast ? (
+                            <CheckCircle2 size={14} className="v2-step-check" />
+                          ) : isCurrent ? (
+                            <RefreshCw size={13} className="v2-spin text-blue-400" />
+                          ) : (
+                            <span style={{ fontSize: 10, color: "#64748b" }}>{step.tier}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 11.5,
+                            fontWeight: 700,
+                            color: isCurrent ? "#ffffff" : isPast ? "#f1f5f9" : "#94a3b8",
+                            lineHeight: 1.3,
+                            marginBottom: 4,
+                          }}
+                        >
+                          {step.name.split(":")[1]?.trim() || step.name}
+                        </div>
+                        <p
+                          style={{
+                            fontSize: 10,
+                            color: isCurrent ? "#cbd5e1" : "#64748b",
+                            lineHeight: 1.35,
+                            margin: 0,
+                          }}
+                        >
+                          {step.desc}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Bottom Micro-Progress Bar */}
+              <div className="v2-cot-progress-track" style={{ marginTop: 8 }}>
+                <div
+                  className="v2-cot-progress-fill"
+                  style={{
+                    width: `${Math.min(100, Math.max(10, (execPass / 5) * 100))}%`,
+                    transition: "width 0.35s ease",
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 6. BOTTOM ACTION BAR */}
       <ReconciliationV2ActionBar
         position="bottom"
         stageNumber={4}
-        backLabel="Back to Rules Wiki Studio"
+        backLabel="Back to Stage 3 Rules"
         onBack={onBackToRules}
         nextLabel="Proceed to Summary Dashboard"
         onNext={onProceedToSummary}
+        nextDisabled={!data || isRerunning}
         extraLeft={
           <div style={{ fontSize: 12.5, fontWeight: 600, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
             <Sparkles size={14} color="#00338d" />

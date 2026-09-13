@@ -205,9 +205,18 @@
   white-space: nowrap;
 }
 
-.v2-btn-primary-action:hover {
+.v2-btn-primary-action:hover:not(:disabled) {
   background: #0369a1;
   transform: translateY(-1px);
+}
+
+.v2-btn-primary-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+  background: #475569;
+  border-color: #64748b;
+  transform: none;
 }
 
 /* --- Separate Reconciliation Accuracy Banner --- */
