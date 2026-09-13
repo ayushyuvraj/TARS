@@ -2663,12 +2663,17 @@
   width: 30px;
   height: 30px;
   border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.4);
-  background: rgba(255, 255, 255, 0.12);
-  color: #e2e8f0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
   cursor: pointer;
   transition: all 0.15s ease;
   flex-shrink: 0;
+}
+
+.v2-thoughts-modal-close svg {
+  stroke: #ffffff;
+  color: #ffffff;
 }
 
 .v2-thoughts-modal-close:hover {
