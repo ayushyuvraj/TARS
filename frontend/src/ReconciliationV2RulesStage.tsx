@@ -29,7 +29,6 @@ import {
   Activity,
   RefreshCw,
 } from "lucide-react";
-import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import { copilotV2Bridge } from "./copilot_v2_bridge";
 import "./rules_v2.css";
 import "./results_v2.css";
@@ -1734,19 +1733,6 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
           );
         })}
       </section>
-
-      {/* 4. Bottom Action Bar */}
-      <ReconciliationV2ActionBar
-        position="bottom"
-        stageNumber={3}
-        backLabel="Back to Schema Mapping"
-        onBack={onBackToMapping}
-        nextLabel={isConfirming ? "Freezing Rules…" : "Confirm & Freeze Rules"}
-        onNext={handleProceed}
-        nextDisabled={isConfirming || rules.filter((r) => r.is_enabled).length === 0}
-        isNextLoading={isConfirming}
-        nextLoadingText="Freezing Rules…"
-      />
 
       {/* --- PLAIN ENGLISH EXPLANATION MODAL --- */}
       {explainingRule && (

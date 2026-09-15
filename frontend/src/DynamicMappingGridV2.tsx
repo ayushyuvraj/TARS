@@ -24,7 +24,6 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
-import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 
 interface DynamicMappingGridV2Props {
   correlations: DirectColumnCorrelation[];
@@ -511,17 +510,6 @@ export const DynamicMappingGridV2: React.FC<DynamicMappingGridV2Props> = ({
           onSelectColumn={handlePrColumnChange}
         />
       </div>
-
-      {/* Bottom Stage Action Bar */}
-      <ReconciliationV2ActionBar
-        position="bottom"
-        stageNumber={2}
-        backLabel="Back to Ingestion Setup"
-        onBack={onBackToSetup}
-        nextLabel={isConfirmed ? "Mapping Confirmed" : "Confirm Schema & Proceed"}
-        onNext={onConfirmMapping}
-        nextDisabled={disabled || isConfirmed}
-      />
     </div>
   );
 };

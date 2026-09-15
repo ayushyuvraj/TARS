@@ -8,7 +8,6 @@ import {
   ExportPreset,
   CustomExportRequest,
 } from "./api_v2";
-import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import { ExcelColorPicker } from "./ExcelColorPicker";
 import "./summary_export_v2.css";
 import "./results_v2.css";
@@ -217,6 +216,29 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
       setNewPresetName("");
     } catch (err: any) {
       alert(`Failed to save preset: ${err.message}`);
+    }
+  };
+
+  // Delete Preset (System or Custom)
+  const handleDeletePreset = async (presetId: string) => {
+    const target = presets.find((p) => p.id === presetId);
+    if (!target) return;
+    if (!window.confirm(`Are you sure you want to delete preset "${target.name}"?`)) return;
+    try {
+      const updatedPresets = await apiV2.deleteExportPreset(presetId);
+      setPresets(updatedPresets);
+      if (updatedPresets && updatedPresets.length > 0) {
+        const fallback = updatedPresets.find((p) => p.id === "preset_kpmg_statutory") || updatedPresets[0];
+        setSelectedPresetId(fallback.id);
+        setActiveColumns(fallback.columns || []);
+        setConditionalRules(fallback.conditional_rules || []);
+      } else {
+        setSelectedPresetId("");
+        setActiveColumns([]);
+        setConditionalRules([]);
+      }
+    } catch (err: any) {
+      alert(`Failed to delete preset: ${err.message}`);
     }
   };
 
@@ -443,11 +465,15 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
                 cursor: "pointer",
               }}
             >
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.is_system ? `[Standard] ${p.name}` : `[Custom] ${p.name}`}
-                </option>
-              ))}
+              {presets.length === 0 ? (
+                <option value="">No presets saved</option>
+              ) : (
+                presets.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.is_system ? `[Standard] ${p.name}` : `[Custom] ${p.name}`}
+                  </option>
+                ))
+              )}
             </select>
           </div>
 
@@ -517,6 +543,41 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
               Save As New Preset
             </button>
           )}
+
+          {(() => {
+            const selectedPreset = presets.find((p) => p.id === selectedPresetId);
+            const hasSelection = !!selectedPreset;
+            return (
+              <button
+                type="button"
+                onClick={() => selectedPreset && handleDeletePreset(selectedPreset.id)}
+                disabled={!hasSelection}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  background: hasSelection ? "#fff1f2" : "#f8fafc",
+                  color: hasSelection ? "#be123c" : "#94a3b8",
+                  border: hasSelection ? "1px solid #fecdd3" : "1px solid #e2e8f0",
+                  borderRadius: 6,
+                  padding: "6px 10px",
+                  fontSize: 12,
+                  fontWeight: 600,
+                  cursor: hasSelection ? "pointer" : "not-allowed",
+                  opacity: hasSelection ? 1 : 0.65,
+                  transition: "all 0.15s ease",
+                }}
+                title={
+                  selectedPreset
+                    ? `Delete preset "${selectedPreset.name}"`
+                    : "No preset selected to delete"
+                }
+              >
+                <Trash2 size={14} color={hasSelection ? "#be123c" : "#94a3b8"} />
+                <span>Delete Preset</span>
+              </button>
+            );
+          })()}
         </div>
 
         {/* Right: Sleek Unified Top-Right Export Dropdown */}
@@ -1135,28 +1196,6 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
           </div>
         </div>
       )}
-
-      {/* Bottom Action Bar */}
-      <ReconciliationV2ActionBar
-        position="bottom"
-        stageNumber={6}
-        backLabel="Back to Summary Dashboard"
-        onBack={onBack}
-        nextLabel={isDownloading ? "Exporting..." : "Export Excel Ledger"}
-        onNext={() => handleCustomExport("xlsx")}
-        extraRight={
-          <button
-            type="button"
-            className="v2-btn-complete-kpmg"
-            onClick={handleComplete}
-            disabled={isCompleting}
-            title="Complete Reconciliation & Return to Reconciliation 2.0"
-          >
-            {isCompleting ? <RefreshCw className="animate-spin" size={15} /> : <CheckCircle2 size={16} />}
-            <span>Complete</span>
-          </button>
-        }
-      />
     </div>
   );
 };

@@ -11,7 +11,6 @@ import {
   VarianceTaxonomyItem,
   AiOperationalDirective,
 } from "./api_v2";
-import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import "./summary_export_v2.css";
 import "./results_v2.css";
 import {
@@ -711,16 +710,6 @@ export const ReconciliationV2SummaryStage: React.FC<ReconciliationV2SummaryStage
           <span>Ledger Export Artifacts Ready</span>
         </div>
       </section>
-
-      {/* Bottom Action Bar */}
-      <ReconciliationV2ActionBar
-        position="bottom"
-        stageNumber={5}
-        backLabel="Back to Results Matrix"
-        onBack={onBack}
-        nextLabel="Proceed to Ledger Export"
-        onNext={onProceedToExport}
-      />
     </div>
   );
 };

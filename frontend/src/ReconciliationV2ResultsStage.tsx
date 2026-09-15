@@ -33,7 +33,6 @@ import {
   AmbiguityCluster,
   AmbiguityCandidate,
 } from "./api_v2";
-import { ReconciliationV2ActionBar } from "./ReconciliationV2ActionBar";
 import { copilotV2Bridge } from "./copilot_v2_bridge";
 import "./results_v2.css";
 import "./reconciliation_v2.css";
@@ -1495,23 +1494,6 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
           </div>
         </div>
       )}
-
-      {/* 6. BOTTOM ACTION BAR */}
-      <ReconciliationV2ActionBar
-        position="bottom"
-        stageNumber={4}
-        backLabel="Back to Stage 3 Rules"
-        onBack={onBackToRules}
-        nextLabel="Proceed to Summary Dashboard"
-        onNext={onProceedToSummary}
-        nextDisabled={!data || isRerunning}
-        extraLeft={
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: "#64748b", display: "flex", alignItems: "center", gap: 6 }}>
-            <Sparkles size={14} color="#00338d" />
-            <span>Stage 4 of 6: Deterministic Reconciliation Matrix</span>
-          </div>
-        }
-      />
     </div>
   );
 };

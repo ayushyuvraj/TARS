@@ -1198,65 +1198,93 @@ class ExportV2Service:
         return presets_dir / "export_presets.json"
 
     def get_presets(self) -> list[ExportPreset]:
-        """Returns all system built-in presets plus user saved presets from disk."""
+        """Returns all system built-in presets plus user saved presets from disk, excluding deleted IDs."""
         path = self._get_presets_path()
         system_presets = self._build_default_system_presets()
-        if not path.exists():
-            return system_presets
+        user_presets: list[ExportPreset] = []
+        deleted_ids: set[str] = set()
 
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            user_presets = [ExportPreset(**p) for p in data]
-            # Merge system and user presets
-            return system_presets + user_presets
-        except Exception as exc:
-            logger.warning(f"Could not read custom export presets from {path}: {exc}")
-            return system_presets
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    user_presets = [ExportPreset(**p) for p in data.get("user_presets", [])]
+                    deleted_ids = set(data.get("deleted_ids", []))
+                elif isinstance(data, list):
+                    user_presets = [ExportPreset(**p) for p in data]
+            except Exception as exc:
+                logger.warning(f"Could not read custom export presets from {path}: {exc}")
+
+        all_presets = system_presets + user_presets
+        return [p for p in all_presets if p.id not in deleted_ids]
 
     def save_preset(self, preset: ExportPreset) -> list[ExportPreset]:
         """Saves a user preset to disk."""
         path = self._get_presets_path()
-        existing_user: list[dict[str, Any]] = []
+        user_presets: list[dict[str, Any]] = []
+        deleted_ids: list[str] = []
+
         if path.exists():
             try:
                 with open(path, "r", encoding="utf-8") as f:
-                    existing_user = json.load(f)
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    user_presets = data.get("user_presets", [])
+                    deleted_ids = data.get("deleted_ids", [])
+                elif isinstance(data, list):
+                    user_presets = data
             except Exception:
-                existing_user = []
+                pass
 
-        # Update or append
+        # If saving a preset whose ID was previously deleted, un-delete it
+        deleted_ids = [did for did in deleted_ids if did != preset.id]
+
         updated = False
         preset_dict = preset.model_dump()
         preset_dict["is_system"] = False
         preset_dict["created_at"] = datetime.now(timezone.utc).isoformat()
 
-        for idx, item in enumerate(existing_user):
+        for idx, item in enumerate(user_presets):
             if item.get("id") == preset.id or item.get("name") == preset.name:
-                existing_user[idx] = preset_dict
+                user_presets[idx] = preset_dict
                 updated = True
                 break
         if not updated:
-            existing_user.append(preset_dict)
+            user_presets.append(preset_dict)
 
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(existing_user, f, indent=2)
+            json.dump({"user_presets": user_presets, "deleted_ids": deleted_ids}, f, indent=2)
 
         return self.get_presets()
 
     def delete_preset(self, preset_id: str) -> list[ExportPreset]:
-        """Deletes a custom preset by ID."""
+        """Deletes any preset (system or custom) by ID."""
         path = self._get_presets_path()
-        if not path.exists():
-            return self.get_presets()
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                existing = json.load(f)
-            filtered = [p for p in existing if p.get("id") != preset_id]
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(filtered, f, indent=2)
-        except Exception as exc:
-            logger.error(f"Error deleting preset {preset_id}: {exc}")
+        user_presets: list[dict[str, Any]] = []
+        deleted_ids: list[str] = []
+
+        if path.exists():
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                if isinstance(data, dict):
+                    user_presets = data.get("user_presets", [])
+                    deleted_ids = data.get("deleted_ids", [])
+                elif isinstance(data, list):
+                    user_presets = data
+            except Exception as exc:
+                logger.error(f"Error reading preset file for deletion: {exc}")
+
+        # Remove from user_presets if present
+        user_presets = [p for p in user_presets if p.get("id") != preset_id]
+        # Track in deleted_ids
+        if preset_id not in deleted_ids:
+            deleted_ids.append(preset_id)
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"user_presets": user_presets, "deleted_ids": deleted_ids}, f, indent=2)
+
         return self.get_presets()
 
     def _build_default_system_presets(self) -> list[ExportPreset]:

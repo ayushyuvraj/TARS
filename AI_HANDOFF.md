@@ -1,5 +1,25 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 2.0 Bottom Action Bar Clean-up & Universal Preset Deletion (15th September 2026)
+
+- **Checkpoint Name**: `Reconciliation 2.0 Bottom Action Bar Clean-up & Universal Preset Deletion`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-15-bottom-action-bars-preset-deletion-checkpoint`
+- **Current HEAD Commit**: `0225eba`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Duplicate Bottom Action Bar Elimination Across Stages 2–6*:
+     - Removed redundant `<ReconciliationV2ActionBar>` bottom action bars from Stage 2 (`DynamicMappingGridV2.tsx`), Stage 3 (`ReconciliationV2RulesStage.tsx`), Stage 4 (`ReconciliationV2ResultsStage.tsx`), Stage 5 (`ReconciliationV2SummaryStage.tsx`), and Stage 6 (`ReconciliationV2ExportStage.tsx`).
+     - Preserved all top hero banner navigation, execution, export, and completion action buttons intact across all stages.
+  2. *Universal Export Preset Deletion Engine*:
+     - Updated backend `export_v2_service.py` to maintain persistent deletion tracking (`deleted_ids`) in `export_presets.json`.
+     - Enabled deletion for all export presets, including user custom presets and the 4 default system presets (`KPMG Statutory Audit Package`, `360° Dual Ledger Complete Dump`, `ITC & Tax Variance Focus`, `ERP Pipeline DSV Feed`).
+     - Updated Stage 6 UI (`ReconciliationV2ExportStage.tsx`) to render an active, permanently visible `Delete Preset` button whenever a preset is selected, with confirmation dialogs and smooth fallback handling.
+  3. *Full Verification*:
+     - Verified frontend build via `npm --prefix frontend run build` with 0 TypeScript/Vite errors.
+
+---
+
 ## Completed Reconciliation Session Immutability & 6/6 Stage Preservation (14th September 2026)
 
 - **Checkpoint Name**: `Completed Reconciliation Session Immutability & 6/6 Stage Preservation`
