@@ -999,7 +999,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
             {correlationResult ? (
               <DynamicMappingGridV2
                 correlations={correlationResult.correlations || []}
-                prColumns={correlationResult.pr_columns || []}
+                prColumns={(correlationResult.all_columns && correlationResult.all_columns.length > 0 ? correlationResult.all_columns : correlationResult.pr_columns) || []}
                 gstrFileName={correlationResult.gstr_filename || reconFile?.name || "KICS Recon (Counterparty / CP)"}
                 prFileName={correlationResult.pr_filename || reconFile?.name || "KICS Recon (Enterprise / PR)"}
                 agentThoughts={agentThoughts.length > 0 ? agentThoughts : (correlationResult.agent_thoughts || [])}
@@ -1070,7 +1070,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
             <ReconciliationV2RulesStage
               sessionId={sessionId || ""}
               correlations={correlationResult?.correlations || []}
-              prColumns={correlationResult?.pr_columns || []}
+              prColumns={(correlationResult?.all_columns && correlationResult.all_columns.length > 0 ? correlationResult.all_columns : correlationResult?.pr_columns) || []}
               onBackToMapping={() => {
                 setCurrentStage("mapping");
                 if (sessionId) navigate(`/reconciliations-v3/${sessionId}/mapping`);
