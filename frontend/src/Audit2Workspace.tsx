@@ -54,6 +54,7 @@ export const Audit2Workspace: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [reconFilter, setReconFilter] = useState<"all" | "v2" | "v3">("all");
   const [isResuming, setIsResuming] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [chapterTabState, setChapterTabState] = useState<Record<number, "findings" | "evidence" | "trace">>({});
@@ -266,6 +267,8 @@ export const Audit2Workspace: React.FC = () => {
   };
 
   const filteredSessions = sessions.filter((s) => {
+    if (reconFilter === "v2" && s.recon_type === "v3") return false;
+    if (reconFilter === "v3" && s.recon_type !== "v3") return false;
     const q = searchTerm.toLowerCase();
     return (
       s.session_id.toLowerCase().includes(q) ||
@@ -794,6 +797,29 @@ export const Audit2Workspace: React.FC = () => {
                 onChange={(e) => setSearchTerm(e.target.value)}
               />
             </div>
+            <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
+              {(["all", "v2", "v3"] as const).map((filterVal) => (
+                <button
+                  key={filterVal}
+                  type="button"
+                  onClick={() => setReconFilter(filterVal)}
+                  style={{
+                    flex: 1,
+                    padding: "4px 8px",
+                    borderRadius: 6,
+                    fontSize: 10.5,
+                    fontWeight: 600,
+                    border: reconFilter === filterVal ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.08)",
+                    background: reconFilter === filterVal ? "#00338D" : "rgba(30, 41, 59, 0.4)",
+                    color: reconFilter === filterVal ? "#ffffff" : "#94a3b8",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  {filterVal === "all" ? "All" : filterVal === "v2" ? "Recon 2.0" : "Recon 3.0"}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="v2-audit-runs-scroll">
@@ -817,6 +843,25 @@ export const Audit2Workspace: React.FC = () => {
                       }`}
                     >
                       {isComplete ? "COMPLETED" : `PAUSED: STAGE ${sess.current_stage_number}`}
+                    </span>
+                  </div>
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "4px 0 2px 0" }}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontSize: 9.5,
+                        fontWeight: 700,
+                        padding: "1px 6px",
+                        borderRadius: 4,
+                        background: sess.recon_type === "v3" ? "rgba(6, 182, 212, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                        color: sess.recon_type === "v3" ? "#06b6d4" : "#60a5fa",
+                        border: sess.recon_type === "v3" ? "1px solid rgba(6, 182, 212, 0.3)" : "1px solid rgba(59, 130, 246, 0.3)",
+                      }}
+                    >
+                      {sess.recon_type === "v3" ? "Recon 3.0 • Single Recon" : "Recon 2.0 • Dual Ledger"}
                     </span>
                   </div>
 
@@ -935,6 +980,22 @@ export const Audit2Workspace: React.FC = () => {
                     <span className="v2-statutory-stamp">
                       <ShieldCheck size={11} className="text-emerald-500" />
                       SEC 16(2)
+                    </span>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                        fontSize: 11,
+                        fontWeight: 700,
+                        padding: "3px 8px",
+                        borderRadius: 6,
+                        background: selectedSession.recon_type === "v3" ? "rgba(6, 182, 212, 0.15)" : "rgba(59, 130, 246, 0.15)",
+                        color: selectedSession.recon_type === "v3" ? "#06b6d4" : "#3b82f6",
+                        border: selectedSession.recon_type === "v3" ? "1px solid rgba(6, 182, 212, 0.3)" : "1px solid rgba(59, 130, 246, 0.3)",
+                      }}
+                    >
+                      {selectedSession.recon_type === "v3" ? "Recon 3.0 • Single Recon File" : "Recon 2.0 • Dual Ledger"}
                     </span>
                   </div>
                 </div>

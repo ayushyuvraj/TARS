@@ -87,6 +87,7 @@ class V2RunRecord(BaseModel):
 
 class V2SessionRecord(BaseModel):
     id: str
+    recon_type: str = "v2"  # "v2" or "v3"
     title: str = "GST Reconciliation 2.0"
     status: str = "setup"
     current_stage: str = "setup"
@@ -94,8 +95,10 @@ class V2SessionRecord(BaseModel):
     updated_at: str
     gstr_filename: str | None = None
     pr_filename: str | None = None
+    recon_filename: str | None = None
     gstr_path: str | None = None
     pr_path: str | None = None
+    recon_path: str | None = None
     correlation: dict[str, Any] | None = None
     selected_rule_ids: list[str] = Field(default_factory=list)
     rule_execution_order: list[str] = Field(default_factory=list)
@@ -375,8 +378,9 @@ class AuditV2Service:
         }
 
         # --- 6-BUCKET MATCH DISPOSITION MATRIX ---
-        total_gstr = summary.get("total_gstr_rows") or sess.get("gstr_row_count") or 0
-        total_pr = summary.get("total_pr_rows") or sess.get("pr_row_count") or 0
+        sess = self.get_session(results_dict.get("session_id", "")) or {}
+        total_gstr = summary.get("total_gstr_rows") or sess.get("gstr_row_count") or summary.get("total_records") or 0
+        total_pr = summary.get("total_pr_rows") or sess.get("pr_row_count") or summary.get("total_records") or 0
         exact_cnt = summary.get("exact_match_count", 0)
         tol_cnt = summary.get("tolerance_match_count", 0)
         near_cnt = summary.get("near_match_count", 0)
@@ -610,6 +614,8 @@ class AuditV2Service:
             if isinstance(s, dict)
             and (
                 s.get("gstr_filename")
+                or s.get("recon_filename")
+                or s.get("recon_type") == "v3"
                 or s.get("correlation")
                 or s.get("runs")
                 or s.get("current_stage") != "setup"
@@ -921,7 +927,7 @@ class AuditV2Service:
                 selected_ids = [r.get("id") for r in rules_list if r.get("id")]
             rule_ids = selected_ids or ["R-INV-EXACT", "R-DATE-PROX-3D", "R-TAX-TOLERANCE-10INR"]
 
-            stage3_completed = is_session_completed or (stage2_completed and (status in ["rules_confirmed", "results", "reconciled", "summary", "export", "exported", "completed"] or bool(sess.get("selected_rule_ids")) or bool(sess.get("rules_v2"))))
+            stage3_completed = is_session_completed or (stage2_completed and (status in ["rules_confirmed", "results", "reconciled", "summary", "export", "exported", "completed"] or bool(sess.get("rules_confirmed"))))
 
             stage3_data = {
                 "stage_number": 3,
@@ -1386,8 +1392,11 @@ class AuditV2Service:
 
             overall_status = "COMPLETED" if completed_count == 6 else "IN_PROGRESS"
 
+            recon_type = sess.get("recon_type", "v2")
+            base_url = "/reconciliations-v3" if recon_type == "v3" else "/reconciliations-v2"
             return {
                 "session_id": session_id,
+                "recon_type": recon_type,
                 "session_title": title,
                 "created_at": created_at,
                 "updated_at": updated_at,
@@ -1398,7 +1407,7 @@ class AuditV2Service:
                 "overall_status": overall_status,
                 "is_completed": completed_count == 6,
                 "resume_stage": resume_stage,
-                "resume_url": f"/reconciliations-v2/{session_id}/{resume_stage}",
+                "resume_url": f"{base_url}/{session_id}/{resume_stage}",
                 "statutory_compliance_badge": "GOVERNMENT & STATUTORY AUDIT TRAIL — SECTION 16(2) CGST ACT VERIFIED",
                 "executive_story": executive_story,
                 "chronological_chapters": chronological_chapters,

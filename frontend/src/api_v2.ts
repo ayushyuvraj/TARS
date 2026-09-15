@@ -882,6 +882,7 @@ export interface UnifiedAuditChapter {
 export interface V2SessionAuditLifecycle {
   session_id: string;
   session_title: string;
+  recon_type?: "v2" | "v3" | string;
   created_at: string;
   updated_at: string;
   total_stages: number;

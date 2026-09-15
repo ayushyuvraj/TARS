@@ -9,6 +9,7 @@ import {
   NormalizationType,
   MatchStrategy,
 } from "./api_v2";
+import { apiV3, Rule3Item } from "./api_v3";
 import {
   Play,
   ChevronDown,
@@ -61,7 +62,9 @@ function formatAuditDate(iso?: string | null): string {
 
 export const RulesWikiV2: React.FC = () => {
   const navigate = useNavigate();
+  const [reconMode, setReconMode] = useState<"v2" | "v3">("v2");
   const [rules, setRules] = useState<Rule2Item[]>([]);
+  const [rulesV3, setRulesV3] = useState<Rule3Item[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [simulationResult, setSimulationResult] = useState<SimulationResultV2 | null>(null);
@@ -161,8 +164,15 @@ export const RulesWikiV2: React.FC = () => {
       if (data && merged.length > data.length) {
         apiV2.saveRules2Catalog(merged).catch(() => {});
       }
+
+      try {
+        const catalogV3 = await apiV3.getMasterRulesCatalog();
+        setRulesV3(catalogV3 || []);
+      } catch (e) {
+        console.warn("Could not load V3 rules catalog:", e);
+      }
     } catch (err) {
-      console.error("Failed to load Rules 2.0 catalog:", err);
+      console.error("Failed to load Rules catalog:", err);
     } finally {
       setIsLoading(false);
     }
@@ -475,6 +485,40 @@ export const RulesWikiV2: React.FC = () => {
               <p className="v2-results-hero-desc">
                 Master repository of declarative business rules configured for real-world enterprise GST reconciliation. Audit provenance, inspect comparison logic, edit parameters, or manage catalog policies.
               </p>
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setReconMode("v2")}
+                  style={{
+                    background: reconMode === "v2" ? "#00338D" : "rgba(30, 41, 59, 0.7)",
+                    color: reconMode === "v2" ? "#ffffff" : "#94a3b8",
+                    border: reconMode === "v2" ? "1px solid #3b82f6" : "1px solid rgba(255, 255, 255, 0.08)",
+                    borderRadius: 8,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Two-Table Rules (Recon 2.0)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReconMode("v3")}
+                  style={{
+                    background: reconMode === "v3" ? "#00338D" : "rgba(30, 41, 59, 0.7)",
+                    color: reconMode === "v3" ? "#ffffff" : "#94a3b8",
+                    border: reconMode === "v3" ? "1px solid #3b82f6" : "1px solid rgba(255, 255, 255, 0.08)",
+                    borderRadius: 8,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Intra-Table Rules (Recon 3.0)
+                </button>
+              </div>
             </div>
 
             <div className="v2-results-hero-actions">
@@ -736,31 +780,145 @@ export const RulesWikiV2: React.FC = () => {
 
       {/* 3. Rules Catalog List */}
       <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#334155" }}>
-              <input
-                type="checkbox"
-                className="v2-card-select-checkbox"
-                checked={rules.length > 0 && selectedRuleIds.size === rules.length}
-                onChange={handleToggleSelectAll}
-                title="Select all rules for bulk action"
-              />
-              <span>Select All</span>
-            </label>
-            <span style={{ color: "#94a3b8" }}>|</span>
-            <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: 0 }}>
-              Master Catalog Rules ({rules.filter((r) => r.is_enabled).length} of {rules.length} active)
-            </h2>
+        {reconMode === "v3" ? (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                  Reconciliation 3.0 Intra-Table Catalog Rules ({rulesV3.filter((r) => r.is_enabled).length} of {rulesV3.length} active)
+                </h2>
+              </div>
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                Intra-table rules executing high-speed vectorized record pairing against single-file recon sources (KICS/KIGS).
+              </span>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {rulesV3.map((rule, idx) => (
+                <div
+                  key={rule.id}
+                  className="v2-rule-item-card"
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: 12,
+                    border: "1px solid #e2e8f0",
+                    padding: 16,
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                      <span className="v2-rule-order-badge">#{idx + 1}</span>
+                      <span style={{ fontFamily: "monospace", fontWeight: 700, color: "#00338D", fontSize: 13 }}>
+                        {rule.id}
+                      </span>
+                      <span style={{ fontWeight: 600, color: "#0f172a", fontSize: 14 }}>
+                        {rule.name}
+                      </span>
+                      <span style={{
+                        padding: "2px 8px",
+                        borderRadius: 6,
+                        fontSize: 11,
+                        fontWeight: 600,
+                        background: "#f1f5f9",
+                        color: "#475569"
+                      }}>
+                        {rule.category}
+                      </span>
+                      {rule.is_mandatory && (
+                        <span style={{
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          fontSize: 11,
+                          fontWeight: 600,
+                          background: "#eff6ff",
+                          color: "#1d4ed8",
+                          border: "1px solid #bfdbfe"
+                        }}>
+                          Mandatory Guardrail
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{
+                        fontSize: 11,
+                        padding: "3px 8px",
+                        borderRadius: 6,
+                        fontWeight: 600,
+                        background: rule.is_enabled ? "#ecfdf5" : "#f1f5f9",
+                        color: rule.is_enabled ? "#059669" : "#64748b"
+                      }}>
+                        {rule.is_enabled ? "ACTIVE" : "INACTIVE"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p style={{ margin: 0, fontSize: 13, color: "#475569", lineHeight: 1.5 }}>
+                    {rule.description}
+                  </p>
+
+                  <div style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    alignItems: "center",
+                    gap: 16,
+                    paddingTop: 8,
+                    borderTop: "1px solid #f1f5f9",
+                    fontSize: 12,
+                    color: "#64748b"
+                  }}>
+                    <div>
+                      <span style={{ fontWeight: 600, color: "#334155" }}>Field Linkage: </span>
+                      <code style={{ background: "#f8fafc", padding: "2px 6px", borderRadius: 4, color: "#0369a1" }}>
+                        {rule.source_field_concept} ↔ {rule.target_field_concept}
+                      </code>
+                    </div>
+                    <div>
+                      <span style={{ fontWeight: 600, color: "#334155" }}>Tolerance: </span>
+                      <span>
+                        {rule.tolerance_value ? `±${rule.tolerance_value} ${rule.tolerance_unit || ""}` : "Zero tolerance (Exact)"}
+                      </span>
+                    </div>
+                    {rule.statutory_rationale && (
+                      <div>
+                        <span style={{ fontWeight: 600, color: "#334155" }}>Statutory Authority: </span>
+                        <span style={{ color: "#475569" }}>{rule.statutory_rationale}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#334155" }}>
+                  <input
+                    type="checkbox"
+                    className="v2-card-select-checkbox"
+                    checked={rules.length > 0 && selectedRuleIds.size === rules.length}
+                    onChange={handleToggleSelectAll}
+                    title="Select all rules for bulk action"
+                  />
+                  <span>Select All</span>
+                </label>
+                <span style={{ color: "#94a3b8" }}>|</span>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                  Master Catalog Rules ({rules.filter((r) => r.is_enabled).length} of {rules.length} active)
+                </h2>
+              </div>
 
-          <span style={{ fontSize: 12, color: "#64748b" }}>
-            Click rule card to view/configure comparison parameters & audit metadata.
-          </span>
-        </div>
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                Click rule card to view/configure comparison parameters & audit metadata.
+              </span>
+            </div>
 
-        {rules.map((rule, idx) => {
-          const isDate = rule.strategy === "DATE_PROXIMITY" || rule.id === "RW2-003" || rule.id === "RW2-006";
+            {rules.map((rule, idx) => {
+              const isDate = rule.strategy === "DATE_PROXIMITY" || rule.id === "RW2-003" || rule.id === "RW2-006";
           const isExactMatch = isDate ? rule.date_tolerance_value === 0 : rule.tolerance_value === 0;
           const stat = simulationResult?.rule_breakdowns.find((b) => b.rule_id === rule.id);
           const isExpanded = expandedRuleIds.has(rule.id);
@@ -1151,6 +1309,8 @@ export const RulesWikiV2: React.FC = () => {
             </div>
           );
         })}
+        </>
+      )}
       </section>
 
       {/* --- PLAIN ENGLISH EXPLANATION MODAL --- */}

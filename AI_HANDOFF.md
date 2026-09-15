@@ -1,5 +1,40 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 3.0: Single Unified Recon File Architecture & Benchmark Engine (15th September 2026)
+
+- **Checkpoint Name**: `Reconciliation 3.0: Single Unified Recon File Architecture & Benchmark Engine`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-15-reconciliation-v3-checkpoint`
+- **Current HEAD Commit**: `50f7e6d`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Single Unified Recon File Ingestion & Auto-Pairing (`DirectSchemaCorrelatorV3`)*:
+     - Ingestion of single-workbook reconciliation files (e.g. KICS/KIGS reference: `sample_data/TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx`, 165 columns, 20,000 rows).
+     - Automated intra-table prefix pairing (`CP*` ↔ `PR*`) and baseline outcome column identification (`ReconciliationSection`).
+     - Persistent pickle caching in `data/cache_v3/` achieving <30ms reload latency for 20,000 rows / 165 columns.
+  2. *High-Speed Vectorized Matching Engine (`WaterfallMatchingEngineV3`)*:
+     - Evaluates 20,000 unified rows in <350ms across 6 statutory tiers (`R3-01` Exact, `R3-02` Normalized Doc, `R3-03` Rounding & Penny, `R3-04` Date Proximity, `R3-05` Tax Rate Delta, `R3-06` Unilateral/PR Only).
+     - Dual-verdict comparison: computes TARS verdict vs KICS baseline verdict per record, concurrence rate (80.0%), and isolates disparities.
+  3. *Full REST API Layer (`reconciliations_v3.py` mounted at `/api/reconciliations-v3`)*:
+     - Endpoints for session creation, probe/upload, mapping confirmation, rules catalog, waterfall execution, stage 5 summary, and Copilot streaming.
+  4. *Frontend Workspace (`ReconciliationV3Workspace.tsx` and 6 Modular Stages)*:
+     - Stage 1: Single file drop bay with auto-sample detection for `TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx`.
+     - Stage 2: `DynamicMappingGridV3` intra-table column linkage matrix.
+     - Stage 3: `ReconciliationV3RulesStage` intra-table rules studio with reordering and statutory rationale.
+     - Stage 4: `ReconciliationV3ResultsStage` matrix displaying 20,000 records with concurrence badges, disparity filters, and search.
+     - Stage 5: `ReconciliationV3SummaryStage` executive flight deck with KICS concurrence benchmarks, vendor stratification, and disparity taxonomy.
+     - Stage 6: `ReconciliationV3ExportStage` visual export studio with direct Excel download and completion handler.
+  5. *Zero Impact on Existing Features*:
+     - Zero changes to Reconciliation 2.0 or 1.0 logic, routes, or interfaces.
+     - Audit 2.0 Ledger updated to seamlessly support `recon_type: "v3"` with badges, filtering, and deep-link resumption.
+     - Rules Wiki updated with toggle between Two-Table (Recon 2.0) and Intra-Table (Recon 3.0) rule catalogs.
+  6. *Full Verification*:
+     - Backend unit and lifecycle test suite (`test_reconciliation_v3.py`): 3/3 passed (100%).
+     - Existing Recon 2.0 test suite (`test_reconciliation_v2.py`): 11/11 passed (100%).
+     - Frontend production build (`npm --prefix frontend run build`): 0 errors, build in 1.03s.
+
+---
+
 ## Stage 2 Label Standardization: Mapping 2.0 to Mapping (15th September 2026)
 
 - **Checkpoint Name**: `Stage 2 Label Standardization: Mapping 2.0 to Mapping`

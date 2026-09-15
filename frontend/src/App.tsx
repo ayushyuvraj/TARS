@@ -21,6 +21,7 @@ import {
   FileSearch,
   FileSpreadsheet,
   History,
+  Layers,
   LayoutDashboard,
   Menu,
   MessageSquareText,
@@ -73,6 +74,7 @@ import { RulesWiki } from "./RulesWiki";
 import { RulesWikiV2 } from "./RulesWikiV2";
 import { AgenticDashboard } from "./AgenticDashboard";
 import { ReconciliationV2Workspace } from "./ReconciliationV2Workspace";
+import { ReconciliationV3Workspace } from "./ReconciliationV3Workspace";
 import { Audit2Workspace } from "./Audit2Workspace";
 
 type BusyState =
@@ -1502,6 +1504,10 @@ export default function App() {
             <Sparkles className="text-purple-400" />
             <span>Reconciliation</span>
           </NavLink>
+          <NavLink to="/reconciliations-v3" data-tooltip="Reconciliation 3.0" title={sidebarCollapsed ? "Reconciliation 3.0" : undefined}>
+            <Layers className="text-cyan-400" />
+            <span>Reconciliation 3.0</span>
+          </NavLink>
           <NavLink to="/rules-v2" data-tooltip="Rules Wiki" title={sidebarCollapsed ? "Rules Wiki" : undefined}>
             <SlidersHorizontal className="text-blue-400" />
             <span>Rules Wiki</span>
@@ -1556,7 +1562,7 @@ export default function App() {
           className={
             loc.pathname === "/dashboard"
               ? "workspace workspace--dashboard"
-              : loc.pathname.startsWith("/reconciliations-v2") || loc.pathname.startsWith("/rules-v2") || loc.pathname === "/rules"
+              : loc.pathname.startsWith("/reconciliations-v2") || loc.pathname.startsWith("/reconciliations-v3") || loc.pathname.startsWith("/rules-v2") || loc.pathname === "/rules"
               ? "workspace workspace--v2"
               : loc.pathname.startsWith("/audit-v2")
               ? "workspace workspace--audit-v2"
@@ -1804,6 +1810,9 @@ export default function App() {
             <Route path="/reconciliations-v2" element={<ReconciliationV2Workspace />} />
             <Route path="/reconciliations-v2/:id" element={<ReconciliationV2Workspace />} />
             <Route path="/reconciliations-v2/:id/:stage" element={<ReconciliationV2Workspace />} />
+            <Route path="/reconciliations-v3" element={<ReconciliationV3Workspace />} />
+            <Route path="/reconciliations-v3/:id" element={<ReconciliationV3Workspace />} />
+            <Route path="/reconciliations-v3/:id/:stage" element={<ReconciliationV3Workspace />} />
             <Route
               path="/quick-reconcile"
               element={
