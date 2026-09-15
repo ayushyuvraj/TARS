@@ -296,6 +296,10 @@ async def upload_single_recon_file(
 
     session["recon_filename"] = filename
     session["recon_path"] = str(target_path)
+    session["gstr_filename"] = f"{filename} (CP)"
+    session["pr_filename"] = f"{filename} (PR)"
+    session["gstr_path"] = str(target_path)
+    session["pr_path"] = str(target_path)
     session["sheet_name"] = correlation.sheet_name
     session["total_columns"] = correlation.total_columns
     session["correlation"] = correlation

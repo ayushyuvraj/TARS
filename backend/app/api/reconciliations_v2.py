@@ -345,6 +345,34 @@ def _ensure_session(session_id: str) -> dict[str, Any]:
                 elif isinstance(r, Rule2Item):
                     parsed_rules.append(r)
             saved["rules_v2"] = parsed_rules or load_master_rules_v2_catalog()
+        elif saved.get("rules_v3"):
+            from app.services.matching_engine_v3 import Rule3Item
+            parsed_rules = []
+            for r in saved["rules_v3"]:
+                r_obj = Rule3Item(**r) if isinstance(r, dict) else r
+                parsed_rules.append(Rule2Item(
+                    id=r_obj.id,
+                    name=r_obj.name,
+                    description=r_obj.description,
+                    category="CORE_STATUTORY" if r_obj.is_mandatory else "INTRA_TABLE",
+                    gstr_column=r_obj.source_field_concept,
+                    pr_column=r_obj.target_field_concept,
+                    canonical_concept=r_obj.canonical_concept,
+                    strategy="EXACT" if r_obj.match_strategy == "EXACT" else "NUMERIC_TOLERANCE",
+                    normalizers=["TRIM_WHITESPACE", "UPPERCASE"],
+                    tolerance_value=r_obj.tolerance_value or 0.0,
+                    tolerance_mode="ABSOLUTE_INR",
+                    date_tolerance_value=30,
+                    date_tolerance_unit="DAYS",
+                    is_enabled=r_obj.is_enabled,
+                    execution_order=r_obj.order,
+                    plain_english_explanation=r_obj.description,
+                    why_it_matters=r_obj.statutory_rationale,
+                    column_status="AVAILABLE",
+                    rule_tier="CORE_STATUTORY" if r_obj.is_mandatory else "COMMERCIAL_POLICY",
+                    statutory_reference=r_obj.statutory_rationale,
+                ))
+            saved["rules_v2"] = parsed_rules
         else:
             saved["rules_v2"] = load_master_rules_v2_catalog()
 
@@ -1255,6 +1283,135 @@ class ResolveAmbiguityRequest(BaseModel):
 
 def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage4ExecutionResponse:
     session = _ensure_session(session_id)
+    if session.get("recon_type") == "v3":
+        from app.services.matching_engine_v3 import WaterfallMatchingEngineV3
+        from app.api.reconciliations_v3 import _load_df_safely_v3, SAMPLE_RECON_FILE
+        recon_path_str = session.get("recon_path")
+        recon_path = Path(recon_path_str) if recon_path_str and Path(recon_path_str).exists() else SAMPLE_RECON_FILE
+        df = session.get("_cached_df")
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            df = _load_df_safely_v3(recon_path, session.get("sheet_name"))
+            session["_cached_df"] = df
+
+        engine_v3 = WaterfallMatchingEngineV3()
+        res_v3 = engine_v3.execute_waterfall(df=df, session_id=session_id)
+
+        summary = Stage4ResultsSummary(
+            total_gstr_rows=res_v3.summary.total_records,
+            total_pr_rows=res_v3.summary.total_records,
+            exact_match_count=res_v3.summary.exact_matches,
+            exact_match_itc=round(float(res_v3.summary.total_gov_taxable * 0.18), 2),
+            tolerance_match_count=res_v3.summary.tolerance_matches,
+            tolerance_match_itc=0.0,
+            near_match_count=res_v3.summary.near_matches,
+            near_match_itc=0.0,
+            ambiguous_count=res_v3.summary.ambiguous,
+            ambiguous_itc=0.0,
+            gstr_only_count=res_v3.summary.gst_only,
+            gstr_only_itc=0.0,
+            pr_only_count=res_v3.summary.pr_only,
+            pr_only_itc=0.0,
+            total_potential_itc=round(float((res_v3.summary.total_gov_taxable + res_v3.summary.total_pr_taxable) * 0.09), 2),
+            claimable_itc=round(float(res_v3.summary.total_gov_taxable * 0.18), 2),
+            disputed_itc=round(float(res_v3.summary.net_taxable_variance * 0.18), 2),
+            overall_match_rate=res_v3.summary.kics_concurrence_rate,
+            currency="INR",
+        )
+
+        bucket_map = {
+            "Exact Match": "EXACT_MATCH",
+            "Tolerance Match": "TOLERANCE_MATCH",
+            "Near Match": "NEAR_MATCH",
+            "GST Only": "GSTR_ONLY",
+            "PR Only": "PR_ONLY",
+            "Ambiguous": "AMBIGUOUS",
+        }
+        records = []
+        for rec in res_v3.records:
+            b = bucket_map.get(rec.tars_verdict, "AMBIGUOUS")
+            records.append(
+                ReconciliationRecordItem(
+                    id=rec.id,
+                    bucket=b,
+                    gstr_row_index=rec.index,
+                    pr_row_index=rec.index,
+                    gstr_record_id=f"GSTR_{rec.index+1}",
+                    pr_record_id=f"PR_{rec.index+1}",
+                    gstin=rec.source_gstin or rec.target_gstin or "UNSPECIFIED",
+                    document_number=rec.source_doc_num or rec.target_doc_num or f"DOC_{rec.index+1}",
+                    document_date=rec.source_date or rec.target_date or None,
+                    taxable_value=rec.source_taxable or rec.target_taxable or 0.0,
+                    tax_amount=rec.source_tax or rec.target_tax or 0.0,
+                    total_value=round((rec.source_taxable or rec.target_taxable or 0.0) + (rec.source_tax or rec.target_tax or 0.0), 2),
+                    gstr_preview={
+                        "GSTIN": rec.source_gstin,
+                        "Invoice": rec.source_doc_num,
+                        "Date": rec.source_date,
+                        "Taxable": rec.source_taxable,
+                        "Tax": rec.source_tax,
+                    },
+                    pr_preview={
+                        "GSTIN": rec.target_gstin,
+                        "Invoice": rec.target_doc_num,
+                        "Date": rec.target_date,
+                        "Taxable": rec.target_taxable,
+                        "Tax": rec.target_tax,
+                    },
+                    variances={
+                        "taxable_diff": rec.taxable_diff,
+                        "tax_diff": rec.tax_diff,
+                        "concurrence": rec.concurrence,
+                        "kics_verdict": rec.kics_verdict,
+                        "disparity_reason": rec.disparity_reason,
+                    },
+                    matched_by_pass=rec.pass_tier,
+                    classification_reason=rec.disparity_reason or f"TARS {rec.tars_verdict} (KICS Baseline: {rec.kics_verdict})",
+                    ai_reason=f"Row {rec.index+1}: TARS '{rec.tars_verdict}' vs KICS '{rec.kics_verdict}' [{rec.concurrence}]",
+                )
+            )
+
+        yields = [
+            WaterfallPassYield(tier=1, name="Direct Alphanumeric Exact", matched_count=res_v3.summary.exact_matches, matched_itc=round(float(res_v3.summary.total_gov_taxable * 0.18 * (res_v3.summary.exact_matches / max(1, res_v3.summary.total_records))), 2), retention_percentage=round((res_v3.summary.exact_matches / max(1, res_v3.summary.total_records)) * 100, 1)),
+            WaterfallPassYield(tier=2, name="Normalized Doc & Rounding Tolerance", matched_count=res_v3.summary.tolerance_matches, matched_itc=0.0, retention_percentage=round((res_v3.summary.tolerance_matches / max(1, res_v3.summary.total_records)) * 100, 1)),
+            WaterfallPassYield(tier=3, name="Near Proximity & Calendar Alignment", matched_count=res_v3.summary.near_matches, matched_itc=0.0, retention_percentage=round((res_v3.summary.near_matches / max(1, res_v3.summary.total_records)) * 100, 1)),
+            WaterfallPassYield(tier=4, name="Unilateral Ledger Isolation", matched_count=res_v3.summary.gst_only + res_v3.summary.pr_only, matched_itc=0.0, retention_percentage=round(((res_v3.summary.gst_only + res_v3.summary.pr_only) / max(1, res_v3.summary.total_records)) * 100, 1)),
+            WaterfallPassYield(tier=5, name="KICS Baseline Disparity & Ambiguity", matched_count=res_v3.summary.ambiguous, matched_itc=0.0, retention_percentage=round((res_v3.summary.ambiguous / max(1, res_v3.summary.total_records)) * 100, 1)),
+        ]
+
+        corr = session.get("correlation")
+        all_g = getattr(corr, "all_gstr_columns", []) or ["CPGstin", "CPDocumentNumber", "CPTaxableValue", "CPIgstAmount"]
+        all_p = getattr(corr, "all_pr_columns", []) or ["PRGstin", "PRDocumentNumber", "PRTaxableValue", "PRIgstAmount"]
+
+        response = Stage4ExecutionResponse(
+            session_id=session_id,
+            executed_at=res_v3.executed_at,
+            duration_ms=res_v3.duration_ms,
+            summary=summary,
+            records=records,
+            waterfall_yields=yields,
+            ambiguity_clusters=[],
+            all_gstr_columns=all_g,
+            all_pr_columns=all_p,
+        )
+
+        session["gstr_row_count"] = res_v3.summary.total_records
+        session["pr_row_count"] = res_v3.summary.total_records
+        session["stage4_results"] = response.model_dump()
+        session["status"] = "reconciled"
+        session["current_stage"] = "results"
+
+        try:
+            to_save = dict(session)
+            to_save.pop("_cached_df", None)
+            to_save.pop("_cached_gstr_df", None)
+            to_save.pop("_cached_pr_df", None)
+            audit_v2_service.save_session(to_save)
+            audit_v2_service.save_stage4_results(session_id, response.model_dump())
+        except Exception as exc:
+            logger.warning(f"Error persisting stage 4 results to audit: {exc}")
+
+        return response
+
     gov_path_str = session.get("gstr_path")
     pr_path_str = session.get("pr_path")
 

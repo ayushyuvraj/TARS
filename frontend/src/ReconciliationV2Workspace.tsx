@@ -724,9 +724,9 @@ export const ReconciliationV2Workspace: React.FC = () => {
         {/* STAGE 1: DUAL PRECISION NEURAL DOCKING BAYS (ZERO-SCROLL VIEWPORT)        */}
         {/* ========================================================================= */}
         {currentStage === "setup" && (
-          <div className={isSessionCompleted ? "v2-read-only-wrapper" : ""}>
+          <div className={`v2-setup-stage-wrapper ${isSessionCompleted ? "v2-read-only-wrapper" : ""}`}>
             {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
-          <div className="v2-setup-flow">
+            <div className="v2-setup-flow">
             {/* 1. HERO BANNER (Unified Dark Royal Cobalt matching Stage 4) */}
             <div className="v2-stage-hero">
               <div className="v2-hero-nav-left">

@@ -25,15 +25,20 @@ class AlternativeMatchV3(BaseModel):
 
 class DirectColumnCorrelationV3(BaseModel):
     source_column: str  # e.g., CPGstin, Govt_GSTIN, 2B_GSTIN
-    source_dtype: str
+    source_dtype: str = "object"
     source_samples: list[str] = Field(default_factory=list)
     selected_target_column: str | None = None  # e.g., PRGstin, PR_GSTIN, ERP_GSTIN
+    gstr_column: str = ""
+    selected_pr_column: str | None = None
+    gstr_dtype: str = "object"
+    gstr_samples: list[str] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
-    engine: str  # "deterministic" | "prefix_pair" | "llm: gpt-4o"
+    engine: str = "deterministic"
     alternatives: list[AlternativeMatchV3] = Field(default_factory=list)
     is_primary_gst_field: bool = False
     canonical_concept: str | None = None
+    user_edited: bool = False
 
 
 class AgentThoughtV3(BaseModel):
@@ -47,12 +52,19 @@ class AgentThoughtV3(BaseModel):
 class DirectCorrelationResultV3(BaseModel):
     reconciliation_id: str
     recon_filename: str
+    gstr_filename: str = ""
+    pr_filename: str = ""
     sheet_name: str
     total_columns: int
+    total_gstr_columns: int = 0
+    total_pr_columns: int = 0
     correlations: list[DirectColumnCorrelationV3] = Field(default_factory=list)
     all_columns: list[str] = Field(default_factory=list)
     source_columns: list[str] = Field(default_factory=list)
     target_columns: list[str] = Field(default_factory=list)
+    all_gstr_columns: list[str] = Field(default_factory=list)
+    all_pr_columns: list[str] = Field(default_factory=list)
+    pr_columns: list[str] = Field(default_factory=list)
     kics_status_column: str | None = None
     kics_reason_column: str | None = None
     agent_thoughts: list[AgentThoughtV3] = Field(default_factory=list)
@@ -334,6 +346,10 @@ class DirectSchemaCorrelatorV3:
                             source_dtype=dtypes.get(s_col, "object"),
                             source_samples=samples.get(s_col, [])[:2],
                             selected_target_column=best_match,
+                            gstr_column=s_col,
+                            selected_pr_column=best_match,
+                            gstr_dtype=dtypes.get(s_col, "object"),
+                            gstr_samples=samples.get(s_col, [])[:2],
                             confidence=best_conf,
                             reason=f"Intra-table concept match '{s_col}' ↔ '{best_match}'.",
                             engine="deterministic",
@@ -348,6 +364,10 @@ class DirectSchemaCorrelatorV3:
                             source_dtype=dtypes.get(s_col, "object"),
                             source_samples=samples.get(s_col, [])[:2],
                             selected_target_column=None,
+                            gstr_column=s_col,
+                            selected_pr_column=None,
+                            gstr_dtype=dtypes.get(s_col, "object"),
+                            gstr_samples=samples.get(s_col, [])[:2],
                             confidence=0.0,
                             reason="No target column counterpart assigned.",
                             engine="deterministic",
@@ -381,12 +401,19 @@ class DirectSchemaCorrelatorV3:
         return DirectCorrelationResultV3(
             reconciliation_id=reconciliation_id,
             recon_filename=recon_filename,
+            gstr_filename=recon_filename,
+            pr_filename=recon_filename,
             sheet_name=sheet_name,
             total_columns=len(columns),
+            total_gstr_columns=len(source_cols),
+            total_pr_columns=len(target_cols),
             correlations=paired_correlations,
             all_columns=columns,
             source_columns=source_cols if source_cols else columns,
             target_columns=target_cols if target_cols else columns,
+            all_gstr_columns=source_cols if source_cols else columns,
+            all_pr_columns=target_cols if target_cols else columns,
+            pr_columns=target_cols if target_cols else columns,
             kics_status_column=kics_status_col,
             kics_reason_column=kics_reason_col,
             agent_thoughts=thoughts,

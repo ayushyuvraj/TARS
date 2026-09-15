@@ -1,5 +1,42 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 3.0: 100% Visual & Architectural Harmonization with Reconciliation 2.0 (15th September 2026)
+
+- **Checkpoint Name**: `Reconciliation 3.0: 100% Visual & Architectural Harmonization with Reconciliation 2.0`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-15-reconciliation-v3-ui-parity-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Stage 1 Exact Recon 2.0 Single Box Architecture (Reconciliation 3.0 - Zero Displacement)*:
+     - 100% mathematical zero-displacement layout between Reconciliation 2.0 and Reconciliation 3.0.
+     - Fixed, identical component heights across both workspaces:
+       - Hero banner (`.v2-stage-hero`): locked to `156px`.
+       - Data Ingestion Box (`.v2-docking-grid`, `.v2-docking-grid--single`, `.v2-dock-shell`): locked to `224px` (`.v2-dock-core` locked to `210px`).
+       - Data Ingestion Box Width: single box locked to `468px`, mathematically matching the `1fr` left column of Reconciliation 2.0's 1080px grid (`(1080 - 108 - 36) / 2 = 468px`).
+       - Action terminal bar (`.v2-action-terminal-bar`): locked to `38px` (`.v2-telemetry-conduit` at `34px`).
+       - Enterprise assurance modules (`.v2-trust-grid`, the 3 bottom boxes): locked to `160px`.
+     - `.v2-setup-stage-wrapper` and `.v2-setup-flow` (`justify-content: space-between; height: 100%`) ensure identical gaps and **0px vertical shift** on all surrounding elements when toggling between `/reconciliations-v2` and `/reconciliations-v3`.
+     - Viewport scrollbar eliminated cleanly via `.v2-stage-canvas--setup` (`overflow-y: hidden !important;`, `scrollbar-width: none !important;`).
+  2. *100% Visual Parity Across All 6 Stages*:
+     - `ReconciliationV3Workspace.tsx` rebuilt as an exact clone of `ReconciliationV2Workspace.tsx`, maintaining identical CSS tokens (`rules_v2.css`, `results_v2.css`, `summary_export_v2.css`), executive telemetry ribbon, Linear-style horizontal pipeline stepper, and dark cobalt hero styling.
+     - Direct rendering of shared enterprise components:
+       - **Stage 1 (Setup)**: Focused Single Unified Recon Docking Terminal (`.v2-docking-grid--single`, `.v2-dock-shell--single`) matching the Doppelrand double-bezel aesthetic with quick sample loader (`TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx`) and identical Chain-of-Thought modal HUD (`v2-cot-modal-overlay`).
+       - **Stage 2 (Mapping)**: `<DynamicMappingGridV2>` for intra-table schema coupling and column linkage review.
+       - **Stage 3 (Rules)**: `<ReconciliationV2RulesStage>` for statutory and tolerance configuration.
+       - **Stage 4 (Results)**: `<ReconciliationV2ResultsStage>` displaying 20,000-row waterfall matches with full filtering and search.
+       - **Stage 5 (Summary)**: `<ReconciliationV2SummaryStage>` executive tax flight deck with vendor risk stratification and disposition matrix.
+       - **Stage 6 (Export)**: `<ReconciliationV2ExportStage>` multi-preset export studio with custom column selection and Excel dispatch.
+  3. *Seamless Backend Cross-Compatibility*:
+     - Unified `Stage4ExecutionResponse` adapter in `reconciliations_v2.py` and `reconciliations_v3.py` converting vectorized V3 results (`WaterfallMatchingEngineV3`) into standard `ReconciliationRecordItem` and `Stage4ResultsSummary` models.
+     - Auto-hydration of intra-table rules into `Rule2Item` models for governance pipeline inspection.
+  4. *Zero Functional or Visual Regression*:
+     - Strict isolation: zero modifications or impact to Reconciliation 2.0 or 1.0 workflows.
+  5. *Full Verification*:
+     - Backend test suite (`test_reconciliation_v2.py` + `test_reconciliation_v3.py`): 14/14 passed (100%).
+     - Frontend production build (`tsc -b && vite build`): 0 errors, built in 1.16s.
+
+---
+
 ## Reconciliation 3.0: Single Unified Recon File Architecture & Benchmark Engine (15th September 2026)
 
 - **Checkpoint Name**: `Reconciliation 3.0: Single Unified Recon File Architecture & Benchmark Engine`
