@@ -19,15 +19,23 @@ def _normalize(val: str) -> str:
 
 class AlternativeMatchV3(BaseModel):
     target_column: str
+    pr_column: str = ""
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str
 
+    def __init__(self, **data: Any) -> None:
+        super().__init__(**data)
+        if not self.pr_column and self.target_column:
+            self.pr_column = self.target_column
+        elif not self.target_column and self.pr_column:
+            self.target_column = self.pr_column
+
 
 class DirectColumnCorrelationV3(BaseModel):
-    source_column: str  # e.g., CPGstin, Govt_GSTIN, 2B_GSTIN
+    source_column: str  # Column name in uploaded sheet
     source_dtype: str = "object"
     source_samples: list[str] = Field(default_factory=list)
-    selected_target_column: str | None = None  # e.g., PRGstin, PR_GSTIN, ERP_GSTIN
+    selected_target_column: str | None = None  # Symmetrically paired column name
     gstr_column: str = ""
     selected_pr_column: str | None = None
     gstr_dtype: str = "object"
@@ -256,131 +264,135 @@ class DirectSchemaCorrelatorV3:
         if not kics_status_col and "ReconciliationSection" in columns:
             kics_status_col = "ReconciliationSection"
 
-        # 2. Segregate CP (Counterparty / Govt) and PR (Purchase Register) columns
-        source_cols: list[str] = []
-        target_cols: list[str] = []
-        paired_correlations: list[DirectColumnCorrelationV3] = []
-        used_target_cols: set[str] = set()
+        # 2. Dynamic Real-Time Symmetric Pair Matching across all N columns
+        pair_mapping: dict[str, str] = {}
+        confidence_mapping: dict[str, float] = {}
+        reason_mapping: dict[str, str] = {}
+        engine_mapping: dict[str, str] = {}
 
-        # Check for standard CP / PR prefix naming convention (e.g. CPGstin, PRGstin)
-        cp_cols = [c for c in columns if c.startswith("CP") and not c.startswith("Cpf")]
-        pr_cols = [c for c in columns if c.startswith("PR")]
+        def extract_stem(c: str) -> str:
+            cleaned = re.sub(
+                r"^([Cc][Pp]|[Pp][Rr]|[Gg][Oo][Vv][Tt]|[Gg][Ss][Tt][Rr]2[Bb]?|[2][Bb]|[Ee][Rr][Pp]|[Bb][Oo][Oo][Kk][Ss]?|[Cc][Ll][Ii][Ee][Nn][Tt])[_\s-]*",
+                "",
+                c,
+            )
+            return _normalize(cleaned)
 
-        has_cp_pr_pair_pattern = len(cp_cols) >= 3 and len(pr_cols) >= 3
+        # Build stem map: stem -> list of columns
+        stem_to_cols: dict[str, list[str]] = {}
+        for c in columns:
+            st = extract_stem(c)
+            if st:
+                stem_to_cols.setdefault(st, []).append(c)
 
-        if has_cp_pr_pair_pattern:
-            source_cols = cp_cols
-            target_cols = pr_cols
+        # Pass 1: Deterministic Symmetric Stem Matching in Real Time
+        for stem, group in stem_to_cols.items():
+            if len(group) == 2:
+                col_a, col_b = group[0], group[1]
+                if col_a not in pair_mapping and col_b not in pair_mapping:
+                    pair_mapping[col_a] = col_b
+                    pair_mapping[col_b] = col_a
+                    confidence_mapping[col_a] = 1.0
+                    confidence_mapping[col_b] = 1.0
+                    reason_mapping[col_a] = f"Symmetric intra-table pair '{col_a}' ↔ '{col_b}' mapped in real time."
+                    reason_mapping[col_b] = f"Symmetric intra-table pair '{col_b}' ↔ '{col_a}' mapped in real time."
+                    engine_mapping[col_a] = "prefix_pair"
+                    engine_mapping[col_b] = "prefix_pair"
+            elif len(group) > 2:
+                cp_sub = [c for c in group if re.match(r"^[Cc][Pp]", c)]
+                pr_sub = [c for c in group if re.match(r"^[Pp][Rr]", c)]
+                if len(cp_sub) == 1 and len(pr_sub) == 1:
+                    col_a, col_b = cp_sub[0], pr_sub[0]
+                    if col_a not in pair_mapping and col_b not in pair_mapping:
+                        pair_mapping[col_a] = col_b
+                        pair_mapping[col_b] = col_a
+                        confidence_mapping[col_a] = 1.0
+                        confidence_mapping[col_b] = 1.0
+                        reason_mapping[col_a] = f"Symmetric intra-table pair '{col_a}' ↔ '{col_b}' mapped in real time."
+                        reason_mapping[col_b] = f"Symmetric intra-table pair '{col_b}' ↔ '{col_a}' mapped in real time."
+                        engine_mapping[col_a] = "prefix_pair"
+                        engine_mapping[col_b] = "prefix_pair"
 
-            for s_col in source_cols:
-                # Suffix after "CP"
-                suffix = s_col[2:]
-                matching_pr = f"PR{suffix}"
+        # Pass 2: Semantic Concept Matching for unmapped columns
+        unmapped_cols = [c for c in columns if c not in pair_mapping]
+        concept_to_cols: dict[str, list[str]] = {}
+        for c in unmapped_cols:
+            st = extract_stem(c)
+            canonical_info = self._detect_canonical_concept(st)
+            concept = canonical_info.get("canonical")
+            if concept:
+                concept_to_cols.setdefault(concept, []).append(c)
 
-                canonical_info = self._detect_canonical_concept(suffix)
-                concept = canonical_info.get("canonical")
-                is_primary = canonical_info.get("is_primary", False)
+        for concept, group in concept_to_cols.items():
+            if len(group) == 2:
+                col_a, col_b = group[0], group[1]
+                if col_a not in pair_mapping and col_b not in pair_mapping:
+                    pair_mapping[col_a] = col_b
+                    pair_mapping[col_b] = col_a
+                    confidence_mapping[col_a] = 0.95
+                    confidence_mapping[col_b] = 0.95
+                    reason_mapping[col_a] = f"Semantic concept match ({concept}) '{col_a}' ↔ '{col_b}'."
+                    reason_mapping[col_b] = f"Semantic concept match ({concept}) '{col_b}' ↔ '{col_a}'."
+                    engine_mapping[col_a] = "semantic_concept"
+                    engine_mapping[col_b] = "semantic_concept"
 
-                if matching_pr in target_cols:
-                    used_target_cols.add(matching_pr)
-                    paired_correlations.append(
-                        DirectColumnCorrelationV3(
-                            source_column=s_col,
-                            source_dtype=dtypes.get(s_col, "object"),
-                            source_samples=samples.get(s_col, [])[:2],
-                            selected_target_column=matching_pr,
-                            confidence=1.0,
-                            reason=f"Symmetric intra-table pair '{s_col}' ↔ '{matching_pr}' mapped with 100% confidence.",
-                            engine="prefix_pair",
-                            is_primary_gst_field=is_primary,
-                            canonical_concept=concept,
-                        )
-                    )
-                else:
-                    paired_correlations.append(
-                        DirectColumnCorrelationV3(
-                            source_column=s_col,
-                            source_dtype=dtypes.get(s_col, "object"),
-                            source_samples=samples.get(s_col, [])[:2],
-                            selected_target_column=None,
-                            confidence=0.0,
-                            reason=f"No direct PR counterpart found for '{s_col}'.",
-                            engine="prefix_pair",
-                            is_primary_gst_field=is_primary,
-                            canonical_concept=concept,
-                        )
-                    )
-        else:
-            # Generic intra-table matching (e.g. Govt_ vs PR_, 2B_ vs ERP_)
-            # Partition columns
-            for col in columns:
-                norm = _normalize(col)
-                if any(norm.startswith(p) for p in ["govt", "gst", "2b", "portal", "cp"]):
-                    source_cols.append(col)
-                elif any(norm.startswith(p) for p in ["pr", "erp", "book", "client"]):
-                    target_cols.append(col)
+        # Pass 3: Build 100% complete correlation items for all N columns
+        all_correlations: list[DirectColumnCorrelationV3] = []
+        for col in columns:
+            target = pair_mapping.get(col)
+            conf = confidence_mapping.get(col, 0.0)
+            reason = reason_mapping.get(col, "")
+            eng = engine_mapping.get(col, "deterministic")
 
-            # Map source to best target
-            for s_col in source_cols:
-                best_match: str | None = None
-                best_conf = 0.0
-                s_clean = re.sub(r"^(govt|gst|2b|portal|cp)[_\s]*", "", s_col, flags=re.IGNORECASE)
-                canonical_info = self._detect_canonical_concept(s_clean)
-                concept = canonical_info.get("canonical")
-                is_primary = canonical_info.get("is_primary", False)
+            st = extract_stem(col)
+            canonical_info = self._detect_canonical_concept(st)
+            concept = canonical_info.get("canonical")
+            is_primary = canonical_info.get("is_primary", False)
 
-                for t_col in target_cols:
-                    if t_col in used_target_cols:
-                        continue
-                    t_clean = re.sub(r"^(pr|erp|book|client)[_\s]*", "", t_col, flags=re.IGNORECASE)
-                    if _normalize(s_clean) == _normalize(t_clean):
-                        best_match = t_col
-                        best_conf = 1.0
+            alts: list[AlternativeMatchV3] = []
+            for candidate in columns:
+                if candidate != col and candidate != target:
+                    cand_st = extract_stem(candidate)
+                    if cand_st == st:
+                        alts.append(AlternativeMatchV3(target_column=candidate, confidence=0.85, reason="Shared stem name"))
+                    elif concept and self._detect_canonical_concept(cand_st).get("canonical") == concept:
+                        alts.append(AlternativeMatchV3(target_column=candidate, confidence=0.75, reason=f"Shared concept {concept}"))
+                    if len(alts) >= 3:
                         break
 
-                if best_match:
-                    used_target_cols.add(best_match)
-                    paired_correlations.append(
-                        DirectColumnCorrelationV3(
-                            source_column=s_col,
-                            source_dtype=dtypes.get(s_col, "object"),
-                            source_samples=samples.get(s_col, [])[:2],
-                            selected_target_column=best_match,
-                            gstr_column=s_col,
-                            selected_pr_column=best_match,
-                            gstr_dtype=dtypes.get(s_col, "object"),
-                            gstr_samples=samples.get(s_col, [])[:2],
-                            confidence=best_conf,
-                            reason=f"Intra-table concept match '{s_col}' ↔ '{best_match}'.",
-                            engine="deterministic",
-                            is_primary_gst_field=is_primary,
-                            canonical_concept=concept,
-                        )
-                    )
+            if not reason:
+                if col == kics_status_col:
+                    reason = "KICS Ground-Truth Baseline Outcome column."
+                elif re.match(r"^diff_", col, re.IGNORECASE):
+                    reason = "Computed ledger variance / differential column."
                 else:
-                    paired_correlations.append(
-                        DirectColumnCorrelationV3(
-                            source_column=s_col,
-                            source_dtype=dtypes.get(s_col, "object"),
-                            source_samples=samples.get(s_col, [])[:2],
-                            selected_target_column=None,
-                            gstr_column=s_col,
-                            selected_pr_column=None,
-                            gstr_dtype=dtypes.get(s_col, "object"),
-                            gstr_samples=samples.get(s_col, [])[:2],
-                            confidence=0.0,
-                            reason="No target column counterpart assigned.",
-                            engine="deterministic",
-                            is_primary_gst_field=is_primary,
-                            canonical_concept=concept,
-                        )
-                    )
+                    reason = "Single ledger column (no symmetric counterpart detected). Ready for manual pairing."
 
-        mapped_count = len([c for c in paired_correlations if c.selected_target_column])
+            all_correlations.append(
+                DirectColumnCorrelationV3(
+                    source_column=col,
+                    gstr_column=col,
+                    source_dtype=dtypes.get(col, "object"),
+                    gstr_dtype=dtypes.get(col, "object"),
+                    source_samples=samples.get(col, [])[:3],
+                    gstr_samples=samples.get(col, [])[:3],
+                    selected_target_column=target,
+                    selected_pr_column=target,
+                    confidence=conf,
+                    reason=reason,
+                    engine=eng,
+                    alternatives=alts,
+                    is_primary_gst_field=is_primary,
+                    canonical_concept=concept,
+                )
+            )
+
+        mapped_count = len([c for c in all_correlations if c.selected_target_column])
+        mutual_pairs = mapped_count // 2
         thoughts.append(
             AgentThoughtV3(
                 step="deterministic_matcher",
-                message=f"Coupled {mapped_count} corresponding intra-table column pairs (Counterparty ↔ Purchase Register).",
+                message=f"Dynamically discovered {mutual_pairs} symmetric mutual pairs ({mapped_count} columns coupled) across {len(columns)} columns in real time.",
                 timestamp_ms=time.time() * 1000,
                 duration_ms=24.0,
             )
@@ -405,14 +417,15 @@ class DirectSchemaCorrelatorV3:
             pr_filename=recon_filename,
             sheet_name=sheet_name,
             total_columns=len(columns),
-            total_gstr_columns=len(source_cols),
-            total_pr_columns=len(target_cols),
+            total_gstr_columns=len(columns),
+            total_pr_columns=len(columns),
+            correlations=all_correlations,
             all_columns=columns,
-            source_columns=source_cols if source_cols else columns,
-            target_columns=columns if columns else target_cols,
-            all_gstr_columns=source_cols if source_cols else columns,
-            all_pr_columns=columns if columns else target_cols,
-            pr_columns=columns if columns else target_cols,
+            source_columns=columns,
+            target_columns=columns,
+            all_gstr_columns=columns,
+            all_pr_columns=columns,
+            pr_columns=columns,
             kics_status_column=kics_status_col,
             kics_reason_column=kics_reason_col,
             agent_thoughts=thoughts,

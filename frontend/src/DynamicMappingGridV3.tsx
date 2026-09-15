@@ -1,5 +1,7 @@
-import React, { useState, useMemo } from "react";
-import { DirectColumnCorrelationV3, AgentThoughtV3 } from "./api_v3";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
+import { SearchableColumnSelectV3 } from "./SearchableColumnSelectV3";
+import { MappingInspectorDrawer } from "./MappingInspectorDrawer";
+import { copilotV2Bridge } from "./copilot_v2_bridge";
 import {
   CheckCircle2,
   Sparkles,
@@ -8,38 +10,63 @@ import {
   ArrowRight,
   ShieldCheck,
   Edit3,
+  X,
   SlidersHorizontal,
-  FileSpreadsheet,
   ArrowLeft,
   Check,
+  Cpu,
+  Terminal,
   Zap,
   Layers,
-  ChevronDown,
+  Link2,
 } from "lucide-react";
 
+export interface ColumnCorrelationItemV3 {
+  source_column: string;
+  source_dtype?: string;
+  source_samples?: string[];
+  selected_target_column: string | null;
+  // Backward compatibility fields
+  gstr_column?: string;
+  selected_pr_column?: string | null;
+  gstr_dtype?: string;
+  gstr_samples?: string[];
+  confidence: number;
+  reason: string;
+  engine: string;
+  alternatives?: any[];
+  is_primary_gst_field: boolean;
+  canonical_concept?: string | null;
+  user_edited?: boolean;
+}
+
+export interface AgentThoughtItemV3 {
+  step: string;
+  message: string;
+  timestamp_ms: number;
+  duration_ms: number;
+  model?: string | null;
+}
+
 interface DynamicMappingGridV3Props {
-  correlations: DirectColumnCorrelationV3[];
-  targetColumns: string[];
-  reconFileName?: string;
-  sheetName?: string;
-  kicsStatusColumn?: string | null;
-  agentThoughts?: AgentThoughtV3[];
+  correlations: ColumnCorrelationItemV3[];
+  allColumns: string[];
+  workbookFileName?: string;
+  agentThoughts?: AgentThoughtItemV3[];
   totalDurationMs?: number;
   isConfirmed?: boolean;
   disabled?: boolean;
-  onChange: (updated: DirectColumnCorrelationV3[]) => void;
+  onChange: (updated: ColumnCorrelationItemV3[]) => void;
   onConfirmMapping?: () => void;
   onBackToSetup?: () => void;
 }
 
 export const DynamicMappingGridV3: React.FC<DynamicMappingGridV3Props> = ({
   correlations = [],
-  targetColumns = [],
-  reconFileName = "TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx",
-  sheetName = "KIGS GSTR 2B Reco",
-  kicsStatusColumn = "ReconciliationSection",
+  allColumns = [],
+  workbookFileName = "TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx",
   agentThoughts = [],
-  totalDurationMs = 180,
+  totalDurationMs,
   isConfirmed = false,
   disabled = false,
   onChange,
@@ -47,432 +74,578 @@ export const DynamicMappingGridV3: React.FC<DynamicMappingGridV3Props> = ({
   onBackToSetup,
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
-  const [filterType, setFilterType] = useState<"all" | "primary" | "paired" | "unpaired">("all");
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [filterType, setFilterType] = useState<"all" | "pairs" | "deterministic" | "llm" | "unmapped">("all");
+  const [inspectedCorrelation, setInspectedCorrelation] = useState<any | null>(null);
+  const [showThoughtsModal, setShowThoughtsModal] = useState(false);
+  const [notificationToast, setNotificationToast] = useState<string | null>(null);
 
-  const filteredCorrelations = useMemo(() => {
-    return correlations.filter((c) => {
-      const matchesSearch =
-        c.source_column.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (c.selected_target_column && c.selected_target_column.toLowerCase().includes(searchQuery.toLowerCase())) ||
-        (c.canonical_concept && c.canonical_concept.toLowerCase().includes(searchQuery.toLowerCase()));
+  // Compute column list fallback
+  const effectiveColumns = useMemo(() => {
+    if (allColumns && allColumns.length > 0) return allColumns;
+    return correlations.map((c) => c.source_column || c.gstr_column || "");
+  }, [allColumns, correlations]);
 
-      if (!matchesSearch) return false;
+  // Toast auto-dismiss
+  useEffect(() => {
+    if (notificationToast) {
+      const t = setTimeout(() => setNotificationToast(null), 3000);
+      return () => clearTimeout(t);
+    }
+  }, [notificationToast]);
 
-      if (filterType === "primary") return c.is_primary_gst_field;
-      if (filterType === "paired") return Boolean(c.selected_target_column);
-      if (filterType === "unpaired") return !c.selected_target_column;
-      return true;
-    });
-  }, [correlations, searchQuery, filterType]);
+  // Duration calculations
+  const thoughtsSum =
+    agentThoughts && agentThoughts.length > 0
+      ? agentThoughts.reduce((acc, t) => acc + (t.duration_ms || 0), 0)
+      : 0;
+  const effectiveMs =
+    totalDurationMs && totalDurationMs >= 150
+      ? totalDurationMs
+      : thoughtsSum >= 150
+      ? thoughtsSum
+      : 0;
+  const reasoningSeconds = effectiveMs > 0 ? (effectiveMs / 1000).toFixed(1) : null;
 
-  const handleTargetChange = (idx: number, newTarget: string) => {
-    const updated = [...correlations];
-    updated[idx] = {
-      ...updated[idx],
-      selected_target_column: newTarget || null,
-      confidence: newTarget ? 1.0 : 0.0,
-      engine: "user_override",
-      user_edited: true,
-    };
-    onChange(updated);
-    setEditingIndex(null);
+  const formatStep = (step: string) => {
+    switch (step) {
+      case "fast_probe_ingestion":
+        return { label: "FAST_INGESTION", icon: <Zap size={13} style={{ color: "#f59e0b" }} /> };
+      case "deterministic_matcher":
+        return { label: "DETERMINISTIC_RULES", icon: <CheckCircle2 size={13} style={{ color: "#10b981" }} /> };
+      case "llm_semantic_analysis_started":
+        return { label: "LLM_DISPATCH", icon: <Sparkles size={13} style={{ color: "#a855f7" }} /> };
+      case "llm_semantic_analysis_completed":
+        return { label: "LLM_INFERENCE", icon: <Cpu size={13} style={{ color: "#38bdf8" }} /> };
+      case "llm_semantic_analysis_bypassed":
+        return { label: "LLM_STANDBY", icon: <Sparkles size={13} style={{ color: "#a855f7" }} /> };
+      case "schema_graph_checkpointed":
+        return { label: "STATE_CHECKPOINT", icon: <Layers size={13} style={{ color: "#6366f1" }} /> };
+      default:
+        return { label: step.toUpperCase(), icon: <Terminal size={13} style={{ color: "#94a3b8" }} /> };
+    }
   };
 
-  const pairedCount = correlations.filter((c) => c.selected_target_column).length;
-  const primaryCount = correlations.filter((c) => c.is_primary_gst_field).length;
+  const cleanMessage = (msg: string) => {
+    return msg.replace(/\s+in\s+\d+(\.\d+)?ms\.?$/i, ".").replace(/\s+\d+(\.\d+)?ms\.?$/i, ".");
+  };
+
+  /**
+   * PURE SYMMETRIC PAIRING HANDLER
+   * When Column A is paired with Column B:
+   * 1. Row A -> B
+   * 2. Row B -> A (automatically matched & synchronized)
+   * 3. Previous partners are cleanly released
+   */
+  const handleSymmetricPairChange = useCallback(
+    (sourceCol: string, newTargetCol: string | null) => {
+      const currentItem = correlations.find(
+        (c) => (c.source_column || c.gstr_column) === sourceCol
+      );
+      const oldTargetCol = currentItem
+        ? currentItem.selected_target_column || currentItem.selected_pr_column || null
+        : null;
+
+      const updated = correlations.map((item) => {
+        const colName = item.source_column || item.gstr_column || "";
+        const itemTarget = item.selected_target_column || item.selected_pr_column || null;
+
+        // Case 1: The row being edited (Row A)
+        if (colName === sourceCol) {
+          if (!newTargetCol) {
+            return {
+              ...item,
+              selected_target_column: null,
+              selected_pr_column: null,
+              user_edited: true,
+              confidence: 0.0,
+              reason: "User marked this column as unmapped.",
+            };
+          }
+          return {
+            ...item,
+            selected_target_column: newTargetCol,
+            selected_pr_column: newTargetCol,
+            user_edited: true,
+            confidence: 1.0,
+            reason: `Symmetrically paired with '${newTargetCol}'.`,
+          };
+        }
+
+        // Case 2: The partner row being paired with (Row B)
+        if (newTargetCol && colName === newTargetCol) {
+          return {
+            ...item,
+            selected_target_column: sourceCol,
+            selected_pr_column: sourceCol,
+            user_edited: true,
+            confidence: 1.0,
+            reason: `Symmetrically coupled with '${sourceCol}'.`,
+          };
+        }
+
+        // Case 3: Clean up Row A's old partner if it was changed
+        if (oldTargetCol && colName === oldTargetCol && oldTargetCol !== newTargetCol) {
+          return {
+            ...item,
+            selected_target_column: null,
+            selected_pr_column: null,
+            user_edited: true,
+            confidence: 0.0,
+            reason: `Unmapped (previous partner '${sourceCol}' was re-assigned).`,
+          };
+        }
+
+        // Case 4: Clean up Row B's previous partner if Row B had one
+        if (newTargetCol && itemTarget === newTargetCol && colName !== sourceCol) {
+          return {
+            ...item,
+            selected_target_column: null,
+            selected_pr_column: null,
+            user_edited: true,
+            confidence: 0.0,
+            reason: `Unmapped (previous partner '${newTargetCol}' was paired with '${sourceCol}').`,
+          };
+        }
+
+        return item;
+      });
+
+      onChange(updated);
+
+      if (newTargetCol) {
+        setNotificationToast(`✦ Symmetrically coupled '${sourceCol}' ↔ '${newTargetCol}'`);
+      } else if (oldTargetCol) {
+        setNotificationToast(`Unlinked pair '${sourceCol}' and '${oldTargetCol}'`);
+      }
+
+      // Update inspector drawer if open
+      if (inspectedCorrelation) {
+        const inspectedName =
+          inspectedCorrelation.source_column || inspectedCorrelation.gstr_column;
+        const refreshed = updated.find(
+          (c) => (c.source_column || c.gstr_column) === inspectedName
+        );
+        if (refreshed) setInspectedCorrelation(refreshed);
+      }
+    },
+    [correlations, onChange, inspectedCorrelation]
+  );
+
+  // Copilot bridge integration
+  useEffect(() => {
+    return copilotV2Bridge.registerActionHandler("UPDATE_MAPPING", (payload) => {
+      if (payload.action_type === "unmap" && payload.column) {
+        handleSymmetricPairChange(String(payload.column), null);
+      } else if (payload.pr_column && payload.gstr_column) {
+        handleSymmetricPairChange(String(payload.gstr_column), String(payload.pr_column));
+      }
+    });
+  }, [handleSymmetricPairChange]);
+
+  // Real-time statistics across all N columns
+  const stats = useMemo(() => {
+    const total = correlations.length;
+    let mapped = 0;
+    let deterministic = 0;
+    let llm = 0;
+    let unmapped = 0;
+
+    correlations.forEach((c) => {
+      const target = c.selected_target_column || c.selected_pr_column;
+      if (target) {
+        mapped++;
+        if (c.engine === "deterministic" || c.engine === "prefix_pair") {
+          deterministic++;
+        } else if (c.engine.startsWith("llm") || c.engine === "agent_ai" || c.engine === "semantic_concept") {
+          llm++;
+        }
+      } else {
+        unmapped++;
+      }
+    });
+
+    const pairs = Math.floor(mapped / 2);
+    return { total, mapped, pairs, deterministic, llm, unmapped };
+  }, [correlations]);
+
+  // Filtering across all columns
+  const filteredCorrelations = useMemo(() => {
+    return correlations.filter((item) => {
+      const colName = item.source_column || item.gstr_column || "";
+      const target = item.selected_target_column || item.selected_pr_column;
+
+      if (filterType === "pairs" && !target) return false;
+      if (filterType === "deterministic" && item.engine !== "deterministic" && item.engine !== "prefix_pair") return false;
+      if (filterType === "llm" && !item.engine.startsWith("llm") && item.engine !== "agent_ai" && item.engine !== "semantic_concept") return false;
+      if (filterType === "unmapped" && target !== null && target !== undefined) return false;
+
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase();
+        const colMatch = colName.toLowerCase().includes(q);
+        const targetMatch = (target || "").toLowerCase().includes(q);
+        const reasonMatch = (item.reason || "").toLowerCase().includes(q);
+        const samples = item.source_samples || item.gstr_samples || [];
+        const sampleMatch = samples.some((s) => s.toLowerCase().includes(q));
+        return colMatch || targetMatch || reasonMatch || sampleMatch;
+      }
+      return true;
+    });
+  }, [correlations, filterType, searchQuery]);
 
   return (
-    <div className="dynamic-mapping-container" style={{ padding: "1.5rem", maxWidth: 1400, margin: "0 auto" }}>
-      {/* Header Banner */}
-      <div
-        className="mapping-hero-card"
-        style={{
-          background: "linear-gradient(135deg, rgba(0, 51, 141, 0.12) 0%, rgba(15, 23, 42, 0.8) 100%)",
-          border: "1px solid rgba(59, 130, 246, 0.25)",
-          borderRadius: 16,
-          padding: "1.75rem",
-          marginBottom: "1.75rem",
-          backdropFilter: "blur(12px)",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
-          <div>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-              <span
-                style={{
-                  background: "rgba(6, 182, 212, 0.15)",
-                  color: "#22d3ee",
-                  border: "1px solid rgba(6, 182, 212, 0.3)",
-                  padding: "3px 10px",
-                  borderRadius: 12,
-                  fontSize: 12,
-                  fontWeight: 600,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 5,
-                }}
-              >
-                <Layers size={13} />
-                Stage 2: Intra-Table Schema Coupling
-              </span>
-              <span style={{ fontSize: 13, color: "#94a3b8" }}>· Unified Recon File</span>
-            </div>
-            <h2 style={{ fontSize: 24, fontWeight: 700, color: "#f8fafc", margin: "0 0 6px 0", letterSpacing: "-0.02em" }}>
-              Single-File Column Linkage Matrix
-            </h2>
-            <p style={{ color: "#94a3b8", fontSize: 14, margin: 0, maxWidth: 820, lineHeight: 1.5 }}>
-              TARS has probed your unified KICS reconciliation sheet (<code>{sheetName}</code>) and paired corresponding Counterparty (CP) and Purchase Register (PR) fields within the same table.
-            </p>
-          </div>
-
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div
-              style={{
-                background: "rgba(16, 185, 129, 0.1)",
-                border: "1px solid rgba(16, 185, 129, 0.25)",
-                borderRadius: 12,
-                padding: "10px 16px",
-                textAlign: "right",
-              }}
-            >
-              <div style={{ fontSize: 11, textTransform: "uppercase", color: "#10b981", fontWeight: 700, letterSpacing: "0.05em" }}>
-                KICS Baseline Column
-              </div>
-              <div style={{ fontSize: 15, fontWeight: 700, color: "#f8fafc", marginTop: 2 }}>
-                <code>{kicsStatusColumn || "ReconciliationSection"}</code>
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: "rgba(59, 130, 246, 0.1)",
-                border: "1px solid rgba(59, 130, 246, 0.25)",
-                borderRadius: 12,
-                padding: "10px 16px",
-                textAlign: "right",
-              }}
-            >
-              <div style={{ fontSize: 11, textTransform: "uppercase", color: "#60a5fa", fontWeight: 700, letterSpacing: "0.05em" }}>
-                Coupled Pairs
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 800, color: "#f8fafc", marginTop: 1 }}>
-                {pairedCount} / {correlations.length}
-              </div>
-            </div>
-          </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {/* Dynamic Toast Notification */}
+      {notificationToast && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 10000,
+            background: "#00338d",
+            color: "#ffffff",
+            padding: "10px 18px",
+            borderRadius: 8,
+            boxShadow: "0 8px 24px rgba(0, 51, 141, 0.3)",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            fontSize: 13,
+            fontWeight: 600,
+            animation: "fadeIn 0.2s ease",
+          }}
+        >
+          <Link2 size={16} />
+          <span>{notificationToast}</span>
         </div>
+      )}
 
-        {/* Thought Chips */}
-        {agentThoughts && agentThoughts.length > 0 && (
-          <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(255, 255, 255, 0.08)", display: "flex", gap: 10, flexWrap: "wrap" }}>
-            {agentThoughts.map((t, i) => (
-              <span
-                key={i}
-                style={{
-                  background: "rgba(255, 255, 255, 0.04)",
-                  border: "1px solid rgba(255, 255, 255, 0.08)",
-                  borderRadius: 8,
-                  padding: "4px 10px",
-                  fontSize: 12,
-                  color: "#cbd5e1",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <Zap size={12} style={{ color: "#f59e0b" }} />
-                {t.message}
-              </span>
-            ))}
+      {/* 1. HERO BANNER */}
+      <div className="v2-results-hero">
+        {onBackToSetup && (
+          <div className="v2-hero-nav-left">
+            <button
+              type="button"
+              className="v2-hero-btn-back"
+              onClick={onBackToSetup}
+              title="Return to Stage 1: Ingestion Setup"
+              aria-label="Back to setup"
+            >
+              <ArrowLeft size={15} />
+              <span>Back to Setup</span>
+            </button>
           </div>
         )}
-      </div>
 
-      {/* Filter and Search Bar */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: 16,
-          marginBottom: 16,
-          flexWrap: "wrap",
-        }}
-      >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {(["all", "primary", "paired", "unpaired"] as const).map((mode) => (
+        <div className="v2-results-hero-content">
+          <div className="v2-results-hero-title-row">
+            <h2 className="v2-results-hero-title">Intra-Table Schema Correlation Matrix</h2>
+            <div className="v2-results-stage-tag">
+              <Sparkles size={12} />
+              <span>Stage 2 of 6 &bull; Real-Time Symmetric Pairing</span>
+            </div>
+          </div>
+          <p className="v2-results-hero-desc">
+            Autonomous engine dynamically mapped all <strong>{stats.total} columns</strong> of{" "}
+            <strong>{workbookFileName}</strong>. Each column links symmetrically with its intra-table partner.
+          </p>
+        </div>
+
+        <div className="v2-results-hero-actions">
+          {agentThoughts && agentThoughts.length > 0 && (
             <button
-              key={mode}
               type="button"
-              onClick={() => setFilterType(mode)}
-              style={{
-                background: filterType === mode ? "#00338D" : "rgba(30, 41, 59, 0.7)",
-                color: filterType === mode ? "#ffffff" : "#94a3b8",
-                border: filterType === mode ? "1px solid #3b82f6" : "1px solid rgba(255, 255, 255, 0.08)",
-                borderRadius: 8,
-                padding: "6px 14px",
-                fontSize: 13,
-                fontWeight: 600,
-                cursor: "pointer",
-                transition: "all 0.15s ease",
-              }}
+              className="v2-btn-rerun"
+              onClick={() => setShowThoughtsModal(true)}
+              title="View real-time agent reasoning trace"
             >
-              {mode === "all" && `All Fields (${correlations.length})`}
-              {mode === "primary" && `Statutory Core (${primaryCount})`}
-              {mode === "paired" && `Coupled (${pairedCount})`}
-              {mode === "unpaired" && `Unpaired (${correlations.length - pairedCount})`}
+              <Sparkles size={14} />
+              <span>{reasoningSeconds ? `Reasoned in ${reasoningSeconds}s` : "Agent Reasoning"}</span>
             </button>
-          ))}
-        </div>
-
-        <div style={{ position: "relative", minWidth: 280 }}>
-          <Search size={15} style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: "#64748b" }} />
-          <input
-            type="text"
-            placeholder="Search column names or concepts..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            style={{
-              width: "100%",
-              background: "rgba(15, 23, 42, 0.8)",
-              border: "1px solid rgba(255, 255, 255, 0.12)",
-              borderRadius: 8,
-              padding: "7px 12px 7px 34px",
-              color: "#f8fafc",
-              fontSize: 13,
-              outline: "none",
-            }}
-          />
+          )}
+          {onConfirmMapping && (
+            <button
+              type="button"
+              className="v2-btn-primary-action"
+              onClick={onConfirmMapping}
+              disabled={disabled || isConfirmed}
+              title={isConfirmed ? "Schema mapping already confirmed" : "Confirm symmetric mappings and proceed to Rules"}
+            >
+              <span>{isConfirmed ? "Mapping Confirmed" : "Confirm Schema & Proceed"}</span>
+              {isConfirmed ? <Check size={14} /> : <ArrowRight size={14} />}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Grid Table */}
-      <div
-        style={{
-          background: "rgba(15, 23, 42, 0.7)",
-          border: "1px solid rgba(255, 255, 255, 0.08)",
-          borderRadius: 14,
-          overflow: "hidden",
-          boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.3)",
-        }}
-      >
-        <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: 13 }}>
-          <thead>
-            <tr style={{ background: "rgba(30, 41, 59, 0.85)", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>
-              <th style={{ padding: "12px 16px", color: "#cbd5e1", fontWeight: 600, width: "32%" }}>
-                Counterparty / Portal Column (Source)
-              </th>
-              <th style={{ padding: "12px 16px", color: "#cbd5e1", fontWeight: 600, width: "6%", textAlign: "center" }}>
-                Link
-              </th>
-              <th style={{ padding: "12px 16px", color: "#cbd5e1", fontWeight: 600, width: "32%" }}>
-                Purchase Register Column (Target)
-              </th>
-              <th style={{ padding: "12px 16px", color: "#cbd5e1", fontWeight: 600, width: "18%" }}>
-                Statutory Concept
-              </th>
-              <th style={{ padding: "12px 16px", color: "#cbd5e1", fontWeight: 600, width: "12%", textAlign: "right" }}>
-                Confidence
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredCorrelations.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={{ padding: "3rem", textAlign: "center", color: "#64748b" }}>
-                  No column linkages match your search query.
-                </td>
-              </tr>
-            ) : (
-              filteredCorrelations.map((c, idx) => {
-                const originalIdx = correlations.findIndex((orig) => orig.source_column === c.source_column);
+      {/* AGENT THOUGHTS MODAL */}
+      {showThoughtsModal && agentThoughts && agentThoughts.length > 0 && (
+        <div className="v2-thoughts-modal-overlay" onClick={() => setShowThoughtsModal(false)}>
+          <div className="v2-thoughts-modal-shell" onClick={(e) => e.stopPropagation()}>
+            <div className="v2-thoughts-modal-header">
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Terminal size={14} style={{ color: "#38bdf8" }} />
+                <span>Agent Telemetry Trace &bull; Reconciliation 3.0</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <span className="v2-thoughts-modal-engine-badge">Engine: Autonomous Real-Time Matcher</span>
+                {reasoningSeconds && (
+                  <span className="v2-thoughts-modal-duration">{reasoningSeconds}s total</span>
+                )}
+                <button
+                  type="button"
+                  className="v2-thoughts-modal-close"
+                  onClick={() => setShowThoughtsModal(false)}
+                  title="Close"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    width: 30,
+                    height: 30,
+                    borderRadius: 6,
+                    border: "1px solid rgba(255,255,255,0.4)",
+                    background: "rgba(255,255,255,0.15)",
+                    color: "#ffffff",
+                    cursor: "pointer",
+                  }}
+                >
+                  <X size={16} color="#ffffff" />
+                </button>
+              </div>
+            </div>
+            <div className="v2-thoughts-modal-body">
+              {agentThoughts.map((thought, idx) => {
+                const { label, icon } = formatStep(thought.step);
                 return (
-                  <tr
-                    key={c.source_column}
-                    style={{
-                      borderBottom: "1px solid rgba(255, 255, 255, 0.04)",
-                      background: idx % 2 === 0 ? "transparent" : "rgba(255, 255, 255, 0.01)",
-                      transition: "background 0.15s ease",
-                    }}
-                  >
-                    {/* Source Column */}
-                    <td style={{ padding: "12px 16px" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        {c.is_primary_gst_field && (
-                          <span
-                            title="Primary Statutory Field"
-                            style={{
-                              background: "rgba(59, 130, 246, 0.15)",
-                              color: "#60a5fa",
-                              borderRadius: 4,
-                              padding: "2px 6px",
-                              fontSize: 10,
-                              fontWeight: 700,
-                            }}
-                          >
-                            CORE
-                          </span>
-                        )}
-                        <span style={{ fontWeight: 600, color: "#f1f5f9" }}>{c.source_column}</span>
-                      </div>
-                      {c.source_samples && c.source_samples.length > 0 && (
-                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>
-                          Samples: {c.source_samples.slice(0, 2).join(", ")}
-                        </div>
+                  <div key={idx} className="v2-thought-item">
+                    <div className="v2-thought-step">
+                      {icon}
+                      <span>{label}</span>
+                    </div>
+                    <div className="v2-thought-msg">{cleanMessage(thought.message)}</div>
+                    {thought.duration_ms > 0 && (
+                      <span className="v2-thought-ms">{thought.duration_ms.toFixed(1)}ms</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2. MAIN INTERACTIVE N-COLUMN GRID */}
+      <div className="v2-grid-card">
+        {/* Toolbar & KPI bar */}
+        <div className="v2-grid-toolbar">
+          <div className="v2-toolbar-header">
+            <div>
+              <h3 className="v2-toolbar-title">
+                <span>Dynamic Field Inventory</span>
+                <span className="v2-linkage-rate-badge">
+                  {stats.pairs} Mutual Pairs ({stats.mapped} / {stats.total} Columns &bull;{" "}
+                  {((stats.mapped / Math.max(1, stats.total)) * 100).toFixed(0)}%)
+                </span>
+              </h3>
+              <p className="v2-toolbar-desc">
+                All {stats.total} columns are listed below. For any row, select from the remaining{" "}
+                {Math.max(0, stats.total - 1)} columns. Symmetrical links pair and update automatically.
+              </p>
+            </div>
+
+            {/* Search Box */}
+            <div className="v2-search-box">
+              <Search size={14} className="v2-search-icon" />
+              <input
+                type="text"
+                className="v2-search-input"
+                placeholder={`Search across ${stats.total} columns or sample values...`}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="v2-search-clear">
+                  <X size={13} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Filter Navigation Tabs */}
+          <div className="v2-filter-tabs">
+            <button
+              type="button"
+              className={`v2-filter-tab ${filterType === "all" ? "is-active" : ""}`}
+              onClick={() => setFilterType("all")}
+            >
+              All Columns ({stats.total})
+            </button>
+            <button
+              type="button"
+              className={`v2-filter-tab ${filterType === "pairs" ? "is-active" : ""}`}
+              onClick={() => setFilterType("pairs")}
+            >
+              <Link2 size={13} />
+              <span>Mutual Pairs ({stats.pairs} pairs &bull; {stats.mapped} cols)</span>
+            </button>
+            <button
+              type="button"
+              className={`v2-filter-tab ${filterType === "deterministic" ? "is-active" : ""}`}
+              onClick={() => setFilterType("deterministic")}
+            >
+              <CheckCircle2 size={13} />
+              <span>Deterministic ({stats.deterministic})</span>
+            </button>
+            {stats.llm > 0 && (
+              <button
+                type="button"
+                className={`v2-filter-tab ${filterType === "llm" ? "is-active" : ""}`}
+                onClick={() => setFilterType("llm")}
+              >
+                <Sparkles size={13} />
+                <span>AI / Semantic ({stats.llm})</span>
+              </button>
+            )}
+            {stats.unmapped > 0 && (
+              <button
+                type="button"
+                className={`v2-filter-tab ${filterType === "unmapped" ? "is-active" : ""}`}
+                onClick={() => setFilterType("unmapped")}
+              >
+                <AlertTriangle size={13} />
+                <span>Unmapped ({stats.unmapped})</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Stream Column Headers */}
+        <div className="v2-stream-header">
+          <div>Sheet Column Name ({stats.total} Total)</div>
+          <div style={{ textAlign: "center" }}>Symmetric Linkage & Evidence</div>
+          <div>Coupled Counterpart Field (N - 1 = {Math.max(0, stats.total - 1)} Options)</div>
+        </div>
+
+        {/* Dynamic Rows */}
+        <div className="v2-stream-body">
+          {filteredCorrelations.length === 0 ? (
+            <div style={{ padding: "48px 24px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+              <SlidersHorizontal size={24} style={{ margin: "0 auto 8px auto", opacity: 0.5 }} />
+              No columns match your search or filter criteria.
+            </div>
+          ) : (
+            filteredCorrelations.map((row) => {
+              const colName = row.source_column || row.gstr_column || "";
+              const targetCol = row.selected_target_column || row.selected_pr_column || null;
+              const dtype = row.source_dtype || row.gstr_dtype || "object";
+              const samples = row.source_samples || row.gstr_samples || [];
+              const isUserEdited = row.user_edited;
+              const isDeterministic = row.engine === "deterministic" || row.engine === "prefix_pair";
+              const isLLM = row.engine.startsWith("llm") || row.engine === "agent_ai" || row.engine === "semantic_concept";
+
+              return (
+                <div key={colName} className="v2-stream-row">
+                  {/* Left: Source Column */}
+                  <div style={{ minWidth: 0 }}>
+                    <div className="v2-col-name">
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {colName}
+                      </span>
+                      {row.is_primary_gst_field && (
+                        <span className="v2-tag-core" title="Essential field for GST reconciliation">
+                          <ShieldCheck size={11} style={{ display: "inline", verticalAlign: "middle", marginRight: 2 }} />
+                          Core GST
+                        </span>
                       )}
-                    </td>
+                    </div>
 
-                    {/* Arrow */}
-                    <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                      <ArrowRight size={15} style={{ color: c.selected_target_column ? "#38bdf8" : "#475569" }} />
-                    </td>
-
-                    {/* Target Column */}
-                    <td style={{ padding: "12px 16px" }}>
-                      {editingIndex === originalIdx ? (
-                        <select
-                          autoFocus
-                          defaultValue={c.selected_target_column || ""}
-                          onChange={(e) => handleTargetChange(originalIdx, e.target.value)}
-                          onBlur={() => setEditingIndex(null)}
-                          style={{
-                            background: "#0f172a",
-                            border: "1px solid #38bdf8",
-                            borderRadius: 6,
-                            padding: "4px 8px",
-                            color: "#f8fafc",
-                            fontSize: 13,
-                            width: "100%",
-                          }}
-                        >
-                          <option value="">-- Unpaired --</option>
-                          {targetColumns.map((col) => (
-                            <option key={col} value={col}>
-                              {col}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div
-                          onClick={() => !disabled && setEditingIndex(originalIdx)}
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            gap: 6,
-                            cursor: disabled ? "default" : "pointer",
-                            padding: "3px 8px",
-                            borderRadius: 6,
-                            background: c.selected_target_column ? "rgba(56, 189, 248, 0.08)" : "rgba(239, 68, 68, 0.08)",
-                            border: c.selected_target_column ? "1px solid rgba(56, 189, 248, 0.2)" : "1px dashed rgba(239, 68, 68, 0.3)",
-                            color: c.selected_target_column ? "#38bdf8" : "#f87171",
-                            fontWeight: 500,
-                          }}
-                        >
-                          <span>{c.selected_target_column || "Click to assign counterpart"}</span>
-                          {!disabled && <ChevronDown size={13} style={{ opacity: 0.6 }} />}
-                        </div>
+                    <div className="v2-col-meta">
+                      <span className="v2-tag-dtype">{dtype}</span>
+                      {samples && samples.length > 0 && (
+                        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          Sample: <code style={{ color: "#334155" }}>{samples[0]}</code>
+                        </span>
                       )}
-                    </td>
+                    </div>
+                  </div>
 
-                    {/* Canonical Concept */}
-                    <td style={{ padding: "12px 16px" }}>
-                      {c.canonical_concept ? (
-                        <span
-                          style={{
-                            background: "rgba(168, 85, 247, 0.12)",
-                            color: "#c084fc",
-                            border: "1px solid rgba(168, 85, 247, 0.25)",
-                            borderRadius: 6,
-                            padding: "3px 8px",
-                            fontSize: 11,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {c.canonical_concept}
+                  {/* Center: Directional Connector & Confidence Pill */}
+                  <div className="v2-center-connector">
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      {isUserEdited ? (
+                        <span className="v2-confidence-pill deterministic">
+                          <Edit3 size={11} />
+                          100% User Pair
+                        </span>
+                      ) : targetCol && isDeterministic ? (
+                        <span className="v2-confidence-pill deterministic">
+                          <CheckCircle2 size={11} />
+                          {(row.confidence * 100).toFixed(0)}% Mutual
+                        </span>
+                      ) : targetCol && isLLM ? (
+                        <span className="v2-confidence-pill llm">
+                          <Sparkles size={11} />
+                          {(row.confidence * 100).toFixed(0)}% AgentAI
+                        </span>
+                      ) : targetCol ? (
+                        <span className="v2-confidence-pill attention">
+                          <Link2 size={11} />
+                          {(row.confidence * 100).toFixed(0)}%
                         </span>
                       ) : (
-                        <span style={{ color: "#475569", fontSize: 11 }}>Generic Attribute</span>
+                        <span className="v2-confidence-pill attention" style={{ background: "rgba(100, 116, 139, 0.08)", color: "#64748b" }}>
+                          Unmapped
+                        </span>
                       )}
-                    </td>
+                      <ArrowRight size={13} style={{ color: "#cbd5e1" }} />
+                    </div>
 
-                    {/* Confidence */}
-                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                      <span
-                        style={{
-                          color: c.confidence >= 0.9 ? "#34d399" : c.confidence > 0 ? "#fbbf24" : "#94a3b8",
-                          fontWeight: 700,
-                          fontSize: 12,
-                        }}
-                      >
-                        {c.selected_target_column ? `${Math.round(c.confidence * 100)}%` : "0%"}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+                    {/* Inspect Evidence Button */}
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setInspectedCorrelation({
+                          ...row,
+                          gstr_column: colName,
+                          selected_pr_column: targetCol,
+                          gstr_dtype: dtype,
+                          gstr_samples: samples,
+                        })
+                      }
+                      className="v2-btn-inspect"
+                    >
+                      Inspect Evidence
+                    </button>
+                  </div>
 
-      {/* Bottom Actions */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginTop: "1.75rem",
-          paddingTop: "1.25rem",
-          borderTop: "1px solid rgba(255, 255, 255, 0.08)",
-        }}
-      >
-        <button
-          type="button"
-          onClick={onBackToSetup}
-          disabled={disabled}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            background: "rgba(30, 41, 59, 0.8)",
-            color: "#e2e8f0",
-            border: "1px solid rgba(255, 255, 255, 0.1)",
-            borderRadius: 8,
-            padding: "8px 16px",
-            fontSize: 14,
-            fontWeight: 600,
-            cursor: "pointer",
-          }}
-        >
-          <ArrowLeft size={16} />
-          Back to Setup
-        </button>
+                  {/* Right: Searchable Combobox with N - 1 columns */}
+                  <div>
+                    <SearchableColumnSelectV3
+                      currentColumn={colName}
+                      value={targetCol}
+                      allColumns={effectiveColumns}
+                      partnerLockedBy={targetCol}
+                      alternatives={row.alternatives || []}
+                      disabled={disabled}
+                      onChange={(newTarget) => handleSymmetricPairChange(colName, newTarget)}
+                      onUnlink={() => handleSymmetricPairChange(colName, null)}
+                    />
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
 
-        <button
-          type="button"
-          onClick={onConfirmMapping}
-          disabled={disabled || pairedCount === 0}
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            background: "#00338D",
-            color: "#ffffff",
-            border: "none",
-            borderRadius: 8,
-            padding: "9px 22px",
-            fontSize: 14,
-            fontWeight: 700,
-            cursor: "pointer",
-            boxShadow: "0 4px 14px rgba(0, 51, 141, 0.4)",
-            transition: "all 0.15s ease",
-          }}
-        >
-          <Check size={16} />
-          Confirm Column Linkages & Proceed to Rules
-          <ArrowRight size={16} />
-        </button>
+        {/* Side-by-Side Contextual Inspector Drawer */}
+        <MappingInspectorDrawer
+          correlation={inspectedCorrelation}
+          prColumns={effectiveColumns}
+          isOpen={inspectedCorrelation !== null}
+          onClose={() => setInspectedCorrelation(null)}
+          onSelectColumn={(sourceCol, newTarget) => handleSymmetricPairChange(sourceCol, newTarget)}
+        />
       </div>
     </div>
   );

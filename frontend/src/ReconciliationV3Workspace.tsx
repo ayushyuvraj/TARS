@@ -6,7 +6,7 @@ import {
   AgentThought,
 } from "./api_v2";
 import { apiV3 } from "./api_v3";
-import { DynamicMappingGridV2 } from "./DynamicMappingGridV2";
+import { DynamicMappingGridV3 } from "./DynamicMappingGridV3";
 import { ReconciliationV2RulesStage } from "./ReconciliationV2RulesStage";
 import { ReconciliationV2ResultsStage } from "./ReconciliationV2ResultsStage";
 import { ReconciliationV2SummaryStage } from "./ReconciliationV2SummaryStage";
@@ -997,12 +997,11 @@ export const ReconciliationV3Workspace: React.FC = () => {
           <div className={isSessionCompleted ? "v2-read-only-wrapper" : ""}>
             {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
             {correlationResult ? (
-              <DynamicMappingGridV2
-                correlations={correlationResult.correlations || []}
-                prColumns={(correlationResult.all_columns && correlationResult.all_columns.length > 0 ? correlationResult.all_columns : correlationResult.pr_columns) || []}
-                gstrFileName={correlationResult.gstr_filename || reconFile?.name || "KICS Recon (Counterparty / CP)"}
-                prFileName={correlationResult.pr_filename || reconFile?.name || "KICS Recon (Enterprise / PR)"}
-                agentThoughts={agentThoughts.length > 0 ? agentThoughts : (correlationResult.agent_thoughts || [])}
+              <DynamicMappingGridV3
+                correlations={(correlationResult.correlations as any) || []}
+                allColumns={(correlationResult.all_columns && correlationResult.all_columns.length > 0 ? correlationResult.all_columns : correlationResult.pr_columns) || []}
+                workbookFileName={correlationResult.recon_filename || correlationResult.gstr_filename || reconFile?.name || "TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx"}
+                agentThoughts={agentThoughts.length > 0 ? (agentThoughts as any) : ((correlationResult.agent_thoughts as any) || [])}
                 totalDurationMs={totalMeasuredDurationMs || (correlationResult?.total_duration_ms && correlationResult.total_duration_ms >= 150 ? correlationResult.total_duration_ms : 0)}
                 isConfirmed={mappingConfirmed}
                 disabled={isSessionCompleted}

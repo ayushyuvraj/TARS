@@ -22,15 +22,23 @@ def test_correlator_v3_single_file():
     assert result.sheet_name == "KIGS GSTR 2B Reco"
     assert result.total_columns >= 160
     assert result.kics_status_column == "ReconciliationSection"
-    assert len(result.correlations) >= 5
+    assert len(result.correlations) == result.total_columns
+    assert len(result.all_columns) == result.total_columns
 
     pairs = {c.source_column: c.selected_target_column for c in result.correlations if c.selected_target_column}
     assert "CPGstin" in pairs
     assert pairs["CPGstin"] == "PRGstin"
+    assert pairs["PRGstin"] == "CPGstin"
     assert "CPDocumentNumber" in pairs
     assert pairs["CPDocumentNumber"] == "PRDocumentNumber"
+    assert pairs["PRDocumentNumber"] == "CPDocumentNumber"
     assert "CPTaxableValue" in pairs
     assert pairs["CPTaxableValue"] == "PRTaxableValue"
+    assert pairs["PRTaxableValue"] == "CPTaxableValue"
+
+    # Verify mutual symmetry holds across all paired columns
+    for col_a, col_b in pairs.items():
+        assert pairs[col_b] == col_a
 
 
 def test_matching_engine_v3_execution():
