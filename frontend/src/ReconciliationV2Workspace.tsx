@@ -46,7 +46,7 @@ interface V2StageInfo {
 
 const V2_STAGES: V2StageInfo[] = [
   { key: "setup", label: "Setup", number: 1, subtitle: "Dual Ingestion" },
-  { key: "mapping", label: "Mapping 2.0", number: 2, subtitle: "AI Schema Coupling" },
+  { key: "mapping", label: "Mapping", number: 2, subtitle: "AI Schema Coupling" },
   { key: "rules", label: "Rules", number: 3, subtitle: "Reconciliation Rules" },
   { key: "results", label: "Results", number: 4, subtitle: "Reconciliation Matrix" },
   { key: "summary", label: "Summary", number: 5, subtitle: "Executive Intelligence" },
@@ -255,7 +255,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
     const currentNum = stageNumMap[currentStage] || 1;
     const stageLabelMap: Record<string, string> = {
       setup: "Setup & Dual Ingestion",
-      mapping: "Mapping 2.0 (Schema Coupling)",
+      mapping: "Mapping (Schema Coupling)",
       rules: "Rules Studio & Tolerances",
       results: "Waterfall Match Matrix",
       summary: "Executive Tax Flight Deck",

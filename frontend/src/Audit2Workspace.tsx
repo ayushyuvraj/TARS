@@ -538,7 +538,7 @@ export const Audit2Workspace: React.FC = () => {
       {
         chapter_number: 2,
         stage_key: "mapping",
-        title: "Mapping 2.0: Hybrid AI Schema Coupling",
+        title: "Mapping: Hybrid AI Schema Coupling",
         status: completedCount >= 2 ? "COMPLETED" : completedCount === 1 ? "IN_PROGRESS" : "NOT_STARTED",
         actor: "AI_AGENT",
         timestamp: sess.updated_at,
