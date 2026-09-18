@@ -30,10 +30,12 @@ export interface DirectCorrelationResult {
   reconciliation_id: string;
   gstr_filename: string;
   pr_filename: string;
+  recon_filename?: string;
   total_gstr_columns: number;
   total_pr_columns: number;
   correlations: DirectColumnCorrelation[];
   pr_columns: string[];
+  all_columns?: string[];
   agent_thoughts: AgentThought[];
   model_used?: string | null;
   total_duration_ms: number;
@@ -750,6 +752,43 @@ export interface AuditStats {
   total_steps: number;
   errors_captured: number;
   reconciled_volume_cr: number;
+  total_tokens_consumed?: number;
+  avg_tokens_per_run?: number;
+  total_ai_cost_usd?: number;
+}
+
+export interface TokenUsageBreakdown {
+  prompt_tokens: number;
+  completion_tokens: number;
+  cached_prompt_tokens: number;
+  total_tokens: number;
+  model: string;
+  cost_usd: number;
+}
+
+export interface StageTokenConsumption {
+  stage_key: string;
+  stage_number: number;
+  stage_name: string;
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  cached_prompt_tokens: number;
+  ai_calls_count: number;
+  model: string;
+  is_deterministic: boolean;
+  cost_usd: number;
+}
+
+export interface RunTokenConsumption {
+  total_tokens: number;
+  total_prompt_tokens: number;
+  total_completion_tokens: number;
+  total_cached_tokens: number;
+  total_ai_calls: number;
+  total_cost_usd: number;
+  model: string;
+  by_stage?: Record<string, StageTokenConsumption>;
 }
 
 export interface V2LogEntry {
@@ -779,7 +818,7 @@ export interface V2AuditStep {
   name: string;
   description: string;
   component: string;
-  actor: "SYSTEM" | "AI_AGENT" | "USER" | string;
+  actor: "SYSTEM" | "AI_AGENT" | "USER" | "AI_COPILOT" | string;
   status: "RUNNING" | "COMPLETED" | "FAILED" | "SKIPPED";
   duration_ms: number;
   started_at: string;
@@ -788,6 +827,7 @@ export interface V2AuditStep {
   output_summary: Record<string, any>;
   logs: V2LogEntry[];
   error_capture?: V2StepErrorDetail | null;
+  token_usage?: TokenUsageBreakdown | null;
 }
 
 export interface V2RunRecord {
@@ -807,6 +847,7 @@ export interface V2RunRecord {
   error_count: number;
   warning_count: number;
   error_summary?: string | null;
+  token_consumption?: RunTokenConsumption | null;
 }
 
 export interface V2StageAuditItem {
@@ -815,6 +856,7 @@ export interface V2StageAuditItem {
   label: string;
   subtitle: string;
   status: "COMPLETED" | "IN_PROGRESS" | "NOT_STARTED" | "FAILED";
+  token_consumption?: StageTokenConsumption | null;
   [key: string]: any;
 }
 
@@ -877,6 +919,7 @@ export interface UnifiedAuditChapter {
   user_intervention: string;
   key_metrics: Record<string, any>;
   stage_data: Record<string, any>;
+  token_consumption?: StageTokenConsumption | null;
 }
 
 export interface V2SessionAuditLifecycle {
@@ -895,6 +938,7 @@ export interface V2SessionAuditLifecycle {
   resume_url: string;
   statutory_compliance_badge: string;
   executive_story?: string;
+  token_consumption?: RunTokenConsumption | null;
   chronological_chapters?: UnifiedAuditChapter[];
   cryptographic_manifest?: CryptographicAuditManifest;
   stages: {

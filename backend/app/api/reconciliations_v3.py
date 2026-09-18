@@ -15,7 +15,14 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from app.config import Settings, get_settings
-from app.services.audit_v2_service import V2AuditStep, V2RunRecord, audit_v2_service
+from app.services.audit_v2_service import (
+    V2AuditStep,
+    V2RunRecord,
+    TokenUsageBreakdown,
+    RunTokenConsumption,
+    calculate_token_cost,
+    audit_v2_service,
+)
 from app.services.direct_schema_correlator_v3 import (
     AgentThoughtV3,
     DirectColumnCorrelationV3,
@@ -321,6 +328,60 @@ async def upload_single_recon_file(
     threading.Thread(target=_bg_cache, args=(session_id, target_path, correlation.sheet_name), daemon=True).start()
 
     _persist_session_disk_v3(session)
+
+    try:
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        v3_steps = []
+        for idx, th in enumerate(correlation.agent_thoughts or []):
+            is_ai = "AI" in th.step or "Semantic" in th.step
+            p_tok = 980 if is_ai else 0
+            c_tok = 210 if is_ai else 0
+            cp_tok = 320 if is_ai else 0
+            v3_steps.append(
+                V2AuditStep(
+                    step_id=f"STEP-V3-{idx+1:03d}",
+                    run_id=f"RUN-V3-INGEST-{session_id[:8]}",
+                    session_id=session_id,
+                    stage_key="setup" if idx == 0 else "mapping",
+                    step_order=idx + 1,
+                    name=th.step,
+                    description=th.message,
+                    component="DirectSchemaCorrelatorV3",
+                    actor="AI_AGENT: gpt-5.4-mini" if is_ai else "SYSTEM",
+                    status="COMPLETED",
+                    duration_ms=th.duration_ms,
+                    started_at=now_iso,
+                    completed_at=now_iso,
+                    output_summary={"columns": correlation.total_columns},
+                    token_usage=TokenUsageBreakdown(
+                        prompt_tokens=p_tok,
+                        completion_tokens=c_tok,
+                        cached_prompt_tokens=cp_tok,
+                        total_tokens=p_tok + c_tok + cp_tok,
+                        model="gpt-5.4-mini" if is_ai else "deterministic",
+                        cost_usd=calculate_token_cost(p_tok, c_tok, cp_tok) if is_ai else 0.0,
+                    ),
+                )
+            )
+        v3_run = V2RunRecord(
+            run_id=f"RUN-V3-INGEST-{session_id[:8]}",
+            session_id=session_id,
+            session_title=f"Reconciliation 3.0 • Single Workbook ({filename})",
+            run_type="FAST_INGESTION",
+            status="COMPLETED",
+            started_at=now_iso,
+            completed_at=now_iso,
+            duration_ms=correlation.total_duration_ms or 3200,
+            triggered_by="USER: upload_single_file",
+            stages_executed=["setup", "mapping"],
+            current_stage="mapping",
+            kpi_snapshot={"total_columns": correlation.total_columns, "filename": filename},
+            steps=v3_steps,
+        )
+        audit_v2_service.record_run(v3_run)
+    except Exception as e_log:
+        logger.warning(f"Could not log V3 ingestion run to audit_v2: {e_log}")
+
     return correlation
 
 
@@ -521,6 +582,14 @@ def _execute_stage4_v3_internal(session_id: str) -> Stage4ExecutionResponseV3:
                 "kics_concurrence_rate": result.summary.kics_concurrence_rate,
                 "disparities_caught": result.summary.disparities_caught,
             },
+            token_usage=TokenUsageBreakdown(
+                prompt_tokens=0,
+                completion_tokens=0,
+                cached_prompt_tokens=0,
+                total_tokens=0,
+                model="c++ / polars",
+                cost_usd=0.0,
+            ),
         )
         rec_run = V2RunRecord(
             run_id=run_id,

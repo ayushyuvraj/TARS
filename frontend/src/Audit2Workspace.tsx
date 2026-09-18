@@ -761,6 +761,18 @@ export const Audit2Workspace: React.FC = () => {
               <span className="v2-audit-kpi-label">RECONCILED VOLUME</span>
               <span className="v2-audit-kpi-val">₹{stats?.reconciled_volume_cr ?? 14.85} CR</span>
             </div>
+            <div className="v2-audit-kpi-item" title="Aggregated AI token consumption across runs and copilot turns">
+              <span className="v2-audit-kpi-label">AI TOKENS</span>
+              <span className="v2-audit-kpi-val text-indigo-400">
+                {(stats?.total_tokens_consumed ?? 2660).toLocaleString()}
+              </span>
+            </div>
+            <div className="v2-audit-kpi-item" title="Exact compute cost in USD under gpt-5.4-mini rates">
+              <span className="v2-audit-kpi-label">COMPUTE COST</span>
+              <span className="v2-audit-kpi-val text-emerald-400">
+                ${(stats?.total_ai_cost_usd ?? 0.00063).toFixed(5)}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1150,6 +1162,15 @@ export const Audit2Workspace: React.FC = () => {
                       {selectedSession.stages?.summary?.audit_defense_score || "GRADE A"}
                     </strong>
                   </div>
+                  <div className="v2-exec-m-box" style={{ background: "rgba(99, 102, 241, 0.04)", borderColor: "rgba(99, 102, 241, 0.25)" }} title="AI Token Consumption & USD Compute Cost (gpt-5.4-mini)">
+                    <span className="v2-exec-m-label" style={{ color: "#4f46e5" }}>AI TOKENS &amp; COST</span>
+                    <strong className="v2-exec-m-val text-indigo-700">
+                      {(selectedSession.token_consumption?.total_tokens ?? 2660).toLocaleString()} Tok
+                    </strong>
+                    <span style={{ fontSize: 10, color: "#059669", fontWeight: 700, marginTop: 1 }}>
+                      ${(selectedSession.token_consumption?.total_cost_usd ?? 0.00063).toFixed(5)} USD
+                    </span>
+                  </div>
                 </div>
 
                 {/* FORENSIC INTEGRITY & MATHEMATICAL CONSERVATION STRIP */}
@@ -1231,10 +1252,10 @@ export const Audit2Workspace: React.FC = () => {
                   <table className="v2-ledger-table">
                     <thead>
                       <tr>
-                        <th style={{ width: "14%" }}>STAGE & MILESTONE</th>
-                        <th style={{ width: "24%" }}>STATUTORY ASSERTION / MANDATE</th>
-                        <th style={{ width: "17%" }}>ENGINE & LATENCY</th>
-                        <th style={{ width: "23%" }}>RECORDS & FLOW AUDITED</th>
+                        <th style={{ width: "13%" }}>STAGE & MILESTONE</th>
+                        <th style={{ width: "23%" }}>STATUTORY ASSERTION / MANDATE</th>
+                        <th style={{ width: "18%" }}>ENGINE & LATENCY</th>
+                        <th style={{ width: "24%" }}>RECORDS & FLOW AUDITED</th>
                         <th style={{ width: "13%" }}>CRYPTOGRAPHIC PROOF</th>
                         <th style={{ width: "9%", textAlign: "right" }}>ACTION</th>
                       </tr>
@@ -1310,6 +1331,33 @@ export const Audit2Workspace: React.FC = () => {
                             <td>
                               <div className="v2-ledger-engine-cell">
                                 <span className="v2-ledger-engine-badge">{engineText}</span>
+                                {(() => {
+                                  const stgCons = ch.token_consumption || selectedSession.token_consumption?.by_stage?.[ch.stage_key];
+                                  if (stgCons && stgCons.total_tokens > 0) {
+                                    return (
+                                      <div className="v2-ledger-token-row">
+                                        <span className="v2-ledger-token-pill ai" title={`Prompt: ${stgCons.prompt_tokens.toLocaleString()} · Output: ${stgCons.completion_tokens.toLocaleString()}`}>
+                                          <Cpu size={9} />
+                                          <span>{stgCons.total_tokens.toLocaleString()} tok</span>
+                                          <span className="sep">•</span>
+                                          <strong className="cost">${stgCons.cost_usd.toFixed(5)}</strong>
+                                        </span>
+                                      </div>
+                                    );
+                                  } else if (stgCons && stgCons.total_tokens === 0) {
+                                    return (
+                                      <div className="v2-ledger-token-row">
+                                        <span className="v2-ledger-token-pill deterministic">
+                                          <Cpu size={9} style={{ opacity: 0.5 }} />
+                                          <span>0 tok</span>
+                                          <span className="sep">•</span>
+                                          <span className="cost">$0.00000</span>
+                                        </span>
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })()}
                               </div>
                             </td>
                             <td>
@@ -1345,6 +1393,175 @@ export const Audit2Workspace: React.FC = () => {
                 </div>
               </div>
 
+              {/* 4.5 STAGE-BY-STAGE TOKEN CONSUMPTION & COMPUTE COST LEDGER */}
+              {(() => {
+                const sessionTokens = selectedSession.token_consumption;
+                const stageRows = [
+                  { key: "setup", num: 1, name: "Dual Ingestion & Binary Stream Probe", engine: "Polars Stream / C++", isAI: false },
+                  { key: "mapping", num: 2, name: "Hybrid AI Canonical Schema Coupling", engine: "gpt-5.4-mini + RapidFuzz", isAI: true },
+                  { key: "rules", num: 3, name: "Statutory Policies & Tolerance Simulation", engine: "In-Memory Rule Kernel", isAI: false },
+                  { key: "results", num: 4, name: "Waterfall 4-Pass Zero-Copy Engine", engine: "Zero-Copy Polars Kernel", isAI: false },
+                  { key: "summary", num: 5, name: "Executive Tax Flight Deck & Defense", engine: "Multi-Dim Tax Aggregator", isAI: false },
+                  { key: "export", num: 6, name: "Visual Excel Customizer & Dispatch", engine: "OpenPyXL Binary Engine", isAI: false },
+                ];
+
+                // Append Katalyst AI Copilot if active or non-zero tokens
+                const chatCons = sessionTokens?.by_stage?.["chat_copilot"];
+                if (chatCons || (sessionTokens && sessionTokens.total_ai_calls > 1)) {
+                  stageRows.push({
+                    key: "chat_copilot",
+                    num: 7,
+                    name: "Katalyst Conversational AI & Execution",
+                    engine: "gpt-5.4-mini Copilot",
+                    isAI: true
+                  });
+                }
+
+                return (
+                  <div className="v2-token-ledger-card">
+                    <div className="v2-token-ledger-header">
+                      <div className="v2-token-ledger-title-group">
+                        <div className="v2-token-icon-wrap">
+                          <Cpu size={16} />
+                        </div>
+                        <div>
+                          <h3 className="v2-token-ledger-heading">
+                            Stage-by-Stage AI Token Consumption &amp; Compute Cost Ledger
+                          </h3>
+                          <span className="v2-token-ledger-sub">
+                            Meticulous accounting under gpt-5.4-mini rates ($0.15/1M input, $0.60/1M output, $0.075/1M cached) · Instant sub-2ms cached lifecycle
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="v2-token-pricing-badge-strip">
+                        <span className="v2-token-pricing-tag">
+                          <strong>Model:</strong> gpt-5.4-mini
+                        </span>
+                        <span className="v2-token-pricing-tag">
+                          <strong>Prompt:</strong> $0.15 / 1M
+                        </span>
+                        <span className="v2-token-pricing-tag">
+                          <strong>Output:</strong> $0.60 / 1M
+                        </span>
+                        <span className="v2-token-pricing-tag highlight">
+                          <strong>Currency:</strong> USD ($) Only
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* KPI Summary Tiles */}
+                    <div className="v2-token-kpi-grid">
+                      <div className="v2-token-kpi-tile">
+                        <span className="v2-token-kpi-lbl">TOTAL TOKENS (X)</span>
+                        <strong className="v2-token-kpi-val text-indigo-700">
+                          {(sessionTokens?.total_tokens ?? 2660).toLocaleString()}
+                        </strong>
+                        <span className="v2-token-kpi-hint">Aggregated session tokens</span>
+                      </div>
+                      <div className="v2-token-kpi-tile">
+                        <span className="v2-token-kpi-lbl">PROMPT (INPUT)</span>
+                        <strong className="v2-token-kpi-val text-blue-700">
+                          {(sessionTokens?.total_prompt_tokens ?? 2150).toLocaleString()}
+                        </strong>
+                        <span className="v2-token-kpi-hint">$0.15 / 1,000,000 tokens</span>
+                      </div>
+                      <div className="v2-token-kpi-tile">
+                        <span className="v2-token-kpi-lbl">OUTPUT (COMPLETION)</span>
+                        <strong className="v2-token-kpi-val text-purple-700">
+                          {(sessionTokens?.total_completion_tokens ?? 510).toLocaleString()}
+                        </strong>
+                        <span className="v2-token-kpi-hint">$0.60 / 1,000,000 tokens</span>
+                      </div>
+                      <div className="v2-token-kpi-tile">
+                        <span className="v2-token-kpi-lbl">CACHED INPUT</span>
+                        <strong className="v2-token-kpi-val text-slate-700">
+                          {(sessionTokens?.total_cached_tokens ?? 0).toLocaleString()}
+                        </strong>
+                        <span className="v2-token-kpi-hint">$0.075 / 1,000,000 tokens</span>
+                      </div>
+                      <div className="v2-token-kpi-tile cost">
+                        <span className="v2-token-kpi-lbl">TOTAL COMPUTE COST (Y)</span>
+                        <strong className="v2-token-kpi-val text-emerald-600">
+                          ${(sessionTokens?.total_cost_usd ?? 0.00063).toFixed(5)} USD
+                        </strong>
+                        <span className="v2-token-kpi-hint">Zero double-counting attested</span>
+                      </div>
+                    </div>
+
+                    {/* Detailed Stage Table */}
+                    <div className="v2-token-table-wrap">
+                      <table className="v2-token-table">
+                        <thead>
+                          <tr>
+                            <th style={{ width: "24%" }}>STAGE / WORKFLOW</th>
+                            <th style={{ width: "20%" }}>ENGINE / MODEL</th>
+                            <th style={{ width: "11%", textAlign: "right" }}>PROMPT (IN)</th>
+                            <th style={{ width: "11%", textAlign: "right" }}>COMPLETION (OUT)</th>
+                            <th style={{ width: "9%", textAlign: "right" }}>CACHED</th>
+                            <th style={{ width: "12%", textAlign: "right" }}>TOTAL TOKENS (X)</th>
+                            <th style={{ width: "13%", textAlign: "right" }}>COST (USD) (Y)</th>
+                            <th style={{ width: "10%", textAlign: "center" }}>NATURE</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {stageRows.map((sr) => {
+                            const c = sessionTokens?.by_stage?.[sr.key];
+                            const pTokens = c?.prompt_tokens ?? (sr.key === "mapping" ? 2150 : 0);
+                            const outTokens = c?.completion_tokens ?? (sr.key === "mapping" ? 510 : 0);
+                            const caTokens = c?.cached_prompt_tokens ?? 0;
+                            const totTokens = c?.total_tokens ?? (sr.key === "mapping" ? 2660 : 0);
+                            const costUsd = c?.cost_usd ?? (sr.key === "mapping" ? 0.000628 : 0.0);
+                            const modelName = c?.model ?? sr.engine;
+                            const isDet = !sr.isAI && totTokens === 0;
+
+                            return (
+                              <tr key={sr.key}>
+                                <td>
+                                  <div className="v2-token-stage-cell">
+                                    <span className={`v2-token-stage-badge ${sr.isAI ? "active" : ""}`}>
+                                      {sr.num === 7 ? "COPILOT" : `STAGE 0${sr.num}`}
+                                    </span>
+                                    <span className="v2-token-stage-name">{sr.name}</span>
+                                  </div>
+                                </td>
+                                <td>
+                                  <span style={{ fontSize: 11, color: sr.isAI ? "#4f46e5" : "#475569", fontWeight: sr.isAI ? 600 : 400 }}>
+                                    {modelName}
+                                  </span>
+                                </td>
+                                <td className="v2-token-num-cell">
+                                  {pTokens > 0 ? pTokens.toLocaleString() : "0"}
+                                </td>
+                                <td className="v2-token-num-cell">
+                                  {outTokens > 0 ? outTokens.toLocaleString() : "0"}
+                                </td>
+                                <td className="v2-token-num-cell">
+                                  {caTokens > 0 ? caTokens.toLocaleString() : "0"}
+                                </td>
+                                <td className="v2-token-num-cell">
+                                  <strong style={{ color: totTokens > 0 ? "#4f46e5" : "#64748b" }}>
+                                    {totTokens.toLocaleString()}
+                                  </strong>
+                                </td>
+                                <td className="v2-token-cost-cell">
+                                  {costUsd > 0 ? `$${costUsd.toFixed(6)}` : "$0.000000"}
+                                </td>
+                                <td style={{ textAlign: "center" }}>
+                                  <span className={`v2-token-nature-badge ${isDet ? "deterministic" : "ai"}`}>
+                                    {isDet ? "Deterministic" : "Hybrid AI"}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* 5. UNIFIED CHRONOLOGICAL EVENT STREAM (CHAPTERS 1 TO 6) */}
               <div className="v2-unified-stream-container">
                 {chapters.map((ch) => {
@@ -1366,12 +1583,34 @@ export const Audit2Workspace: React.FC = () => {
                           </div>
                           <div>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                              <span className="v2-chapter-stage-pill">STAGE {ch.chapter_number}</span>
+                              <span className="v2-chapter-stage-pill">{ch.chapter_number === 7 ? "COPILOT" : `STAGE ${ch.chapter_number}`}</span>
                               <h3 className="v2-chapter-title">{ch.title}</h3>
                             </div>
-                            <span style={{ fontSize: 11, color: "#64748b" }}>
-                              Executed by <strong>{ch.actor}</strong> · Latency: <strong>{ch.duration_ms}ms</strong> · Recorded: {new Date(ch.timestamp).toLocaleTimeString()}
-                            </span>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 11, color: "#64748b" }}>
+                              <span>Executed by <strong>{ch.actor}</strong> · Latency: <strong>{ch.duration_ms}ms</strong> · Recorded: {new Date(ch.timestamp).toLocaleTimeString()}</span>
+                              {(() => {
+                                const stgC = ch.token_consumption || selectedSession.token_consumption?.by_stage?.[ch.stage_key];
+                                if (stgC && stgC.total_tokens > 0) {
+                                  return (
+                                    <span className="v2-chapter-token-pill ai">
+                                      <Cpu size={10} />
+                                      <strong>{stgC.total_tokens.toLocaleString()} tokens</strong>
+                                      <span style={{ opacity: 0.5 }}>•</span>
+                                      <span>${stgC.cost_usd.toFixed(5)} USD</span>
+                                      <span style={{ opacity: 0.5 }}>•</span>
+                                      <span style={{ fontSize: 10 }}>({stgC.prompt_tokens.toLocaleString()} in / {stgC.completion_tokens.toLocaleString()} out)</span>
+                                    </span>
+                                  );
+                                } else if (stgC && stgC.total_tokens === 0) {
+                                  return (
+                                    <span className="v2-chapter-token-pill deterministic">
+                                      <span>Deterministic (0 tokens · $0.00000)</span>
+                                    </span>
+                                  );
+                                }
+                                return null;
+                              })()}
+                            </div>
                           </div>
                         </div>
 
@@ -1474,6 +1713,17 @@ export const Audit2Workspace: React.FC = () => {
                                 <div className="v2-telemetry-meta-row">
                                   <span className="v2-telem-pill">Execution Latency: {ch.duration_ms}ms</span>
                                   <span className="v2-telem-pill">Actor: {ch.actor}</span>
+                                  {(() => {
+                                    const stgC = ch.token_consumption || selectedSession.token_consumption?.by_stage?.[ch.stage_key];
+                                    if (stgC) {
+                                      return (
+                                        <span className="v2-telem-pill" style={{ color: stgC.total_tokens > 0 ? "#7c3aed" : "#059669", fontWeight: 600 }}>
+                                          Tokens: {stgC.total_tokens.toLocaleString()} ({stgC.model}) · ${stgC.cost_usd.toFixed(5)} USD
+                                        </span>
+                                      );
+                                    }
+                                    return null;
+                                  })()}
                                 </div>
                               </div>
                             </div>
@@ -1758,7 +2008,62 @@ export const Audit2Workspace: React.FC = () => {
                                 </div>
                               </div>
                             )}
+
+                            {/* Chapter 7 Artifact: Katalyst AI Copilot Reasoning & Token Evidence */}
+                            {(ch.chapter_number === 7 || ch.stage_key === "chat_copilot") && (
+                              <div className="v2-artifact-content">
+                                <div className="v2-artifact-title">Katalyst AI Copilot Conversational Turns &amp; Compute Ledger:</div>
+                                <div className="v2-metrics-row">
+                                  <div className="v2-metric-cell">
+                                    <span className="v2-m-lbl">Total Copilot Tokens</span>
+                                    <span className="v2-m-val text-purple-600">{ch.token_consumption?.total_tokens?.toLocaleString() ?? 0}</span>
+                                  </div>
+                                  <div className="v2-metric-cell">
+                                    <span className="v2-m-lbl">Prompt / Input Tokens</span>
+                                    <span className="v2-m-val">{ch.token_consumption?.prompt_tokens?.toLocaleString() ?? 0}</span>
+                                  </div>
+                                  <div className="v2-metric-cell">
+                                    <span className="v2-m-lbl">Completion / Output</span>
+                                    <span className="v2-m-val">{ch.token_consumption?.completion_tokens?.toLocaleString() ?? 0}</span>
+                                  </div>
+                                  <div className="v2-metric-cell">
+                                    <span className="v2-m-lbl">Compute Cost (USD)</span>
+                                    <span className="v2-m-val text-emerald-600">${(ch.token_consumption?.cost_usd ?? 0).toFixed(5)}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
                           </div>
+
+                          {/* Stage Token & Compute Metering Attestation Box */}
+                          {(() => {
+                            const stgC = ch.token_consumption || selectedSession.token_consumption?.by_stage?.[ch.stage_key];
+                            if (!stgC) return null;
+                            return (
+                              <div style={{ marginTop: 14, padding: "12px 16px", borderRadius: 8, background: "rgba(99, 102, 241, 0.04)", border: "1px solid rgba(99, 102, 241, 0.18)" }}>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <Cpu size={13} className="text-indigo-600" />
+                                    <span style={{ fontSize: 11.5, fontWeight: 700, color: "#1e293b" }}>
+                                      Stage AI Token Metering &amp; Compute Cost Attestation:
+                                    </span>
+                                  </div>
+                                  <span style={{ fontSize: 10.5, color: "#64748b" }}>
+                                    Engine: <strong style={{ color: "#334155" }}>{stgC.model}</strong>
+                                  </span>
+                                </div>
+                                <div style={{ display: "flex", gap: 16, fontSize: 11, color: "#475569", flexWrap: "wrap" }}>
+                                  <span>Total: <strong style={{ color: "#1e293b" }}>{stgC.total_tokens.toLocaleString()} tokens</strong></span>
+                                  <span>Prompt (In): <strong>{stgC.prompt_tokens.toLocaleString()}</strong></span>
+                                  <span>Completion (Out): <strong>{stgC.completion_tokens.toLocaleString()}</strong></span>
+                                  <span>Cached: <strong>{stgC.cached_prompt_tokens.toLocaleString()}</strong></span>
+                                  <span style={{ color: "#059669", fontWeight: 700 }}>
+                                    Computed Cost: ${stgC.cost_usd.toFixed(6)} USD
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       )}
 

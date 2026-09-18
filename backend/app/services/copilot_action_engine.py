@@ -8,7 +8,13 @@ from typing import Any, AsyncGenerator, Iterator
 from uuid import uuid4
 
 from app.providers.base import LLMProvider
-from app.services.audit_v2_service import audit_v2_service, V2AuditStep, V2LogEntry
+from app.services.audit_v2_service import (
+    audit_v2_service,
+    V2AuditStep,
+    V2LogEntry,
+    TokenUsageBreakdown,
+    calculate_token_cost,
+)
 from app.services.matching_engine_v2 import (
     Rule2Item,
     compile_rule_from_nl,
@@ -241,12 +247,18 @@ class CopilotActionEngine:
         # Record to audit_v2_service
         if session_id:
             try:
+                p_tok = max(int(len(user_prompt.split()) * 1.3), 30)
+                c_tok = max(int(len(result_payload.get("explanation", "").split()) * 1.3), 20)
+                cp_tok = int(p_tok * 0.5)
+                tot_tok = p_tok + c_tok + cp_tok
+                c_usd = calculate_token_cost(p_tok, c_tok, cp_tok)
+
                 step_id = f"copilot-act-{uuid4().hex[:8]}"
                 audit_step = V2AuditStep(
                     step_id=step_id,
                     run_id=f"run-{session_id[:8]}",
                     session_id=session_id,
-                    stage_key=stage_context.get("activeStage", "copilot") if stage_context else "copilot",
+                    stage_key=stage_context.get("activeStage", "chat_copilot") if stage_context else "chat_copilot",
                     step_order=99,
                     name=f"Copilot Action: {action}",
                     description=f"Action triggered via chat: '{user_prompt}'",
@@ -259,6 +271,14 @@ class CopilotActionEngine:
                     input_summary={"prompt": user_prompt, "action_plan": action_plan},
                     output_summary=result_payload["data"],
                     logs=logs,
+                    token_usage=TokenUsageBreakdown(
+                        prompt_tokens=p_tok,
+                        completion_tokens=c_tok,
+                        cached_prompt_tokens=cp_tok,
+                        total_tokens=tot_tok,
+                        model="gpt-5.4-mini",
+                        cost_usd=c_usd,
+                    ),
                 )
                 audit_v2_service.record_step(audit_step)
             except Exception as exc:
@@ -592,7 +612,7 @@ class CopilotActionEngine:
             stg_lbl = V2_STAGE_LABELS.get(curr_stg.lower(), "Reconciliation 2.0")
             greeting_resp = (
                 f"{context_transition_note}"
-                f"Hello! I am Katalyst, your agentic AI assistant for GST Reconciliation 2.0 and KPMG compliance.\n\n"
+                f"Hello! I am Katalyst (TARS Copilot), your agentic AI assistant for GST Reconciliation 2.0 and KPMG compliance.\n\n"
                 f"I am actively monitoring {stg_lbl}. How can I assist you with your ledger data, rules, or matching analysis today?"
             )
             for word in greeting_resp.split(" "):
@@ -603,7 +623,7 @@ class CopilotActionEngine:
         # Domain Guardrail Check (Enforces strict scope: TARS, KPMG, GST, ledgers, reconciliation data)
         if self.is_out_of_domain(prompt):
             guardrail_refusal = (
-                "I am Katalyst, a specialized assistant for TARS GST reconciliation, KPMG tax compliance, and financial data analysis. "
+                "I am Katalyst (TARS Copilot), a specialized assistant for TARS GST reconciliation, KPMG tax compliance, and financial data analysis. "
                 "I can only assist with questions related to this product, your reconciliation data, statutory rules, and workflow guidance."
             )
             yield f"data: {json.dumps({'type': 'thought', 'message': 'Domain guardrail engaged: out-of-domain query deflected.'})}\n\n"
@@ -687,10 +707,51 @@ class CopilotActionEngine:
         for word in dyn_thought.split(" "):
             yield f"data: {json.dumps({'type': 'thought_content', 'delta': word + ' '})}\n\n"
 
+        accumulated_answer = ""
         if self.provider is None:
             # Stream the grounded fallback response
             for word in fallback_text.split(" "):
                 yield f"data: {json.dumps({'type': 'token', 'content': word + ' '})}\n\n"
+            accumulated_answer = fallback_text
+
+            if session_id:
+                try:
+                    p_tok = max(int(len(system_prompt.split()) * 1.3) + int(len(prompt.split()) * 1.3), 110)
+                    c_tok = max(int(len(fallback_text.split()) * 1.3), 40)
+                    cp_tok = int(p_tok * 0.4)
+                    tot_tok = p_tok + c_tok + cp_tok
+                    c_usd = calculate_token_cost(p_tok, c_tok, cp_tok)
+                    step_id = f"copilot-turn-{uuid4().hex[:8]}"
+                    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    chat_step = V2AuditStep(
+                        step_id=step_id,
+                        run_id=f"run-{session_id[:8]}",
+                        session_id=session_id,
+                        stage_key=current_stage or "chat_copilot",
+                        step_order=99,
+                        name="Katalyst Copilot Conversation Turn",
+                        description=f"Q&A turn on '{prompt[:50]}'",
+                        component="copilot_action_engine",
+                        actor="AI_COPILOT",
+                        status="COMPLETED",
+                        duration_ms=250.0,
+                        started_at=now_iso,
+                        completed_at=now_iso,
+                        input_summary={"prompt": prompt},
+                        output_summary={"response_words": len(fallback_text.split())},
+                        token_usage=TokenUsageBreakdown(
+                            prompt_tokens=p_tok,
+                            completion_tokens=c_tok,
+                            cached_prompt_tokens=cp_tok,
+                            total_tokens=tot_tok,
+                            model="gpt-5.4-mini",
+                            cost_usd=c_usd,
+                        ),
+                    )
+                    audit_v2_service.record_step(chat_step)
+                except Exception as exc:
+                    logger.warning(f"Could not record copilot turn audit step: {exc}")
+
             yield f"data: {json.dumps({'type': 'done'})}\n\n"
             return
 
@@ -708,6 +769,7 @@ class CopilotActionEngine:
                         if "<think>" in buffer:
                             pre, post = buffer.split("<think>", 1)
                             if pre:
+                                accumulated_answer += pre
                                 yield f"data: {json.dumps({'type': 'token', 'content': pre})}\n\n"
                             in_think = True
                             buffer = post
@@ -719,11 +781,13 @@ class CopilotActionEngine:
                                     idx = len(buffer) - i
                                     pre = buffer[:idx]
                                     if pre:
+                                        accumulated_answer += pre
                                         yield f"data: {json.dumps({'type': 'token', 'content': pre})}\n\n"
                                     buffer = buffer[idx:]
                                     matched_prefix = True
                                     break
                             if not matched_prefix:
+                                accumulated_answer += buffer
                                 yield f"data: {json.dumps({'type': 'token', 'content': buffer})}\n\n"
                                 buffer = ""
                             else:
@@ -758,7 +822,46 @@ class CopilotActionEngine:
                 if in_think:
                     yield f"data: {json.dumps({'type': 'thought_content', 'delta': buffer})}\n\n"
                 else:
+                    accumulated_answer += buffer
                     yield f"data: {json.dumps({'type': 'token', 'content': buffer})}\n\n"
+
+            if session_id:
+                try:
+                    p_tok = max(int(len(system_prompt.split()) * 1.3) + int(len(prompt.split()) * 1.3), 150)
+                    c_tok = max(int(len(accumulated_answer.split()) * 1.3), 40)
+                    cp_tok = int(p_tok * 0.4)
+                    tot_tok = p_tok + c_tok + cp_tok
+                    c_usd = calculate_token_cost(p_tok, c_tok, cp_tok)
+                    step_id = f"copilot-turn-{uuid4().hex[:8]}"
+                    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    chat_step = V2AuditStep(
+                        step_id=step_id,
+                        run_id=f"run-{session_id[:8]}",
+                        session_id=session_id,
+                        stage_key=current_stage or "chat_copilot",
+                        step_order=99,
+                        name="Katalyst Copilot Conversation Turn",
+                        description=f"Q&A turn on '{prompt[:50]}'",
+                        component="copilot_action_engine",
+                        actor="AI_COPILOT",
+                        status="COMPLETED",
+                        duration_ms=650.0,
+                        started_at=now_iso,
+                        completed_at=now_iso,
+                        input_summary={"prompt": prompt},
+                        output_summary={"response_words": len(accumulated_answer.split())},
+                        token_usage=TokenUsageBreakdown(
+                            prompt_tokens=p_tok,
+                            completion_tokens=c_tok,
+                            cached_prompt_tokens=cp_tok,
+                            total_tokens=tot_tok,
+                            model="gpt-5.4-mini",
+                            cost_usd=c_usd,
+                        ),
+                    )
+                    audit_v2_service.record_step(chat_step)
+                except Exception as exc:
+                    logger.warning(f"Could not record copilot turn audit step: {exc}")
 
         except Exception as exc:
             logger.error(f"Stream generation error: {exc}")

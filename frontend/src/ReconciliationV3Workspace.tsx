@@ -1005,7 +1005,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
                 totalDurationMs={totalMeasuredDurationMs || (correlationResult?.total_duration_ms && correlationResult.total_duration_ms >= 150 ? correlationResult.total_duration_ms : 0)}
                 isConfirmed={mappingConfirmed}
                 disabled={isSessionCompleted}
-                onChange={handleCorrelationsChange}
+                onChange={handleCorrelationsChange as any}
                 onConfirmMapping={handleConfirmMapping}
                 onBackToSetup={() => {
                   setCurrentStage("setup");

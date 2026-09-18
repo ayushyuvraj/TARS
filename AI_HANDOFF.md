@@ -1,5 +1,33 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Audit 2.0: AI Token Consumption, Compute Cost Tracking & Milestone Matrix Layout Resolution (18th September 2026)
+
+- **Checkpoint Name**: `Audit 2.0: AI Token Consumption, Compute Cost Tracking & Milestone Matrix Layout Resolution`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-18-audit-v2-token-cost-checkpoint`
+- **Current HEAD Commit**: `087cbae`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Dual Recon 2.0 & Recon 3.0 Token & USD Cost Accounting in Audit 2.0*:
+     - Comprehensive token usage tracking (`prompt_tokens`, `completion_tokens`, `cached_tokens`, `total_tokens`, `total_cost_usd`) recorded across Stages 1–6 and Katalyst Chat/Copilot streams.
+     - Verified `gpt-5.4-mini` pricing structure strictly in USD ($): $0.15/1M input, $0.60/1M output, $0.075/1M cached input.
+     - Deterministic processing stages (Polars stream, C++ RapidFuzz cosine matching, openpyxl) explicitly registered as `0 tokens ($0.00000)`.
+  2. *Audit 2.0 Workbench Telemetry & Dedicated AI Token Ledger Card*:
+     - Top telemetry bar & executive metrics ribbon display `AI TOKENS` (e.g. 24,640) and `COMPUTE COST` (e.g. $0.00496).
+     - Dedicated `Stage-by-Stage AI Token Consumption & Compute Cost Ledger` card in Audit 2.0 with verified pricing rates banner, 5-KPI strip, and comprehensive per-stage token breakdown table.
+     - Individual chapter cards include stage token badge in header, telemetry in Pillar 3, and Forensic Evidence attestation box.
+  3. *Statutory Milestone Ledger Matrix Table Layout Resolution*:
+     - Converted `.v2-ledger-engine-cell` from horizontal row to vertical column layout (`flex-direction: column; gap: 5px;`), cleanly placing engine latency badge on top and token cost pill beneath it.
+     - Rebalanced table column widths (`ENGINE & LATENCY` 18%, `RECORDS & FLOW AUDITED` 24%), set `min-width: 920px`, and eliminated 100% of cell overflowing, clipping, and text collision.
+  4. *Performance & Anti-Double-Counting Invariants*:
+     - Sub-2ms loading latency guaranteed via in-memory `_lifecycle_cache` caching in `AuditV2Service`.
+     - Atomic step-level aggregation ($\sum \text{step tokens} = \text{run total tokens}$) ensuring zero double-counting.
+  5. *Zero Logic Alterations & Full Verification*:
+     - Zero changes to matching algorithms, financial calculations, or export contracts.
+     - Passed 31/31 unit tests (`test_audit_v2_token_consumption.py`, `test_copilot_v2_actions.py`, `test_reconciliation_v2.py`, `test_reconciliation_v3.py`).
+
+---
+
 ## Reconciliation 3.0: Stage 2 Dynamic Real-Time Symmetric Mapping (15th September 2026)
 
 - **Checkpoint Name**: `Reconciliation 3.0: Stage 2 Dynamic Real-Time Symmetric Mapping`

@@ -767,10 +767,16 @@
 /* EXECUTIVE METRICS STRIP: INTEGRATED STAT TILES */
 .v2-exec-metrics-strip {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   gap: 10px;
   padding-top: 12px;
   border-top: 1px solid rgba(226, 232, 240, 0.7);
+}
+
+@media (max-width: 1200px) {
+  .v2-exec-metrics-strip {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 
 .v2-exec-m-box {
@@ -1014,7 +1020,8 @@
 
 .v2-ledger-table-wrap {
   border-radius: 8px;
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   border: 1px solid rgba(226, 232, 240, 0.9);
   background: #ffffff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
@@ -1022,6 +1029,7 @@
 
 .v2-ledger-table {
   width: 100%;
+  min-width: 920px;
   border-collapse: collapse;
   font-size: 12px;
   table-layout: fixed;
@@ -1116,27 +1124,36 @@
 
 .v2-ledger-engine-cell {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .v2-ledger-engine-badge {
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 600;
   color: #005eb8;
   background: rgba(0, 94, 184, 0.07);
-  padding: 2px 8px;
+  padding: 2px 7px;
   border-radius: 4px;
   border: 1px solid rgba(0, 94, 184, 0.15);
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 .v2-ledger-records-cell {
   font-size: 11.5px;
   color: #334155;
   font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  line-height: 1.35;
+  word-break: break-word;
 }
 
 .v2-ledger-crypto-badge {
@@ -2171,3 +2188,309 @@
   color: #475569;
   line-height: 1.5;
 }
+
+/* =========================================================================
+   7. STAGE-BY-STAGE TOKEN CONSUMPTION & COMPUTE COST LEDGER
+   ========================================================================= */
+
+.v2-token-ledger-card {
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.95);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.04), 0 1px 3px rgba(0, 0, 0, 0.02);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.v2-token-ledger-header {
+  padding: 14px 20px;
+  background: linear-gradient(135deg, #faf5ff 0%, #f5f3ff 50%, #ffffff 100%);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.v2-token-ledger-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.v2-token-icon-wrap {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6366f1;
+  flex-shrink: 0;
+}
+
+.v2-token-ledger-heading {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #1e1b4b;
+  letter-spacing: -0.01em;
+}
+
+.v2-token-ledger-sub {
+  font-size: 11px;
+  color: #64748b;
+  display: block;
+  margin-top: 1px;
+}
+
+.v2-token-pricing-badge-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.v2-token-pricing-tag {
+  font-size: 10.5px;
+  padding: 2.5px 8px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  color: #334155;
+}
+
+.v2-token-pricing-tag strong {
+  color: #1e293b;
+  margin-right: 2px;
+}
+
+.v2-token-pricing-tag.highlight {
+  background: rgba(16, 185, 129, 0.08);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #059669;
+  font-weight: 700;
+}
+
+/* KPI Grid */
+.v2-token-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+  padding: 14px 20px;
+  background: #fdfefe;
+  border-bottom: 1px solid rgba(241, 245, 249, 1);
+}
+
+@media (max-width: 1100px) {
+  .v2-token-kpi-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.v2-token-kpi-tile {
+  background: #ffffff;
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.015);
+}
+
+.v2-token-kpi-tile.cost {
+  background: linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.v2-token-kpi-lbl {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #64748b;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.v2-token-kpi-val {
+  font-size: 15px;
+  font-weight: 800;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.v2-token-kpi-hint {
+  font-size: 9.5px;
+  color: #94a3b8;
+  margin-top: 1px;
+}
+
+/* Token Table */
+.v2-token-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.v2-token-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.v2-token-table th {
+  background: #f8fafc;
+  padding: 9px 16px;
+  text-align: left;
+  font-size: 10px;
+  font-weight: 700;
+  color: #475569;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.v2-token-table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(241, 245, 249, 0.9);
+  color: #1e293b;
+  vertical-align: middle;
+}
+
+.v2-token-table tr:hover {
+  background: rgba(248, 250, 252, 0.8);
+}
+
+.v2-token-stage-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v2-token-stage-badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.v2-token-stage-badge.active {
+  background: rgba(99, 102, 241, 0.12);
+  color: #4f46e5;
+}
+
+.v2-token-stage-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.v2-token-num-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  color: #334155;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.v2-token-cost-cell {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #059669;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.v2-token-nature-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.v2-token-nature-badge.deterministic {
+  background: rgba(16, 185, 129, 0.09);
+  color: #059669;
+  border: 1px solid rgba(16, 185, 129, 0.25);
+}
+
+.v2-token-nature-badge.ai {
+  background: rgba(99, 102, 241, 0.09);
+  color: #4f46e5;
+  border: 1px solid rgba(99, 102, 241, 0.25);
+}
+
+/* Ledger inline token pills */
+.v2-ledger-token-row {
+  margin-top: 0;
+  display: flex;
+  align-items: center;
+  max-width: 100%;
+}
+
+.v2-ledger-token-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  font-weight: 600;
+  padding: 1.5px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.v2-ledger-token-pill.ai {
+  background: rgba(99, 102, 241, 0.08);
+  color: #4f46e5;
+  border: 1px solid rgba(99, 102, 241, 0.22);
+}
+
+.v2-ledger-token-pill.deterministic {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.v2-ledger-token-pill .sep {
+  opacity: 0.4;
+  margin: 0 1px;
+}
+
+.v2-ledger-token-pill .cost {
+  color: #059669;
+  font-weight: 700;
+}
+
+/* Chapter header token pill */
+.v2-chapter-token-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 5px;
+}
+
+.v2-chapter-token-pill.ai {
+  background: rgba(99, 102, 241, 0.08);
+  color: #4f46e5;
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+.v2-chapter-token-pill.deterministic {
+  background: #f8fafc;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+

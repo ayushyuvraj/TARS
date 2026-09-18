@@ -211,13 +211,13 @@ export const SearchableColumnSelectV3: React.FC<SearchableColumnSelectV3Props> =
                 </div>
                 {alternatives
                   .filter((alt) => {
-                    const altTarget = alt.target_column || alt.pr_column || "";
+                    const altTarget = alt.target_column || (alt as any).pr_column || "";
                     if (!altTarget || altTarget === currentColumn) return false;
                     if (search && !altTarget.toLowerCase().includes(search.toLowerCase())) return false;
                     return true;
                   })
                   .map((alt) => {
-                    const targetName = alt.target_column || alt.pr_column;
+                    const targetName = alt.target_column || (alt as any).pr_column;
                     const isSelected = value === targetName;
                     return (
                       <button
