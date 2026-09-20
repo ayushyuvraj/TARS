@@ -1,5 +1,25 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Audit 2.0 & Recon 3.0: Completed Session Read-Only Mode Enforcement & Audit Sessions Filter UI Fix (20th September 2026)
+
+- **Checkpoint Name**: `Audit 2.0 & Recon 3.0: Completed Session Read-Only Enforcement & Audit Sessions Filter UI Fix`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-20-audit-readonly-checkpoint`
+- **Current HEAD Commit**: `3ff48ab`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Completed Session Read-Only Mode Enforcement*:
+     - Updated `get_v3_session` endpoint in `reconciliations_v3.py` to check `audit_v2_service.get_session_lifecycle(session_id)` and return `is_completed: true` and `status: "completed"` whenever a session has 6 completed stages in the audit ledger.
+     - Updated `ReconciliationV3Session` schema contracts in both `backend/app/api/reconciliations_v3.py` and `frontend/src/api_v3.ts` to include `is_completed?: boolean` and `completed_stages_count?: number`.
+     - Updated hydration logic in `ReconciliationV3Workspace.tsx` to set `isSessionCompleted = true` based on backend lifecycle state.
+     - Enforced `pointer-events: auto !important; z-index: 90;` on `.v2-read-only-shield` and applied `pointer-events: none !important; opacity: 0.65 !important; cursor: not-allowed !important;` across all buttons, inputs, sliders, toggles, textareas, and select elements inside `.v2-read-only-wrapper` in `reconciliation_v2.css`.
+     - Passed `isReadOnly={isSessionCompleted}` to `ReconciliationV3RulesStage.tsx`, `ReconciliationV2ResultsStage.tsx`, and `ReconciliationV2SummaryStage.tsx`.
+  2. *Audit Sessions Filter UI & Renaming*:
+     - Fixed contrast and visibility issue on unselected filter buttons in `Audit2Workspace.tsx` by applying a clean light slate background (`#f1f5f9`), slate border (`#cbd5e1`), and dark charcoal text (`#334155`).
+     - Renamed filter button `Recon 3.0` to **`Single Ledger`** and `Recon 2.0` to **`Double Ledger`**.
+
+---
+
 ## Reconciliation 3.0: Stage 4 Results Workbench Field Normalization & Ambiguity Manual Classification Enhancement (20th September 2026)
 
 - **Checkpoint Name**: `Reconciliation 3.0: Stage 4 Results Field Normalization & Ambiguity Classification`
