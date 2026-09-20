@@ -1,5 +1,25 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Sidebar Navigation: Consolidated Reconciliation Menu with Single Ledger & Double Ledger Hover Flyout (20th September 2026)
+
+- **Checkpoint Name**: `Sidebar Navigation: Consolidated Reconciliation Menu with Single Ledger & Double Ledger Hover Flyout`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-20-sidebar-recon-menu-checkpoint`
+- **Current HEAD Commit**: `92696b4`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Unified Sidebar Reconciliation Navigation Item*:
+     - Replaced duplicate separate "Reconciliation 2.0" and "Reconciliation 3.0" links in `frontend/src/App.tsx` with a single unified **Reconciliation** navigation item featuring a purple `Sparkles` icon and right chevron indicator.
+  2. *Interactive Hover Flyout with Single & Double Ledger*:
+     - Hovering over the Reconciliation item reveals a sleek flyout popover menu offering:
+       - **Single Ledger** (`FileSpreadsheet` cyan icon) -> links directly to Reconciliation 3.0 (`/reconciliations-v3`).
+       - **Double Ledger** (`Files` purple icon) -> links directly to Reconciliation 2.0 (`/reconciliations-v2`).
+     - Added an invisible hover bridge (`::before` pseudo-element) and a 220ms grace debounce timer in `App.tsx` ensuring zero accidental dismissals when moving cursor between sidebar item and flyout popover.
+  3. *Collapsed Sidebar Support*:
+     - Refined `frontend/src/phase7b.css` collapsed sidebar rules with `:not(.sidebar-flyout-item)` selectors so that while the main navigation ribbons cleanly collapse to icon-only, the flyout popover retains full text labels, left alignment, and crystal-clear contrast.
+
+---
+
 ## Audit 2.0 & Recon 3.0: Completed Session Read-Only Mode Enforcement & Audit Sessions Filter UI Fix (20th September 2026)
 
 - **Checkpoint Name**: `Audit 2.0 & Recon 3.0: Completed Session Read-Only Enforcement & Audit Sessions Filter UI Fix`

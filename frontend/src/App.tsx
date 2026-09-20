@@ -20,6 +20,7 @@ import {
   ClipboardCheck,
   FileSearch,
   FileSpreadsheet,
+  Files,
   History,
   Layers,
   LayoutDashboard,
@@ -392,7 +393,27 @@ export default function App() {
     [events, setEvents] = useState<AuditEvent[]>([]);
   const [error, setError] = useState<string | null>(null),
     [navOpen, setNavOpen] = useState(false),
-    [copilotMode, setCopilotMode] = useState<CopilotDisplayMode>(() => {
+    [reconMenuHovered, setReconMenuHovered] = useState(false);
+  const reconMenuTimerRef = useRef<any>(null);
+
+  const handleReconMouseEnter = () => {
+    if (reconMenuTimerRef.current) {
+      clearTimeout(reconMenuTimerRef.current);
+      reconMenuTimerRef.current = null;
+    }
+    setReconMenuHovered(true);
+  };
+
+  const handleReconMouseLeave = () => {
+    if (reconMenuTimerRef.current) {
+      clearTimeout(reconMenuTimerRef.current);
+    }
+    reconMenuTimerRef.current = setTimeout(() => {
+      setReconMenuHovered(false);
+    }, 220);
+  };
+
+  const [copilotMode, setCopilotMode] = useState<CopilotDisplayMode>(() => {
       const saved = localStorage.getItem("tars_copilot_mode_v2");
       if (saved === "floating" || saved === "fullscreen") return saved as CopilotDisplayMode;
       return "closed";
@@ -1500,14 +1521,72 @@ export default function App() {
           </button>
         </div>
         <nav aria-label="Primary navigation">
-          <NavLink to="/reconciliations-v2" data-tooltip="Reconciliation" title={sidebarCollapsed ? "Reconciliation" : undefined}>
-            <Sparkles className="text-purple-400" />
-            <span>Reconciliation</span>
-          </NavLink>
-          <NavLink to="/reconciliations-v3" data-tooltip="Reconciliation 3.0" title={sidebarCollapsed ? "Reconciliation 3.0" : undefined}>
-            <Layers className="text-cyan-400" />
-            <span>Reconciliation 3.0</span>
-          </NavLink>
+          {/* SINGLE RECONCILIATION DROPDOWN NAV ITEM */}
+          <div
+            className="sidebar-dropdown-wrapper"
+            onMouseEnter={handleReconMouseEnter}
+            onMouseLeave={handleReconMouseLeave}
+          >
+            <div
+              className={`sidebar-nav-item ${
+                loc.pathname.startsWith("/reconciliations-v2") || loc.pathname.startsWith("/reconciliations-v3")
+                  ? "active"
+                  : ""
+              }`}
+              onClick={() => {
+                nav("/reconciliations-v3");
+                setNavOpen(false);
+              }}
+              data-tooltip={sidebarCollapsed ? "Reconciliation" : undefined}
+              title={sidebarCollapsed ? "Reconciliation Engine" : undefined}
+            >
+              <Sparkles className="text-purple-400" />
+              {!sidebarCollapsed && <span>Reconciliation</span>}
+              {!sidebarCollapsed && (
+                <ChevronRight size={14} className={`sidebar-chevron ${reconMenuHovered ? "is-open" : ""}`} />
+              )}
+            </div>
+
+            {/* HOVER FLYOUT DROPDOWN MENU */}
+            {reconMenuHovered && (
+              <div
+                className="sidebar-flyout-menu"
+                onMouseEnter={handleReconMouseEnter}
+                onMouseLeave={handleReconMouseLeave}
+              >
+                <NavLink
+                  to="/reconciliations-v3"
+                  className={({ isActive }) =>
+                    `sidebar-flyout-item ${loc.pathname.startsWith("/reconciliations-v3") ? "active" : ""}`
+                  }
+                  onClick={() => {
+                    setReconMenuHovered(false);
+                    setNavOpen(false);
+                  }}
+                >
+                  <div className="sidebar-flyout-icon cyan">
+                    <FileSpreadsheet size={15} />
+                  </div>
+                  <span className="sidebar-flyout-label">Single Ledger</span>
+                </NavLink>
+                <NavLink
+                  to="/reconciliations-v2"
+                  className={({ isActive }) =>
+                    `sidebar-flyout-item ${loc.pathname.startsWith("/reconciliations-v2") ? "active" : ""}`
+                  }
+                  onClick={() => {
+                    setReconMenuHovered(false);
+                    setNavOpen(false);
+                  }}
+                >
+                  <div className="sidebar-flyout-icon purple">
+                    <Files size={15} />
+                  </div>
+                  <span className="sidebar-flyout-label">Double Ledger</span>
+                </NavLink>
+              </div>
+            )}
+          </div>
           <NavLink to="/rules-v2" data-tooltip="Rules Wiki" title={sidebarCollapsed ? "Rules Wiki" : undefined}>
             <SlidersHorizontal className="text-blue-400" />
             <span>Rules Wiki</span>

@@ -277,6 +277,154 @@ textarea:focus-visible {
   color: #fff;
   box-shadow: inset 3px 0 #1e49e2;
 }
+
+/* SIDEBAR SINGLE RECONCILIATION ITEM & HOVER FLYOUT DROPDOWN */
+.sidebar-dropdown-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.sidebar-nav-item {
+  color: #aebbb4;
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 11px;
+  border-radius: 7px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+  font-size: 13.5px;
+}
+
+.sidebar-nav-item svg {
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.sidebar-nav-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #fff;
+}
+
+.sidebar-nav-item.active {
+  background: rgba(0, 94, 184, 0.24);
+  color: #fff;
+  box-shadow: inset 3px 0 #1e49e2;
+}
+
+.sidebar-chevron {
+  margin-left: auto;
+  color: #64748b;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.sidebar-nav-item:hover .sidebar-chevron,
+.sidebar-chevron.is-open {
+  transform: translateX(3px);
+  color: #38bdf8;
+}
+
+/* FLYOUT POPOVER MENU */
+.sidebar-flyout-menu {
+  position: absolute;
+  left: 100%;
+  top: 0;
+  margin-left: 10px;
+  width: 175px;
+  background: #0f172a;
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 9px;
+  padding: 5px;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08);
+  z-index: 9999;
+  animation: sidebarFlyoutFadeIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* Invisible bridge so moving cursor across margin-left gap never loses hover */
+.sidebar-flyout-menu::before {
+  content: "";
+  position: absolute;
+  left: -24px;
+  top: -10px;
+  bottom: -10px;
+  width: 28px;
+  background: transparent;
+  pointer-events: auto;
+}
+
+@keyframes sidebarFlyoutFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.sidebar-flyout-item {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 10px;
+  padding: 8px 10px !important;
+  border-radius: 6px;
+  text-decoration: none;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+  width: 100% !important;
+  text-align: left !important;
+}
+
+.sidebar-flyout-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sidebar-flyout-item.active {
+  background: rgba(14, 165, 233, 0.18);
+  border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
+.sidebar-flyout-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sidebar-flyout-icon.cyan {
+  background: rgba(6, 182, 212, 0.15);
+  color: #06b6d4;
+}
+
+.sidebar-flyout-icon.purple {
+  background: rgba(168, 85, 247, 0.15);
+  color: #c084fc;
+}
+
+.sidebar-flyout-label {
+  display: inline-block !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: #f8fafc !important;
+  letter-spacing: 0.01em;
+  white-space: nowrap !important;
+  line-height: 1 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
 .sidebar-copilot-btn {
   display: flex;
   align-items: center;
@@ -1385,15 +1533,18 @@ textarea:focus-visible {
     position: relative;
   }
   .tars-app--sidebar-collapsed .brand-copy,
-  .tars-app--sidebar-collapsed .app-sidebar nav a > span,
+  .tars-app--sidebar-collapsed .app-sidebar nav a:not(.sidebar-flyout-item) > span,
+  .tars-app--sidebar-collapsed .sidebar-nav-item > span,
+  .tars-app--sidebar-collapsed .sidebar-chevron,
   .tars-app--sidebar-collapsed .sidebar-copilot-btn > span,
   .tars-app--sidebar-collapsed .sidebar-copilot-btn .sidebar-kbd,
   .tars-app--sidebar-collapsed .sidebar-user-meta,
   .tars-app--sidebar-collapsed .sidebar-shield-icon,
   .tars-app--sidebar-collapsed .sidebar-foot span {
-    display: none;
+    display: none !important;
   }
-  .tars-app--sidebar-collapsed .app-sidebar nav a,
+  .tars-app--sidebar-collapsed .app-sidebar nav a:not(.sidebar-flyout-item),
+  .tars-app--sidebar-collapsed .sidebar-nav-item,
   .tars-app--sidebar-collapsed .sidebar-copilot-btn,
   .tars-app--sidebar-collapsed .sidebar-foot {
     justify-content: center;
@@ -1403,12 +1554,13 @@ textarea:focus-visible {
     justify-content: center;
   }
   .tars-app--sidebar-collapsed .brand-logo-toggle,
-  .tars-app--sidebar-collapsed .app-sidebar nav a,
+  .tars-app--sidebar-collapsed .app-sidebar nav a:not(.sidebar-flyout-item),
+  .tars-app--sidebar-collapsed .sidebar-nav-item,
   .tars-app--sidebar-collapsed .sidebar-copilot-btn {
     position: relative;
   }
   .tars-app--sidebar-collapsed .brand-logo-toggle::after,
-  .tars-app--sidebar-collapsed .app-sidebar nav a::after,
+  .tars-app--sidebar-collapsed .app-sidebar nav a:not(.sidebar-flyout-item)::after,
   .tars-app--sidebar-collapsed .sidebar-copilot-btn::after {
     content: attr(data-tooltip);
     position: absolute;
@@ -1433,8 +1585,8 @@ textarea:focus-visible {
   }
   .tars-app--sidebar-collapsed .brand-logo-toggle:hover::after,
   .tars-app--sidebar-collapsed .brand-logo-toggle:focus-visible::after,
-  .tars-app--sidebar-collapsed .app-sidebar nav a:hover::after,
-  .tars-app--sidebar-collapsed .app-sidebar nav a:focus-visible::after,
+  .tars-app--sidebar-collapsed .app-sidebar nav a:not(.sidebar-flyout-item):hover::after,
+  .tars-app--sidebar-collapsed .app-sidebar nav a:not(.sidebar-flyout-item):focus-visible::after,
   .tars-app--sidebar-collapsed .sidebar-copilot-btn:hover::after,
   .tars-app--sidebar-collapsed .sidebar-copilot-btn:focus-visible::after {
     opacity: 1;
