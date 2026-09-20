@@ -1,5 +1,28 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 3.0: Rules Wiki & Stage 3 Rules Engine Visual & Functional Parity with Recon 2.0 (20th September 2026)
+
+- **Checkpoint Name**: `Reconciliation 3.0: Rules Wiki & Stage 3 Rules Engine Visual & Functional Parity with Recon 2.0`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Rules Wiki (`ss1` Exact Parity for Intra-Table Recon 3.0)*:
+     - Implemented Mac Studio Pro 2-column card & drawer for `reconMode === "v3"` in `RulesWikiV2.tsx`, matching `ss1` layout.
+     - Section 1: Normalisation Pipeline with interactive chips (`Clean Spaces`, `Strip Symbols`, `Strip Prefixes`, `Trim Leading Zeros`, `Case Fold`).
+     - Section 2: Match Policy & Variance with `Exact Match` / `Tolerance Match` mode pills, green strict equality banner, and numerical/date tolerance formula dropdowns.
+     - Interactive modals for Explain Rule with AI, Edit Rule, Irreversible Delete Caution, and floating bottom bulk actions bar.
+  2. *Stage 3 Rules Engine (`ReconciliationV3RulesStage.tsx` Parity)*:
+     - Upgraded Stage 3 of Recon 3.0 to match Stage 3 of Recon 2.0 with Live Simulation HUD, multi-color stacked waterfall bar, drag-and-drop rule reordering with `#1` order badge, Section 1/2 drawer, and AI Rule Builder modals.
+  3. *Enriched Backend Rules Engine & Schema Contracts*:
+     - Extended `Rule3Item` and `build_default_rules_v3()` in `matching_engine_v3.py` and `rules_v3_catalog.json` with rich statutory metadata (Section 16(2)(aa) CGST Act, Plain English explanations, accounting context).
+     - Added bidirectional normalizer conversion helpers in `api_v3.ts`.
+  4. *Guardrails & Verification*:
+     - Zero changes to Recon 2.0 (`ReconciliationV2RulesStage.tsx`, `matching_engine_v2.py`, `reconciliations_v2.py`).
+     - Strict intra-table isolation (`CP* ⟷ PR*`) maintained.
+     - Passed `npm run build` with 0 errors and `pytest backend/tests/test_reconciliation_v3.py` (4/4 passed).
+
+---
+
 ## Audit 2.0: AI Token Consumption, Compute Cost Tracking & Milestone Matrix Layout Resolution (18th September 2026)
 
 - **Checkpoint Name**: `Audit 2.0: AI Token Consumption, Compute Cost Tracking & Milestone Matrix Layout Resolution`

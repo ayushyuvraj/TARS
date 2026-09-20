@@ -129,3 +129,61 @@ def test_reconciliation_v3_api_lifecycle():
     complete_res = client.post(f"/api/reconciliations-v3/{session_id}/complete")
     assert complete_res.status_code == 200
     assert complete_res.json()["status"] == "completed"
+
+
+def test_reconciliation_v3_rules_scope_and_compile():
+    app = create_app()
+    client = TestClient(app)
+
+    # 1. Create session
+    create_res = client.post("/api/reconciliations-v3")
+    assert create_res.status_code == 200
+    session_id = create_res.json()["id"]
+
+    # 2. Test natural-language compilation with temporary scope
+    compile_temp = client.post(
+        f"/api/reconciliations-v3/{session_id}/rules/compile-ai",
+        json={"prompt": "Allow taxable value tolerance of 5.0", "scope": "temporary", "is_temporary": True},
+    )
+    assert compile_temp.status_code == 200
+    temp_rule = compile_temp.json()
+    assert temp_rule["is_temporary"] is True
+    assert temp_rule["scope"] == "temporary"
+    assert temp_rule["tolerance_value"] == 5.0
+    assert temp_rule["source_field_concept"] == "CPTaxableValue"
+    assert temp_rule["target_field_concept"] == "PRTaxableValue"
+
+    # 3. Test natural-language compilation with wiki scope
+    compile_wiki = client.post(
+        f"/api/reconciliations-v3/{session_id}/rules/compile-ai",
+        json={"prompt": "Allow document date variance of 15 days", "scope": "wiki", "is_temporary": False},
+    )
+    assert compile_wiki.status_code == 200
+    wiki_rule = compile_wiki.json()
+    assert wiki_rule["is_temporary"] is False
+    assert wiki_rule["scope"] == "wiki"
+    assert wiki_rule["tolerance_value"] == 15.0
+    assert wiki_rule["source_field_concept"] == "CPDocumentDate"
+    assert wiki_rule["target_field_concept"] == "PRDocumentDate"
+
+    # 4. Confirm rules with the temporary rule included
+    rules_res = client.get(f"/api/reconciliations-v3/{session_id}/rules")
+    base_rules = rules_res.json()
+    combined_rules = base_rules + [temp_rule]
+
+    confirm_res = client.post(
+        f"/api/reconciliations-v3/{session_id}/rules/confirm",
+        json={
+            "selected_rule_ids": [r["id"] for r in combined_rules],
+            "rule_execution_order": [r["id"] for r in combined_rules],
+            "rules": combined_rules,
+        },
+    )
+    assert confirm_res.status_code == 200
+    assert confirm_res.json()["status"] == "rules_confirmed"
+
+    # 5. Master catalog must NOT contain the temporary rule
+    catalog_res = client.get("/api/reconciliations-v3/rules-v3/catalog")
+    assert catalog_res.status_code == 200
+    catalog = catalog_res.json()
+    assert not any(r["id"] == temp_rule["id"] for r in catalog)

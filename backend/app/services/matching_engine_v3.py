@@ -43,7 +43,7 @@ class Rule3Item(BaseModel):
     name: str
     description: str
     statutory_rationale: str
-    category: str = "INTRA_TABLE"  # "CORE_STATUTORY" | "INTRA_TABLE" | "TOLERANCE" | "DISPARITY"
+    category: str = "INTRA_TABLE"  # "CORE_IDENTITY" | "DOCUMENT_REFERENCE" | "FINANCIAL_VALUE" | "TEMPORAL_WINDOW" | "DISPARITY"
     canonical_concept: str
     is_mandatory: bool = True
     is_enabled: bool = True
@@ -54,6 +54,18 @@ class Rule3Item(BaseModel):
     tolerance_unit: str | None = None  # "INR" | "DAYS" | "PERCENT"
     normalizers: NormalizerConfigV3 = Field(default_factory=NormalizerConfigV3)
     created_at: str = Field(default_factory=lambda: datetime.datetime.now(datetime.timezone.utc).isoformat())
+    is_temporary: bool = False
+    scope: str = "wiki"  # "temporary" | "wiki"
+    origin_session_id: str | None = None
+    created_by: str | None = "System Standard Baseline"
+    version: str | None = "1.0.0"
+    tolerance_mode: str | None = "ABSOLUTE_INR"  # "ABSOLUTE_INR" | "PERCENTAGE"
+    date_tolerance_value: int | None = 0
+    date_tolerance_unit: str | None = "DAYS"
+    advisory_caution: str | None = None
+    plain_english_explanation: str | None = None
+    why_it_matters: str | None = None
+    rule_tier: str | None = "CORE_STATUTORY"
 
 
 class ReconciliationRecordItemV3(BaseModel):
@@ -111,83 +123,132 @@ def build_default_rules_v3() -> list[Rule3Item]:
         Rule3Item(
             id="R3-01",
             order=1,
-            name="Intra-Table Supplier GSTIN Identity",
-            description="Verifies exact alphanumeric match between Counterparty GSTIN and Purchase Register GSTIN within the record.",
-            statutory_rationale="Section 16(2)(aa) of CGST Act requires tax invoice to be furnished by the identical supplier GSTIN.",
-            category="CORE_STATUTORY",
-            canonical_concept="supplier_gstin",
+            name="Supplier GSTIN Identity Match",
+            description="Matches vendor GST identification numbers between Government portal and Client Purchase Register.",
+            statutory_rationale="Under Section 16(2)(aa) of the CGST Act, Input Tax Credit (ITC) can only be claimed if the supplier has filed their tax return under their exact registered GSTIN.",
+            category="CORE_IDENTITY",
+            rule_tier="CORE_STATUTORY",
+            canonical_concept="gstin",
             is_mandatory=True,
             is_enabled=True,
             match_strategy="EXACT",
             source_field_concept="CPGstin",
             target_field_concept="PRGstin",
+            tolerance_value=0.0,
+            tolerance_unit="INR",
+            tolerance_mode="ABSOLUTE_INR",
+            date_tolerance_value=0,
+            date_tolerance_unit="DAYS",
             normalizers=NormalizerConfigV3(trim_whitespace=True, strip_special_chars=True, case_fold=True),
+            created_by="System Standard Baseline",
+            version="1.0.0",
+            advisory_caution="Word of Caution: Primary statutory anchor. Disabling this allows cross-vendor matches and invalidates ITC claims under Section 16(2)(aa).",
+            plain_english_explanation="Verifies that the Supplier GSTIN in CP columns exactly matches the Supplier GSTIN in PR columns within the record, after stripping spaces and punctuation.",
+            why_it_matters="Under Section 16(2)(aa) of the CGST Act, Input Tax Credit (ITC) can only be claimed if the supplier has filed their tax return under their exact registered GSTIN.",
         ),
         Rule3Item(
             id="R3-02",
             order=2,
-            name="Intra-Table Invoice Number Normalization",
-            description="Normalizes and verifies document numbers across CP and PR columns, stripping special symbols and leading zeros.",
+            name="Invoice / Document Number Canonical Match",
+            description="Matches invoice, debit note, and credit note numbers across CP and PR columns with smart prefix and symbol stripping.",
             statutory_rationale="Rule 46 of CGST Rules allows variations in separator punctuation across ERP and filing portals.",
-            category="INTRA_TABLE",
-            canonical_concept="invoice_number",
+            category="DOCUMENT_REFERENCE",
+            rule_tier="CORE_STATUTORY",
+            canonical_concept="document_number",
             is_mandatory=True,
             is_enabled=True,
             match_strategy="EXACT",
             source_field_concept="CPDocumentNumber",
             target_field_concept="PRDocumentNumber",
+            tolerance_value=0.0,
+            tolerance_unit="INR",
+            tolerance_mode="ABSOLUTE_INR",
+            date_tolerance_value=0,
+            date_tolerance_unit="DAYS",
             normalizers=NormalizerConfigV3(trim_whitespace=True, strip_special_chars=True, strip_prefixes=True, trim_leading_zeros=True, case_fold=True),
+            created_by="System Standard Baseline",
+            version="1.0.0",
+            advisory_caution="Word of Caution: Primary document identifier. Disabling this will cause arbitrary matching across different transactions.",
+            plain_english_explanation="Normalizes invoice numbers across columns by stripping standard prefixes and leading zeros.",
+            why_it_matters="ERP systems format document numbers differently. Stripping standard prefixes unlocks up to 35% of otherwise unmatched invoices without audit risk.",
         ),
         Rule3Item(
             id="R3-03",
             order=3,
-            name="Intra-Table Taxable Value Strict Tolerance",
-            description="Evaluates variance between CP Taxable Value and PR Taxable Value within configurable threshold (default ₹1.00 rounding).",
+            name="Taxable Value Commercial Tolerance",
+            description="Absorbs rounding fractions and commercial differences in base taxable supply amounts.",
             statutory_rationale="Section 16(2) input tax credit claim must strictly match supplier declared taxable consideration.",
-            category="TOLERANCE",
+            category="FINANCIAL_VALUE",
+            rule_tier="CORE_STATUTORY",
             canonical_concept="taxable_value",
             is_mandatory=True,
             is_enabled=True,
             match_strategy="NUMERIC_TOLERANCE",
             source_field_concept="CPTaxableValue",
             target_field_concept="PRTaxableValue",
-            tolerance_value=1.0,
+            tolerance_value=10.0,
             tolerance_unit="INR",
-            normalizers=NormalizerConfigV3(),
+            tolerance_mode="ABSOLUTE_INR",
+            date_tolerance_value=0,
+            date_tolerance_unit="DAYS",
+            normalizers=NormalizerConfigV3(trim_whitespace=True),
+            created_by="System Standard Baseline",
+            version="1.0.0",
+            advisory_caution="Word of Caution: Primary financial quantum. Disabling this defaults to strict ₹0.00 exact equality.",
+            plain_english_explanation="Considers taxable amounts matching if the variance between CP and PR columns is within ± ₹10.00.",
+            why_it_matters="Discrepancies typically arise from item-level vs header-level rounding algorithms.",
         ),
         Rule3Item(
             id="R3-04",
             order=4,
-            name="Intra-Table Tax Components Match (IGST/CGST/SGST)",
-            description="Validates that integrated, central, and state tax amounts match across both columns within ₹1.00 tolerance.",
-            statutory_rationale="Tax components cannot be fungibly interchanged between IGST and CGST/SGST without statutory amendment.",
-            category="TOLERANCE",
-            canonical_concept="tax_components",
-            is_mandatory=True,
+            name="Total Invoice Value (Gross Amount) Match",
+            description="Verifies the grand total invoice value inclusive of all taxes and cess charges.",
+            statutory_rationale="CGST Rules Rule 46(h) requires total value of supply to be stated on tax invoices.",
+            category="FINANCIAL_VALUE",
+            rule_tier="COMMERCIAL_POLICY",
+            canonical_concept="total_value",
+            is_mandatory=False,
             is_enabled=True,
             match_strategy="NUMERIC_TOLERANCE",
             source_field_concept="CPIgstAmount",
             target_field_concept="PRIgstAmount",
-            tolerance_value=1.0,
+            tolerance_value=10.0,
             tolerance_unit="INR",
-            normalizers=NormalizerConfigV3(),
+            tolerance_mode="ABSOLUTE_INR",
+            date_tolerance_value=0,
+            date_tolerance_unit="DAYS",
+            normalizers=NormalizerConfigV3(trim_whitespace=True),
+            created_by="System Standard Baseline",
+            version="1.0.0",
+            advisory_caution="Advisory: Protects against under-claiming or over-claiming gross ledger balances.",
+            plain_english_explanation="Ensures the tax components match within ± ₹10.00 tolerance.",
+            why_it_matters="Protects against under-claiming or over-claiming gross purchase register balances.",
         ),
         Rule3Item(
             id="R3-05",
             order=5,
-            name="Intra-Table Invoice Date Calendar Proximity",
-            description="Evaluates proximity between CP Document Date and PR Document Date within 30 days tolerance.",
+            name="Invoice Date Proximity Window",
+            description="Allows a flexible calendar window between the invoice issue date and accounting booking date.",
             statutory_rationale="Accounts payable recording lag accommodates goods-in-transit timing differences under commercial standards.",
-            category="TOLERANCE",
-            canonical_concept="invoice_date",
+            category="TEMPORAL_WINDOW",
+            rule_tier="COMMERCIAL_POLICY",
+            canonical_concept="document_date",
             is_mandatory=False,
             is_enabled=True,
             match_strategy="DATE_PROXIMITY",
             source_field_concept="CPDocumentDate",
             target_field_concept="PRDocumentDate",
-            tolerance_value=30.0,
+            tolerance_value=0.0,
             tolerance_unit="DAYS",
-            normalizers=NormalizerConfigV3(),
+            tolerance_mode="ABSOLUTE_INR",
+            date_tolerance_value=30,
+            date_tolerance_unit="DAYS",
+            normalizers=NormalizerConfigV3(trim_whitespace=True),
+            created_by="System Standard Baseline",
+            version="1.0.0",
+            advisory_caution="Advisory: Accommodates transit and monthly accounting delays.",
+            plain_english_explanation="Allows the document date between CP and PR to vary by up to 30 days.",
+            why_it_matters="Suppliers frequently issue bills at month-end while corporate accounts payable teams record them in the subsequent month.",
         ),
         Rule3Item(
             id="R3-06",
@@ -196,15 +257,168 @@ def build_default_rules_v3() -> list[Rule3Item]:
             description="Compares the autonomous TARS reconciliation verdict directly against the KICS system generated classification.",
             statutory_rationale="Auditing baseline external reconciliation engine (KICS) decisions flags undetected tax leakages and false positives.",
             category="DISPARITY",
+            rule_tier="AUXILIARY_METADATA",
             canonical_concept="kics_benchmark",
             is_mandatory=True,
             is_enabled=True,
             match_strategy="KICS_CONCURRENCE",
             source_field_concept="tars_verdict",
             target_field_concept="ReconciliationSection",
+            tolerance_value=0.0,
+            tolerance_unit="INR",
+            tolerance_mode="ABSOLUTE_INR",
+            date_tolerance_value=0,
+            date_tolerance_unit="DAYS",
             normalizers=NormalizerConfigV3(),
+            created_by="System Standard Baseline",
+            version="1.0.0",
+            advisory_caution="Advisory: Auxiliary benchmarking metadata rule.",
+            plain_english_explanation="Directly compares the TARS autonomous classification against KICS baseline classification.",
+            why_it_matters="Identifies edge cases where standard rules disagree with external auditor files.",
         ),
     ]
+
+
+def compile_rule_v3_from_nl(
+    prompt: str,
+    available_columns: list[str] | None = None,
+    session_id: str | None = None,
+    scope: str = "wiki",
+    is_temporary: bool = False,
+) -> Rule3Item:
+    """
+    Compiles a natural language prompt into a declarative intra-table Rule3Item.
+    """
+    p_lower = prompt.lower().strip()
+    rule_id = f"R3-CUST-{int(time.time()) % 10000:04d}" if not is_temporary else f"R3-TEMP-{int(time.time()) % 10000:04d}"
+
+    # 1. Taxable Value Tolerance
+    if any(k in p_lower for k in ["taxable", "taxable value", "amount", "rupee", "inr", "value tolerance"]):
+        tol = 5.0
+        match = re.search(r"(\d+(?:\.\d+)?)", p_lower)
+        if match:
+            tol = float(match.group(1))
+        return Rule3Item(
+            id=rule_id,
+            order=10,
+            name=f"Custom Intra-Table Taxable Tolerance (±₹{tol:.2f})",
+            description=f"Permits taxable value variance up to ±₹{tol:.2f} between CP and PR columns within the transaction row.",
+            statutory_rationale="Absorbs commercial item-level vs header-level rounding tolerances under Section 16(2).",
+            category="TOLERANCE",
+            canonical_concept="taxable_value",
+            is_mandatory=False,
+            is_enabled=True,
+            match_strategy="NUMERIC_TOLERANCE",
+            source_field_concept="CPTaxableValue",
+            target_field_concept="PRTaxableValue",
+            tolerance_value=tol,
+            tolerance_unit="INR",
+            normalizers=NormalizerConfigV3(),
+            is_temporary=is_temporary or scope == "temporary",
+            scope="temporary" if (is_temporary or scope == "temporary") else "wiki",
+            origin_session_id=session_id,
+        )
+
+    # 2. Date Proximity
+    if any(k in p_lower for k in ["date", "day", "days", "window", "proximity"]):
+        days = 30.0
+        match = re.search(r"(\d+)\s*(?:day|days)?", p_lower)
+        if match:
+            days = float(match.group(1))
+        return Rule3Item(
+            id=rule_id,
+            order=11,
+            name=f"Custom Intra-Table Date Proximity (±{int(days)} Days)",
+            description=f"Allows document booking date variance of up to ±{int(days)} days between Counterparty and Books entries.",
+            statutory_rationale="Accommodates logistical transit delays and enterprise monthend AP voucher processing schedules.",
+            category="TOLERANCE",
+            canonical_concept="invoice_date",
+            is_mandatory=False,
+            is_enabled=True,
+            match_strategy="DATE_PROXIMITY",
+            source_field_concept="CPDocumentDate",
+            target_field_concept="PRDocumentDate",
+            tolerance_value=days,
+            tolerance_unit="DAYS",
+            normalizers=NormalizerConfigV3(),
+            is_temporary=is_temporary or scope == "temporary",
+            scope="temporary" if (is_temporary or scope == "temporary") else "wiki",
+            origin_session_id=session_id,
+        )
+
+    # 3. Document Number / Invoice Number Match
+    if any(k in p_lower for k in ["invoice", "doc", "number", "prefix", "zero", "leading"]):
+        strip_pfx = "prefix" in p_lower or "inv" in p_lower
+        trim_zeros = "zero" in p_lower or "leading" in p_lower
+        return Rule3Item(
+            id=rule_id,
+            order=12,
+            name="Custom Intra-Table Document Normalization",
+            description="Enforces normalized canonical comparison across CP and PR document numbers.",
+            statutory_rationale="Rule 46 CGST allows standardizing separator punctuations across supplier systems.",
+            category="INTRA_TABLE",
+            canonical_concept="invoice_number",
+            is_mandatory=True,
+            is_enabled=True,
+            match_strategy="EXACT",
+            source_field_concept="CPDocumentNumber",
+            target_field_concept="PRDocumentNumber",
+            tolerance_value=None,
+            tolerance_unit=None,
+            normalizers=NormalizerConfigV3(strip_prefixes=strip_pfx, trim_leading_zeros=trim_zeros),
+            is_temporary=is_temporary or scope == "temporary",
+            scope="temporary" if (is_temporary or scope == "temporary") else "wiki",
+            origin_session_id=session_id,
+        )
+
+    # 4. Tax Heads (IGST/CGST/SGST)
+    if any(k in p_lower for k in ["tax", "igst", "cgst", "sgst"]):
+        tol = 1.0
+        match = re.search(r"(\d+(?:\.\d+)?)", p_lower)
+        if match:
+            tol = float(match.group(1))
+        return Rule3Item(
+            id=rule_id,
+            order=13,
+            name=f"Custom Intra-Table Tax Heads Tolerance (±₹{tol:.2f})",
+            description=f"Verifies tax components with allowable variance of ±₹{tol:.2f}.",
+            statutory_rationale="Absorbs fractional tax split rounding differences under CGST Rules Rule 46.",
+            category="TOLERANCE",
+            canonical_concept="tax_amount",
+            is_mandatory=False,
+            is_enabled=True,
+            match_strategy="NUMERIC_TOLERANCE",
+            source_field_concept="CPIgstAmount",
+            target_field_concept="PRIgstAmount",
+            tolerance_value=tol,
+            tolerance_unit="INR",
+            normalizers=NormalizerConfigV3(),
+            is_temporary=is_temporary or scope == "temporary",
+            scope="temporary" if (is_temporary or scope == "temporary") else "wiki",
+            origin_session_id=session_id,
+        )
+
+    # Default fallback: Exact match guardrail on provided prompt
+    return Rule3Item(
+        id=rule_id,
+        order=14,
+        name=f"Custom Rule: {prompt[:32]}",
+        description=f"Declarative validation: {prompt}",
+        statutory_rationale="User-specified enterprise commercial governance rule.",
+        category="INTRA_TABLE",
+        canonical_concept="custom_field",
+        is_mandatory=False,
+        is_enabled=True,
+        match_strategy="EXACT",
+        source_field_concept="CPGstin",
+        target_field_concept="PRGstin",
+        tolerance_value=None,
+        tolerance_unit=None,
+        normalizers=NormalizerConfigV3(),
+        is_temporary=is_temporary or scope == "temporary",
+        scope="temporary" if (is_temporary or scope == "temporary") else "wiki",
+        origin_session_id=session_id,
+    )
 
 
 class WaterfallMatchingEngineV3:

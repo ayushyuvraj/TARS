@@ -74,6 +74,9 @@ class Rule2Item(BaseModel):
     version: str = "1.0.0"
     last_modified_at: str | None = None
     last_modified_by: str | None = None
+    is_temporary: bool = False
+    scope: str = "wiki"  # "temporary" | "wiki"
+    origin_session_id: str | None = None
 
 
 class RuleBreakdownStat(BaseModel):

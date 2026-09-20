@@ -28,6 +28,7 @@ import {
   StopCircle,
   Activity,
   RefreshCw,
+  Clock,
 } from "lucide-react";
 import { copilotV2Bridge } from "./copilot_v2_bridge";
 import "./rules_v2.css";
@@ -489,6 +490,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
   const [isAiCompiling, setIsAiCompiling] = useState<boolean>(false);
   const [compiledPreview, setCompiledPreview] = useState<Rule2Item | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [rulePersistenceChoice, setRulePersistenceChoice] = useState<"temporary" | "wiki">("temporary");
 
   // Drag and Drop state
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
@@ -626,13 +628,17 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
   };
 
   // User accepts an AI suggested rule into the active reconciliation pipeline PERMANENTLY
-  const handleAcceptAiSuggestedRule = async (suggestedRule: Rule2Item) => {
+  const handleAcceptAiSuggestedRule = async (suggestedRule: Rule2Item, scope: "temporary" | "wiki" = "temporary") => {
+    const isTemp = scope === "temporary";
     const acceptedRule: Rule2Item = {
       ...suggestedRule,
       is_enabled: true,
       is_ai_suggested: true,
       category: "AI_SUGGESTED",
       execution_order: rules.length + 1,
+      is_temporary: isTemp,
+      scope,
+      origin_session_id: sessionId,
     };
     const nextRules = [...rules, acceptedRule];
     setRules(nextRules);
@@ -647,18 +653,20 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     );
     setExpandedRuleIds((prev) => new Set(prev).add(acceptedRule.id));
 
-    // 1. Immediately persist to session localStorage and master Rules Wiki 2.0 catalog
+    // 1. Immediately persist to session localStorage (and master Rules Wiki if permanent)
     try {
       localStorage.setItem(`tars_v2_rules_${sessionId || "active"}`, JSON.stringify(nextRules));
-      const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
-      let masterRules: Rule2Item[] = masterSaved ? JSON.parse(masterSaved) : [];
-      if (!masterRules.some((m) => m.id === acceptedRule.id || (acceptedRule.canonical_concept && m.canonical_concept === acceptedRule.canonical_concept))) {
-        masterRules.push(acceptedRule);
-        localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(masterRules));
+      if (!isTemp) {
+        const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
+        let masterRules: Rule2Item[] = masterSaved ? JSON.parse(masterSaved) : [];
+        if (!masterRules.some((m) => m.id === acceptedRule.id || (acceptedRule.canonical_concept && m.canonical_concept === acceptedRule.canonical_concept))) {
+          masterRules.push(acceptedRule);
+          localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(masterRules));
+        }
       }
     } catch {}
 
-    // 2. Immediately post to backend session and mirror to persistent master catalog
+    // 2. Immediately post to backend session
     try {
       if (sessionId) {
         await apiV2.acceptRuleV2(sessionId, acceptedRule);
@@ -882,21 +890,27 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
 
   const handleAddCompiledRule = () => {
     if (!compiledPreview) return;
+    const isTemp = rulePersistenceChoice === "temporary";
     const newRule: Rule2Item = {
       ...compiledPreview,
       is_enabled: true,
       is_custom: true,
       execution_order: rules.length + 1,
+      is_temporary: isTemp,
+      scope: rulePersistenceChoice,
+      origin_session_id: sessionId,
     };
     const updated = [...rules, newRule];
     setRules(updated);
     try {
       localStorage.setItem(`tars_v2_rules_${sessionId || "active"}`, JSON.stringify(updated));
-      const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
-      let masterRules: Rule2Item[] = masterSaved ? JSON.parse(masterSaved) : [];
-      if (!masterRules.some((m) => m.id === newRule.id || (newRule.canonical_concept && m.canonical_concept === newRule.canonical_concept))) {
-        masterRules.push(newRule);
-        localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(masterRules));
+      if (!isTemp) {
+        const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
+        let masterRules: Rule2Item[] = masterSaved ? JSON.parse(masterSaved) : [];
+        if (!masterRules.some((m) => m.id === newRule.id || (newRule.canonical_concept && m.canonical_concept === newRule.canonical_concept))) {
+          masterRules.push(newRule);
+          localStorage.setItem("tars_master_rules_v2_catalog", JSON.stringify(masterRules));
+        }
       }
     } catch {}
     if (sessionId) {
@@ -914,12 +928,12 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
     try {
       await apiV2.confirmRulesV2(sessionId, rules);
 
-      // Sync active rules into master Rules Wiki 2.0 catalog storage
+      // Sync active rules into master Rules Wiki 2.0 catalog storage (strictly exclude temporary rules)
       try {
         const masterSaved = localStorage.getItem("tars_master_rules_v2_catalog");
         let masterRules: Rule2Item[] = masterSaved ? JSON.parse(masterSaved) : [];
         for (const r of rules) {
-          if (r.is_custom || r.is_ai_suggested) {
+          if (!r.is_temporary && r.scope !== "temporary" && (r.is_custom || r.is_ai_suggested)) {
             if (!masterRules.some((m) => m.id === r.id || (r.canonical_concept && m.canonical_concept === r.canonical_concept))) {
               masterRules.push(r);
             }
@@ -1381,6 +1395,26 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                       title="Adopted from AI Suggested Rules"
                     >
                       <Sparkles size={11} /> AI Suggested
+                    </span>
+                  )}
+
+                  {rule.is_temporary && (
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 700,
+                        color: "#b45309",
+                        background: "#fef3c7",
+                        border: "1px solid #fde68a",
+                        padding: "2px 7px",
+                        borderRadius: 999,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 4,
+                      }}
+                      title="Active for this session run only; not saved to Rules Wiki"
+                    >
+                      <Clock size={11} /> TEMPORARY (THIS RUN)
                     </span>
                   )}
 
@@ -1916,18 +1950,70 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
 
               {/* Preview of Compiled Rule */}
               {compiledPreview && (
-                <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#166534", fontWeight: 700, fontSize: 13 }}>
-                    <CheckCircle2 size={16} />
-                    <span>Compiled Declarative Rule: {compiledPreview.name}</span>
+                <>
+                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: "#166534", fontWeight: 700, fontSize: 13 }}>
+                      <CheckCircle2 size={16} />
+                      <span>Compiled Declarative Rule: {compiledPreview.name}</span>
+                    </div>
+                    <p style={{ fontSize: 12.5, color: "#166534", marginTop: 4, marginBottom: 8 }}>
+                      {compiledPreview.plain_english_explanation}
+                    </p>
+                    <div style={{ fontSize: 11.5, color: "#15803d" }}>
+                      Columns: <strong>{compiledPreview.gstr_column}</strong> ⟷ <strong>{compiledPreview.pr_column}</strong>
+                    </div>
                   </div>
-                  <p style={{ fontSize: 12.5, color: "#166534", marginTop: 4, marginBottom: 8 }}>
-                    {compiledPreview.plain_english_explanation}
-                  </p>
-                  <div style={{ fontSize: 11.5, color: "#15803d" }}>
-                    Columns: <strong>{compiledPreview.gstr_column}</strong> ⟷ <strong>{compiledPreview.pr_column}</strong>
+
+                  {/* Persistence Scope Radio Option */}
+                  <div
+                    style={{
+                      background: "#f8fafc",
+                      border: "1px solid #e2e8f0",
+                      borderRadius: 8,
+                      padding: "10px 14px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 6,
+                      marginTop: 10,
+                    }}
+                  >
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#1e293b" }}>
+                      Rule Persistence Scope:
+                    </div>
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", fontSize: 12, color: "#334155" }}>
+                      <input
+                        type="radio"
+                        name="v2RuleScope"
+                        value="temporary"
+                        checked={rulePersistenceChoice === "temporary"}
+                        onChange={() => setRulePersistenceChoice("temporary")}
+                        style={{ marginTop: 2, accentColor: "#00338D" }}
+                      />
+                      <div>
+                        <strong>Use Temporarily (This Run Only)</strong>
+                        <div style={{ fontSize: 11, color: "#64748b" }}>
+                          Runs for this reconciliation session only. Omitted from Rules Wiki.
+                        </div>
+                      </div>
+                    </label>
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", fontSize: 12, color: "#334155" }}>
+                      <input
+                        type="radio"
+                        name="v2RuleScope"
+                        value="wiki"
+                        checked={rulePersistenceChoice === "wiki"}
+                        onChange={() => setRulePersistenceChoice("wiki")}
+                        style={{ marginTop: 2, accentColor: "#00338D" }}
+                      />
+                      <div>
+                        <strong>Save to Rules Wiki (All Runs Going Forward)</strong>
+                        <div style={{ fontSize: 11, color: "#64748b" }}>
+                          Permanently adds this rule to Master Rules Wiki for all future reconciliations.
+                        </div>
+                      </div>
+                    </label>
                   </div>
-                </div>
+                </>
               )}
             </div>
 
@@ -1955,7 +2041,7 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                   className="btn-primary-v2"
                   onClick={handleAddCompiledRule}
                 >
-                  Add Rule to Pipeline
+                  Add Rule to Pipeline ({rulePersistenceChoice === "temporary" ? "Temporary" : "Wiki"})
                 </button>
               )}
             </div>
@@ -2118,14 +2204,23 @@ export const ReconciliationV2RulesStage: React.FC<Props> = ({
                             )}
                           </div>
 
-                          <div style={{ display: "flex", alignItems: "center", gap: 8, alignSelf: "center", flexShrink: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, alignSelf: "center", flexShrink: 0 }}>
                             <button
                               type="button"
                               className="btn-add-ai-rule"
-                              onClick={() => handleAcceptAiSuggestedRule(sugRule)}
-                              title="Adopt this AI rule into the active reconciliation pipeline"
+                              onClick={() => handleAcceptAiSuggestedRule(sugRule, "temporary")}
+                              title="Adopt this rule temporarily for this session run only"
+                              style={{ background: "#f59e0b", borderColor: "#d97706" }}
                             >
-                              <Check size={14} /> Accept &amp; Add to Pipeline
+                              <Clock size={13} /> Temporary
+                            </button>
+                            <button
+                              type="button"
+                              className="btn-add-ai-rule"
+                              onClick={() => handleAcceptAiSuggestedRule(sugRule, "wiki")}
+                              title="Save permanently to Rules Wiki for all future runs"
+                            >
+                              <Check size={14} /> Save to Wiki
                             </button>
                             <button
                               type="button"

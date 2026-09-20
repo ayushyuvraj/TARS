@@ -141,6 +141,9 @@ export interface Rule2Item {
   last_modified_at?: string | null;
   last_modified_by?: string | null;
   is_custom?: boolean;
+  is_temporary?: boolean;
+  scope?: "temporary" | "wiki";
+  origin_session_id?: string;
 }
 
 export interface SessionRulesResponse {

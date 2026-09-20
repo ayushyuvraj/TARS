@@ -41,6 +41,14 @@ export interface DirectCorrelationResultV3 {
   total_duration_ms: number;
 }
 
+export type NormalizationType =
+  | "TRIM_WHITESPACE"
+  | "STRIP_SPECIAL_CHARS"
+  | "REMOVE_PREFIXES"
+  | "TRIM_LEADING_ZEROS"
+  | "UPPERCASE"
+  | "ALPHANUMERIC_ONLY";
+
 export interface NormalizerConfigV3 {
   trim_whitespace: boolean;
   strip_special_chars: boolean;
@@ -49,13 +57,57 @@ export interface NormalizerConfigV3 {
   case_fold: boolean;
 }
 
+export function configToActiveNormalizers(config?: NormalizerConfigV3 | null): NormalizationType[] {
+  if (!config) return [];
+  const list: NormalizationType[] = [];
+  if (config.trim_whitespace) list.push("TRIM_WHITESPACE");
+  if (config.strip_special_chars) list.push("STRIP_SPECIAL_CHARS");
+  if (config.strip_prefixes) list.push("REMOVE_PREFIXES");
+  if (config.trim_leading_zeros) list.push("TRIM_LEADING_ZEROS");
+  if (config.case_fold) list.push("UPPERCASE");
+  return list;
+}
+
+export function activeNormalizersToConfig(types: string[]): NormalizerConfigV3 {
+  return {
+    trim_whitespace: types.includes("TRIM_WHITESPACE"),
+    strip_special_chars: types.includes("STRIP_SPECIAL_CHARS"),
+    strip_prefixes: types.includes("REMOVE_PREFIXES"),
+    trim_leading_zeros: types.includes("TRIM_LEADING_ZEROS"),
+    case_fold: types.includes("UPPERCASE"),
+  };
+}
+
+export function toggleNormalizerInConfig(config: NormalizerConfigV3, type: NormalizationType): NormalizerConfigV3 {
+  const next = { ...config };
+  switch (type) {
+    case "TRIM_WHITESPACE":
+      next.trim_whitespace = !next.trim_whitespace;
+      break;
+    case "STRIP_SPECIAL_CHARS":
+      next.strip_special_chars = !next.strip_special_chars;
+      break;
+    case "REMOVE_PREFIXES":
+      next.strip_prefixes = !next.strip_prefixes;
+      break;
+    case "TRIM_LEADING_ZEROS":
+      next.trim_leading_zeros = !next.trim_leading_zeros;
+      break;
+    case "UPPERCASE":
+      next.case_fold = !next.case_fold;
+      break;
+  }
+  return next;
+}
+
 export interface Rule3Item {
   id: string;
   order: number;
   name: string;
   description: string;
   statutory_rationale: string;
-  category: "CORE_STATUTORY" | "INTRA_TABLE" | "TOLERANCE" | "DISPARITY";
+  category: string;
+  rule_tier?: string;
   canonical_concept: string;
   is_mandatory: boolean;
   is_enabled: boolean;
@@ -66,6 +118,17 @@ export interface Rule3Item {
   tolerance_unit?: string | null;
   normalizers: NormalizerConfigV3;
   created_at: string;
+  is_temporary?: boolean;
+  scope?: "temporary" | "wiki";
+  origin_session_id?: string;
+  created_by?: string;
+  version?: string;
+  tolerance_mode?: "ABSOLUTE_INR" | "PERCENTAGE";
+  date_tolerance_value?: number;
+  date_tolerance_unit?: "DAYS" | "MONTHS" | "YEARS";
+  advisory_caution?: string;
+  plain_english_explanation?: string;
+  why_it_matters?: string;
 }
 
 export interface ReconciliationRecordItemV3 {
@@ -283,6 +346,23 @@ export const apiV3 = {
         selected_rule_ids: selectedRuleIds,
         rule_execution_order: ruleExecutionOrder,
         rules,
+      }),
+    });
+  },
+
+  async compileAiRule(
+    id: string,
+    prompt: string,
+    scope: "temporary" | "wiki" = "wiki",
+    isTemporary: boolean = false
+  ): Promise<Rule3Item> {
+    return request<Rule3Item>(`${API_BASE}/${id}/rules/compile-ai`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        scope,
+        is_temporary: isTemporary || scope === "temporary",
       }),
     });
   },

@@ -7,7 +7,7 @@ import {
 } from "./api_v2";
 import { apiV3 } from "./api_v3";
 import { DynamicMappingGridV3 } from "./DynamicMappingGridV3";
-import { ReconciliationV2RulesStage } from "./ReconciliationV2RulesStage";
+import { ReconciliationV3RulesStage } from "./ReconciliationV3RulesStage";
 import { ReconciliationV2ResultsStage } from "./ReconciliationV2ResultsStage";
 import { ReconciliationV2SummaryStage } from "./ReconciliationV2SummaryStage";
 import { ReconciliationV2ExportStage } from "./ReconciliationV2ExportStage";
@@ -1066,10 +1066,8 @@ export const ReconciliationV3Workspace: React.FC = () => {
         {(currentStage === "rules" || currentStage === "policy") && (
           <div className={isSessionCompleted ? "v2-read-only-wrapper" : ""}>
             {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
-            <ReconciliationV2RulesStage
+            <ReconciliationV3RulesStage
               sessionId={sessionId || ""}
-              correlations={correlationResult?.correlations || []}
-              prColumns={(correlationResult?.all_columns && correlationResult.all_columns.length > 0 ? correlationResult.all_columns : correlationResult?.pr_columns) || []}
               onBackToMapping={() => {
                 setCurrentStage("mapping");
                 if (sessionId) navigate(`/reconciliations-v3/${sessionId}/mapping`);

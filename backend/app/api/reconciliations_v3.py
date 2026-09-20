@@ -36,6 +36,7 @@ from app.services.matching_engine_v3 import (
     Stage4ResultsSummaryV3,
     WaterfallMatchingEngineV3,
     build_default_rules_v3,
+    compile_rule_v3_from_nl,
 )
 
 logger = logging.getLogger(__name__)
@@ -68,8 +69,10 @@ def load_master_rules_v3_catalog() -> list[Rule3Item]:
 def save_master_rules_v3_catalog(rules: list[Rule3Item]) -> None:
     try:
         RULES_V3_CATALOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # Strictly exclude session-temporary rules from the master catalog
+        permanent = [r for r in rules if not getattr(r, "is_temporary", False) and getattr(r, "scope", "wiki") != "temporary"]
         with open(RULES_V3_CATALOG_FILE, "w", encoding="utf-8") as f:
-            json.dump([r.model_dump() for r in rules], f, indent=2)
+            json.dump([r.model_dump() for r in permanent], f, indent=2)
     except Exception as exc:
         logger.error(f"Failed to write master rules v3 catalog: {exc}")
 
@@ -470,18 +473,68 @@ def confirm_rules_v3(
     _persist_session_disk_v3(session)
 
     try:
+        rules_list = req.rules or session.get("rules_v3", [])
+        active_rules = [r for r in rules_list if (r.id if hasattr(r, "id") else r.get("id")) in req.selected_rule_ids]
+        temp_rules = [
+            r for r in active_rules
+            if getattr(r, "is_temporary", False) or getattr(r, "scope", "") == "temporary" or
+            (isinstance(r, dict) and (r.get("is_temporary") or r.get("scope") == "temporary"))
+        ]
+        wiki_rules = [r for r in active_rules if r not in temp_rules]
+
+        temp_ids = [(r.id if hasattr(r, "id") else r.get("id")) for r in temp_rules]
+        desc = (
+            f"User confirmed {len(req.selected_rule_ids)} intra-table rules for waterfall matching "
+            f"({len(wiki_rules)} Master Wiki, {len(temp_rules)} Session Temporary)."
+        )
         audit_v2_service.log_step(
             session_id=session_id,
             stage_key="rules",
             name="Intra-Table Rules Confirmed",
-            description=f"User confirmed {len(req.selected_rule_ids)} intra-table rules for waterfall matching.",
+            description=desc,
             actor="USER",
-            output_summary={"selected_rule_ids": req.selected_rule_ids, "recon_type": "v3"},
+            output_summary={
+                "selected_rule_ids": req.selected_rule_ids,
+                "recon_type": "v3",
+                "total_rules": len(req.selected_rule_ids),
+                "master_wiki_rules_count": len(wiki_rules),
+                "temporary_rules_count": len(temp_rules),
+                "temporary_rule_ids": temp_ids,
+            },
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.warning(f"Error logging rules confirmation audit step: {exc}")
 
     return get_v3_session(session_id)
+
+
+class CompileAiRuleRequestV3(BaseModel):
+    prompt: str
+    available_columns: list[str] = Field(default_factory=list)
+    scope: str = "wiki"  # "temporary" | "wiki"
+    is_temporary: bool = False
+
+
+@router_v3.post("/rules-v3/compile-ai", response_model=Rule3Item)
+@router_v3.post("/{session_id}/rules-v3/compile-ai", response_model=Rule3Item)
+@router_v3.post("/{session_id}/rules/compile-ai", response_model=Rule3Item)
+def compile_ai_rule_v3_endpoint(
+    req: CompileAiRuleRequestV3,
+    session_id: str | None = None,
+) -> Rule3Item:
+    cleaned = (req.prompt or "").strip()
+    if not cleaned:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Rule prompt cannot be empty.",
+        )
+    return compile_rule_v3_from_nl(
+        prompt=cleaned,
+        available_columns=req.available_columns,
+        session_id=session_id,
+        scope=req.scope,
+        is_temporary=req.is_temporary,
+    )
 
 
 @router_v3.get("/rules-v3/catalog", response_model=list[Rule3Item])

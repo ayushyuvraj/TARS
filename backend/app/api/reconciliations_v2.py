@@ -195,8 +195,9 @@ def save_master_rules_v2_catalog(rules: list[Rule2Item]) -> None:
     try:
         import json
         DATA_CATALOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        permanent = [r for r in rules if not getattr(r, "is_temporary", False) and getattr(r, "scope", "wiki") != "temporary"]
         with open(DATA_CATALOG_PATH, "w", encoding="utf-8") as f:
-            json.dump([r.model_dump() for r in rules], f, indent=2, default=str)
+            json.dump([r.model_dump() for r in permanent], f, indent=2, default=str)
     except Exception as exc:
         logger.error(f"Failed to save master rules catalog to {DATA_CATALOG_PATH}: {exc}")
 
@@ -204,6 +205,8 @@ def save_master_rules_v2_catalog(rules: list[Rule2Item]) -> None:
 def add_rule_to_master_catalog(rule: Rule2Item) -> list[Rule2Item]:
     """Merges a newly created or accepted rule into the master Rules Wiki 2.0 catalog."""
     catalog = load_master_rules_v2_catalog()
+    if getattr(rule, "is_temporary", False) or getattr(rule, "scope", "wiki") == "temporary":
+        return catalog
     updated = False
     for i, r in enumerate(catalog):
         if r.id == rule.id or (
