@@ -4,6 +4,8 @@
 
 - **Checkpoint Name**: `Reconciliation 3.0: Rules Wiki & Stage 3 Rules Engine Visual & Functional Parity with Recon 2.0`
 - **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-20-v3-rules-parity-checkpoint`
+- **Current HEAD Commit**: `09f31c7`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
   1. *Rules Wiki (`ss1` Exact Parity for Intra-Table Recon 3.0)*:
