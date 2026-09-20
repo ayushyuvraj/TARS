@@ -37,6 +37,7 @@ from app.services.matching_engine_v2 import (
     generate_ai_suggested_rules,
     Stage4ExecutionResponse,
     Stage4ResultsSummary,
+    WaterfallPassYield,
     AmbiguityCluster,
     AmbiguityCandidate,
     ReconciliationRecordItem,
@@ -52,6 +53,12 @@ from app.services.audit_v2_service import (
     RunTokenConsumption,
     calculate_token_cost,
 )
+from app.services.matching_engine_v3 import (
+    AmbiguityRecommendation,
+    evaluate_ambiguity_recommendation,
+    evaluate_target_category_policy,
+)
+
 from app.services.export_v2_service import (
     export_v2_service,
     CustomExportRequest,
@@ -329,6 +336,13 @@ def _ensure_session(session_id: str) -> dict[str, Any]:
     # 1. Check local cache
     if session_id in _V2_SESSIONS:
         return _V2_SESSIONS[session_id]
+
+    try:
+        from app.api.reconciliations_v3 import _V3_SESSIONS
+        if session_id in _V3_SESSIONS:
+            return _V3_SESSIONS[session_id]
+    except Exception:
+        pass
 
     # 2. Check durable persistence
     saved = audit_v2_service.get_session(session_id)
@@ -1313,9 +1327,57 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
             df = _load_df_safely_v3(recon_path, session.get("sheet_name"))
             session["_cached_df"] = df
 
-        engine_v3 = WaterfallMatchingEngineV3()
-        res_v3 = engine_v3.execute_waterfall(df=df, session_id=session_id)
+        # 1. Load active rules for V3 session
+        rules_v3 = session.get("rules_v3")
+        if not rules_v3:
+            from app.services.matching_engine_v3 import build_default_rules_v3
+            rules_v3 = build_default_rules_v3()
+        else:
+            from app.services.matching_engine_v3 import Rule3Item
+            parsed_v3 = []
+            for r in rules_v3:
+                parsed_v3.append(Rule3Item(**r) if isinstance(r, dict) else r)
+            rules_v3 = parsed_v3
 
+        # 2. Extract mappings and KICS status column
+        mapped_pairs: dict[str, str] = {}
+        kics_status_col: str | None = None
+        corr = session.get("correlation")
+        if corr:
+            if hasattr(corr, "correlations"):
+                for c in corr.correlations:
+                    s = getattr(c, "source_column", None) or getattr(c, "gstr_column", None)
+                    t = getattr(c, "selected_target_column", None) or getattr(c, "selected_pr_column", None)
+                    if s and t:
+                        mapped_pairs[s] = t
+                kics_status_col = getattr(corr, "kics_status_column", None)
+            elif isinstance(corr, dict):
+                for c in corr.get("correlations", []):
+                    s = c.get("source_column") or c.get("gstr_column")
+                    t = c.get("selected_target_column") or c.get("selected_pr_column")
+                    if s and t:
+                        mapped_pairs[s] = t
+                kics_status_col = corr.get("kics_status_column")
+
+        engine_v3 = WaterfallMatchingEngineV3()
+        res_v3 = engine_v3.execute_waterfall(
+            df=df,
+            session_id=session_id,
+            rules=rules_v3,
+            mapped_pairs=mapped_pairs,
+            kics_status_col=kics_status_col,
+        )
+
+        yields = [
+            WaterfallPassYield(tier=1, name="Direct Alphanumeric Exact", matched_count=res_v3.summary.exact_matches, matched_itc=round(float(res_v3.summary.total_gov_taxable * 0.18 * (res_v3.summary.exact_matches / max(1, res_v3.summary.total_records))), 2), retention_percentage=round((res_v3.summary.exact_matches / max(1, res_v3.summary.total_records)) * 100, 1)),
+            WaterfallPassYield(tier=2, name="Normalized Doc & Rounding Tolerance", matched_count=res_v3.summary.tolerance_matches, matched_itc=0.0, retention_percentage=round((res_v3.summary.tolerance_matches / max(1, res_v3.summary.total_records)) * 100, 1)),
+            WaterfallPassYield(tier=3, name="Near Proximity & Calendar Alignment", matched_count=res_v3.summary.near_matches, matched_itc=0.0, retention_percentage=round((res_v3.summary.near_matches / max(1, res_v3.summary.total_records)) * 100, 1)),
+            WaterfallPassYield(tier=4, name="Unilateral Ledger Isolation", matched_count=res_v3.summary.gst_only + res_v3.summary.pr_only, matched_itc=0.0, retention_percentage=round(((res_v3.summary.gst_only + res_v3.summary.pr_only) / max(1, res_v3.summary.total_records)) * 100, 1)),
+            WaterfallPassYield(tier=5, name="KICS Baseline Disparity & Ambiguity", matched_count=res_v3.summary.ambiguous, matched_itc=0.0, retention_percentage=round((res_v3.summary.ambiguous / max(1, res_v3.summary.total_records)) * 100, 1)),
+        ]
+
+        total_reconciled = res_v3.summary.exact_matches + res_v3.summary.tolerance_matches + res_v3.summary.near_matches
+        total_rec_itc = round(float(res_v3.summary.total_gov_taxable * 0.18), 2)
         summary = Stage4ResultsSummary(
             total_gstr_rows=res_v3.summary.total_records,
             total_pr_rows=res_v3.summary.total_records,
@@ -1331,11 +1393,10 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
             gstr_only_itc=0.0,
             pr_only_count=res_v3.summary.pr_only,
             pr_only_itc=0.0,
-            total_potential_itc=round(float((res_v3.summary.total_gov_taxable + res_v3.summary.total_pr_taxable) * 0.09), 2),
-            claimable_itc=round(float(res_v3.summary.total_gov_taxable * 0.18), 2),
-            disputed_itc=round(float(res_v3.summary.net_taxable_variance * 0.18), 2),
-            overall_match_rate=res_v3.summary.kics_concurrence_rate,
-            currency="INR",
+            total_reconciled_count=total_reconciled,
+            total_reconciled_itc=total_rec_itc,
+            overall_reconciliation_rate=res_v3.summary.kics_concurrence_rate,
+            waterfall_passes=yields,
         )
 
         bucket_map = {
@@ -1364,6 +1425,15 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
                     tax_amount=rec.source_tax or rec.target_tax or 0.0,
                     total_value=round((rec.source_taxable or rec.target_taxable or 0.0) + (rec.source_tax or rec.target_tax or 0.0), 2),
                     gstr_preview={
+                        "gstin": rec.source_gstin,
+                        "document_number": rec.source_doc_num,
+                        "invoice_number": rec.source_doc_num,
+                        "document_date": rec.source_date,
+                        "invoice_date": rec.source_date,
+                        "taxable_value": rec.source_taxable,
+                        "tax_amount": rec.source_tax,
+                        "igst": rec.source_tax,
+                        "total_value": round((rec.source_taxable or 0.0) + (rec.source_tax or 0.0), 2) if rec.source_taxable is not None else None,
                         "GSTIN": rec.source_gstin,
                         "Invoice": rec.source_doc_num,
                         "Date": rec.source_date,
@@ -1371,6 +1441,15 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
                         "Tax": rec.source_tax,
                     },
                     pr_preview={
+                        "gstin": rec.target_gstin,
+                        "document_number": rec.target_doc_num,
+                        "invoice_number": rec.target_doc_num,
+                        "document_date": rec.target_date,
+                        "invoice_date": rec.target_date,
+                        "taxable_value": rec.target_taxable,
+                        "tax_amount": rec.target_tax,
+                        "igst": rec.target_tax,
+                        "total_value": round((rec.target_taxable or 0.0) + (rec.target_tax or 0.0), 2) if rec.target_taxable is not None else None,
                         "GSTIN": rec.target_gstin,
                         "Invoice": rec.target_doc_num,
                         "Date": rec.target_date,
@@ -1390,28 +1469,12 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
                 )
             )
 
-        yields = [
-            WaterfallPassYield(tier=1, name="Direct Alphanumeric Exact", matched_count=res_v3.summary.exact_matches, matched_itc=round(float(res_v3.summary.total_gov_taxable * 0.18 * (res_v3.summary.exact_matches / max(1, res_v3.summary.total_records))), 2), retention_percentage=round((res_v3.summary.exact_matches / max(1, res_v3.summary.total_records)) * 100, 1)),
-            WaterfallPassYield(tier=2, name="Normalized Doc & Rounding Tolerance", matched_count=res_v3.summary.tolerance_matches, matched_itc=0.0, retention_percentage=round((res_v3.summary.tolerance_matches / max(1, res_v3.summary.total_records)) * 100, 1)),
-            WaterfallPassYield(tier=3, name="Near Proximity & Calendar Alignment", matched_count=res_v3.summary.near_matches, matched_itc=0.0, retention_percentage=round((res_v3.summary.near_matches / max(1, res_v3.summary.total_records)) * 100, 1)),
-            WaterfallPassYield(tier=4, name="Unilateral Ledger Isolation", matched_count=res_v3.summary.gst_only + res_v3.summary.pr_only, matched_itc=0.0, retention_percentage=round(((res_v3.summary.gst_only + res_v3.summary.pr_only) / max(1, res_v3.summary.total_records)) * 100, 1)),
-            WaterfallPassYield(tier=5, name="KICS Baseline Disparity & Ambiguity", matched_count=res_v3.summary.ambiguous, matched_itc=0.0, retention_percentage=round((res_v3.summary.ambiguous / max(1, res_v3.summary.total_records)) * 100, 1)),
-        ]
-
-        corr = session.get("correlation")
-        all_g = getattr(corr, "all_gstr_columns", []) or ["CPGstin", "CPDocumentNumber", "CPTaxableValue", "CPIgstAmount"]
-        all_p = getattr(corr, "all_pr_columns", []) or ["PRGstin", "PRDocumentNumber", "PRTaxableValue", "PRIgstAmount"]
-
         response = Stage4ExecutionResponse(
             session_id=session_id,
-            executed_at=res_v3.executed_at,
-            duration_ms=res_v3.duration_ms,
             summary=summary,
             records=records,
-            waterfall_yields=yields,
-            ambiguity_clusters=[],
-            all_gstr_columns=all_g,
-            all_pr_columns=all_p,
+            ambiguities=[],
+            compared_columns=[],
         )
 
         session["gstr_row_count"] = res_v3.summary.total_records
@@ -1575,7 +1638,7 @@ def execute_stage4_results_endpoint(
 @router_v2.get("/{session_id}/results", response_model=Stage4ExecutionResponse)
 def get_stage4_results_endpoint(
     session_id: str,
-    settings: Annotated[Settings, Depends(get_settings)],
+    settings: Annotated[Settings, Depends(get_settings)] | None = None,
 ) -> Stage4ExecutionResponse:
     """Returns the computed Stage 4 results matrix and ambiguity clusters for this session."""
     session = _ensure_session(session_id)
@@ -1585,6 +1648,111 @@ def get_stage4_results_endpoint(
             return Stage4ExecutionResponse(**cached)
         except Exception:
             pass
+
+    # Seamless adaptation if cached is from V3 single-file waterfall
+    if cached and isinstance(cached, dict) and "total_records" in cached.get("summary", {}):
+        s3 = cached["summary"]
+        tot_reconciled = s3.get("exact_matches", 0) + s3.get("tolerance_matches", 0)
+        s4_summary = {
+            "total_gstr_rows": s3.get("total_records", 0),
+            "total_pr_rows": s3.get("total_records", 0),
+            "exact_match_count": s3.get("exact_matches", 0),
+            "exact_match_itc": s3.get("total_gov_taxable", 0.0),
+            "tolerance_match_count": s3.get("tolerance_matches", 0),
+            "tolerance_match_itc": 0.0,
+            "near_match_count": s3.get("near_matches", 0),
+            "near_match_itc": 0.0,
+            "ambiguous_count": s3.get("ambiguous", 0),
+            "ambiguous_itc": 0.0,
+            "gstr_only_count": s3.get("gst_only", 0),
+            "gstr_only_itc": 0.0,
+            "pr_only_count": s3.get("pr_only", 0),
+            "pr_only_itc": 0.0,
+            "total_reconciled_count": tot_reconciled,
+            "total_reconciled_itc": s3.get("total_gov_taxable", 0.0),
+            "overall_reconciliation_rate": s3.get("kics_concurrence_rate", 0.0),
+            "waterfall_passes": [
+                {"tier": 1, "name": "Pass 1: Exact Statutory Identity", "matched_count": s3.get("exact_matches", 0), "matched_itc": 0.0, "retention_percentage": 0.0},
+                {"tier": 2, "name": "Pass 2: Enterprise Tolerances", "matched_count": s3.get("tolerance_matches", 0), "matched_itc": 0.0, "retention_percentage": 0.0},
+                {"tier": 3, "name": "Pass 3: Semantic Near-Matching", "matched_count": s3.get("near_matches", 0), "matched_itc": 0.0, "retention_percentage": 0.0},
+                {"tier": 4, "name": "Pass 4: Ambiguity Clustering", "matched_count": s3.get("ambiguous", 0), "matched_itc": 0.0, "retention_percentage": 0.0},
+                {"tier": 5, "name": "Pass 5: Single-Sided Residuals", "matched_count": s3.get("gst_only", 0) + s3.get("pr_only", 0), "matched_itc": 0.0, "retention_percentage": 0.0},
+            ],
+        }
+        converted_records = []
+        for r in cached.get("records", []):
+            tv = r.get("tars_verdict", "")
+            bucket = r.get("bucket") or (
+                "EXACT_MATCH" if tv == "Exact Match"
+                else "TOLERANCE_MATCH" if tv == "Tolerance Match"
+                else "NEAR_MATCH" if tv == "Near Match"
+                else "GSTR_ONLY" if tv == "GST Only"
+                else "PR_ONLY" if tv == "PR Only"
+                else "AMBIGUOUS"
+            )
+            converted_records.append(
+                ReconciliationRecordItem(
+                    id=str(r.get("id")),
+                    bucket=bucket,
+                    gstr_row_index=r.get("index"),
+                    pr_row_index=r.get("index"),
+                    gstin=r.get("source_gstin") or r.get("target_gstin") or "",
+                    document_number=r.get("source_doc_num") or r.get("target_doc_num") or "",
+                    document_date=r.get("source_date") or r.get("target_date") or "",
+                    taxable_value=float(r.get("source_taxable") or r.get("target_taxable") or 0.0),
+                    tax_amount=float(r.get("source_tax") or r.get("target_tax") or 0.0),
+                    total_value=float(r.get("source_taxable") or 0.0) + float(r.get("source_tax") or 0.0),
+                    gstr_preview={
+                        "gstin": r.get("source_gstin", ""),
+                        "document_number": r.get("source_doc_num", ""),
+                        "invoice_number": r.get("source_doc_num", ""),
+                        "document_date": r.get("source_date", ""),
+                        "invoice_date": r.get("source_date", ""),
+                        "taxable_value": float(r.get("source_taxable") or 0.0),
+                        "tax_amount": float(r.get("source_tax") or 0.0),
+                        "igst": float(r.get("source_tax") or 0.0),
+                        "total_value": round(float(r.get("source_taxable") or 0.0) + float(r.get("source_tax") or 0.0), 2),
+                        "GSTIN": r.get("source_gstin", ""),
+                        "Invoice": r.get("source_doc_num", ""),
+                        "Date": r.get("source_date", ""),
+                        "Taxable": float(r.get("source_taxable") or 0.0),
+                        "Tax": float(r.get("source_tax") or 0.0),
+                    },
+                    pr_preview={
+                        "gstin": r.get("target_gstin", ""),
+                        "document_number": r.get("target_doc_num", ""),
+                        "invoice_number": r.get("target_doc_num", ""),
+                        "document_date": r.get("target_date", ""),
+                        "invoice_date": r.get("target_date", ""),
+                        "taxable_value": float(r.get("target_taxable") or 0.0) if r.get("target_taxable") is not None else None,
+                        "tax_amount": float(r.get("target_tax") or 0.0) if r.get("target_tax") is not None else None,
+                        "igst": float(r.get("target_tax") or 0.0) if r.get("target_tax") is not None else None,
+                        "total_value": round(float(r.get("target_taxable") or 0.0) + float(r.get("target_tax") or 0.0), 2) if r.get("target_taxable") is not None else None,
+                        "GSTIN": r.get("target_gstin", ""),
+                        "Invoice": r.get("target_doc_num", ""),
+                        "Date": r.get("target_date", ""),
+                        "Taxable": float(r.get("target_taxable") or 0.0) if r.get("target_taxable") is not None else None,
+                        "Tax": float(r.get("target_tax") or 0.0) if r.get("target_tax") is not None else None,
+                    },
+                    variances={
+                        "taxable_diff": float(r.get("taxable_diff") or 0.0),
+                        "tax_diff": float(r.get("tax_diff") or 0.0),
+                    },
+                    matched_by_pass=r.get("pass_tier", ""),
+                    classification_reason=r.get("classification_reason") or r.get("disparity_reason") or f"TARS verdict: {tv}",
+                    ai_reason=r.get("ai_reason") or f"Statutory evaluation against rules: {tv}",
+                    reclassified_from=r.get("reclassified_from"),
+                    reclassification_note=r.get("reclassification_note"),
+                )
+            )
+        return Stage4ExecutionResponse(
+            session_id=session_id,
+            summary=Stage4ResultsSummary(**s4_summary),
+            records=converted_records,
+            ambiguities=[],
+            compared_columns=[],
+        )
+
     # Do not auto-execute reconciliation waterfall on GET if not run yet
     raise HTTPException(status_code=404, detail="Reconciliation engine has not been executed yet for this session.")
 
@@ -1861,6 +2029,156 @@ def resolve_ambiguity_endpoint(
         logger.warning(f"Error persisting ambiguity resolution: {exc}")
 
     return Stage4ExecutionResponse(**cached)
+
+
+class ReclassifyRecordRequest(BaseModel):
+    target_bucket: str  # EXACT_MATCH, TOLERANCE_MATCH, NEAR_MATCH, GSTR_ONLY, PR_ONLY
+    reviewer_note: str | None = None
+    override_policy: bool = False
+
+
+@router_v2.post("/{session_id}/records/{record_id}/recommend", response_model=AmbiguityRecommendation)
+def get_record_recommendation_endpoint(
+    session_id: str,
+    record_id: str,
+    body: dict[str, Any] | None = None,
+) -> AmbiguityRecommendation:
+    session = _ensure_session(session_id)
+    cached = audit_v2_service.get_stage4_results(session_id) or session.get("stage4_results")
+    record_data = None
+    if cached and isinstance(cached, dict):
+        records = cached.get("records", [])
+        for r in records:
+            r_dict = r if isinstance(r, dict) else (r.model_dump() if hasattr(r, "model_dump") else dict(r))
+            if str(r_dict.get("id")) == str(record_id) or str(r_dict.get("gstr_row_index")) == str(record_id) or str(r_dict.get("index")) == str(record_id):
+                record_data = r_dict
+                break
+
+    if not record_data and body and isinstance(body, dict):
+        record_data = body.get("record") or body
+
+    if not record_data:
+        raise HTTPException(status_code=404, detail=f"Record '{record_id}' not found in session results.")
+
+    return evaluate_ambiguity_recommendation(record_data)
+
+
+@router_v2.post("/{session_id}/records/{record_id}/reclassify", response_model=Stage4ExecutionResponse)
+def reclassify_record_endpoint(
+    session_id: str,
+    record_id: str,
+    req: ReclassifyRecordRequest,
+) -> Stage4ExecutionResponse:
+    session = _ensure_session(session_id)
+    cached = audit_v2_service.get_stage4_results(session_id) or session.get("stage4_results")
+    if not cached or not isinstance(cached, dict):
+        raise HTTPException(status_code=404, detail="No reconciliation results found for this session.")
+
+    records = cached.get("records", [])
+    summary = cached.get("summary", {})
+
+    target_rec = None
+    for r in records:
+        r_id = r.get("id") if isinstance(r, dict) else getattr(r, "id", None)
+        r_idx = r.get("gstr_row_index") if isinstance(r, dict) else getattr(r, "gstr_row_index", None)
+        r_v3_idx = r.get("index") if isinstance(r, dict) else getattr(r, "index", None)
+        if str(r_id) == str(record_id) or str(r_idx) == str(record_id) or str(r_v3_idx) == str(record_id):
+            target_rec = r
+            break
+
+    if not target_rec:
+        raise HTTPException(status_code=404, detail=f"Record '{record_id}' not found.")
+
+    if not isinstance(target_rec, dict) and hasattr(target_rec, "model_dump"):
+        target_rec_dict = target_rec.model_dump()
+        target_rec_is_model = True
+    else:
+        target_rec_dict = target_rec
+        target_rec_is_model = False
+
+    old_bucket = target_rec_dict.get("bucket") or (
+        "EXACT_MATCH" if target_rec_dict.get("tars_verdict") == "Exact Match"
+        else "TOLERANCE_MATCH" if target_rec_dict.get("tars_verdict") == "Tolerance Match"
+        else "NEAR_MATCH" if target_rec_dict.get("tars_verdict") == "Near Match"
+        else "GSTR_ONLY" if target_rec_dict.get("tars_verdict") == "GST Only"
+        else "PR_ONLY" if target_rec_dict.get("tars_verdict") == "PR Only"
+        else "AMBIGUOUS"
+    )
+    new_bucket = req.target_bucket
+
+    verdict, policy_msg = evaluate_target_category_policy(target_rec_dict, new_bucket)
+
+    target_rec_dict["reclassified_from"] = old_bucket
+    target_rec_dict["bucket"] = new_bucket
+    target_rec_dict["matched_by_pass"] = f"Manual Reclassification → {new_bucket}"
+    target_rec_dict["reclassification_note"] = req.reviewer_note or f"Manually classified to {new_bucket} ({verdict}): {policy_msg}"
+    target_rec_dict["classification_reason"] = f"Accountant Manual Disposition: {policy_msg}"
+
+    verdict_labels = {
+        "EXACT_MATCH": "Exact Match",
+        "TOLERANCE_MATCH": "Tolerance Match",
+        "NEAR_MATCH": "Near Match",
+        "GSTR_ONLY": "GST Only",
+        "PR_ONLY": "PR Only",
+    }
+    if "tars_verdict" in target_rec_dict:
+        target_rec_dict["tars_verdict"] = verdict_labels.get(new_bucket, "Ambiguous")
+
+    if target_rec_is_model:
+        # update original model fields if possible or replace in records list
+        for i, rec_item in enumerate(records):
+            r_id = rec_item.get("id") if isinstance(rec_item, dict) else getattr(rec_item, "id", None)
+            if str(r_id) == str(record_id):
+                records[i] = target_rec_dict
+                break
+
+    # Update summary counts
+    if "total_records" in summary:
+        v3_bucket_map = {
+            "EXACT_MATCH": "exact_matches",
+            "TOLERANCE_MATCH": "tolerance_matches",
+            "NEAR_MATCH": "near_matches",
+            "AMBIGUOUS": "ambiguous",
+            "GSTR_ONLY": "gst_only",
+            "PR_ONLY": "pr_only",
+        }
+        old_k = v3_bucket_map.get(old_bucket)
+        new_k = v3_bucket_map.get(new_bucket)
+        if old_k and summary.get(old_k, 0) > 0:
+            summary[old_k] -= 1
+        if new_k:
+            summary[new_k] = summary.get(new_k, 0) + 1
+    else:
+        v2_bucket_map = {
+            "EXACT_MATCH": "exact_match_count",
+            "TOLERANCE_MATCH": "tolerance_match_count",
+            "NEAR_MATCH": "near_match_count",
+            "AMBIGUOUS": "ambiguous_count",
+            "GSTR_ONLY": "gstr_only_count",
+            "PR_ONLY": "pr_only_count",
+        }
+        old_k = v2_bucket_map.get(old_bucket)
+        new_k = v2_bucket_map.get(new_bucket)
+        if old_k and summary.get(old_k, 0) > 0:
+            summary[old_k] -= 1
+        if new_k:
+            summary[new_k] = summary.get(new_k, 0) + 1
+        summary["total_reconciled_count"] = summary.get("exact_match_count", 0) + summary.get("tolerance_match_count", 0)
+        tot = summary.get("total_gstr_rows", len(records)) or 1
+        summary["overall_reconciliation_rate"] = round((summary["total_reconciled_count"] / tot) * 100.0, 1)
+
+    cached["records"] = records
+    cached["summary"] = summary
+    session["stage4_results"] = cached
+
+    try:
+        to_save = dict(session)
+        audit_v2_service.save_session(to_save)
+        audit_v2_service.save_stage4_results(session_id, cached)
+    except Exception as exc:
+        logger.warning(f"Error persisting record reclassification: {exc}")
+
+    return get_stage4_results_endpoint(session_id, None)
 
 
 # =========================================================================

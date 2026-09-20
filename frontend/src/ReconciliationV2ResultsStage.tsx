@@ -32,6 +32,7 @@ import {
   ReconciliationRecordItem,
   AmbiguityCluster,
   AmbiguityCandidate,
+  AmbiguityRecommendation,
 } from "./api_v2";
 import { copilotV2Bridge } from "./copilot_v2_bridge";
 import "./results_v2.css";
@@ -61,9 +62,17 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
   const [isWaterfallExpanded, setIsWaterfallExpanded] = useState<boolean>(false);
 
-  // Ambiguity Resolution Modal
+  // Ambiguity Resolution Modal (Legacy / Multi-Candidate)
   const [selectedCluster, setSelectedCluster] = useState<AmbiguityCluster | null>(null);
   const [isResolving, setIsResolving] = useState<boolean>(false);
+
+  // Ambiguity Manual Classification & AI Recommendation Modal
+  const [selectedAmbiguousRecord, setSelectedAmbiguousRecord] = useState<ReconciliationRecordItem | null>(null);
+  const [recommendation, setRecommendation] = useState<AmbiguityRecommendation | null>(null);
+  const [isLoadingRecommendation, setIsLoadingRecommendation] = useState<boolean>(false);
+  const [targetBucket, setTargetBucket] = useState<string>("EXACT_MATCH");
+  const [reviewerNote, setReviewerNote] = useState<string>("");
+  const [isReclassifying, setIsReclassifying] = useState<boolean>(false);
 
   // Load results
   useEffect(() => {
@@ -125,6 +134,86 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
       alert(`Resolution failed: ${err.message || "Unknown error"}`);
     } finally {
       setIsResolving(false);
+    }
+  };
+
+  const handleOpenReclassifyModal = async (rec: ReconciliationRecordItem) => {
+    setSelectedAmbiguousRecord(rec);
+    setIsLoadingRecommendation(true);
+    setReviewerNote("");
+    try {
+      const recId = rec.id || String(rec.gstr_row_index ?? 0);
+      const recResp = await apiV2.getRecordRecommendation(sessionId, recId, rec);
+      setRecommendation(recResp);
+      setTargetBucket(recResp.recommended_bucket || "EXACT_MATCH");
+    } catch (err: any) {
+      console.warn("Failed to fetch recommendation:", err);
+      setRecommendation(null);
+      setTargetBucket("EXACT_MATCH");
+    } finally {
+      setIsLoadingRecommendation(false);
+    }
+  };
+
+  const handleConfirmReclassification = async (chosenBucketOverride?: string) => {
+    if (!selectedAmbiguousRecord) return;
+    const bucketToPost = chosenBucketOverride || targetBucket;
+    setIsReclassifying(true);
+    try {
+      const recId = selectedAmbiguousRecord.id || String(selectedAmbiguousRecord.gstr_row_index ?? 0);
+      const policyInfo = recommendation?.category_policies?.[bucketToPost];
+      const autoNote = reviewerNote.trim() || `Classified as ${bucketToPost}. ${policyInfo?.message || ""}`;
+
+      const updated = await apiV2.reclassifyRecord(sessionId, recId, {
+        target_bucket: bucketToPost,
+        reviewer_note: autoNote,
+        override_policy: policyInfo?.verdict === "NOT_OKAY",
+      });
+
+      setData(updated);
+      setSelectedAmbiguousRecord(null);
+      setRecommendation(null);
+    } catch (err: any) {
+      // Optimistic local update fallback
+      const currentRecords = data?.records || [];
+      const updatedRecords: ReconciliationRecordItem[] = currentRecords.map((r) => {
+        if (r.id === selectedAmbiguousRecord.id) {
+          return {
+            ...r,
+            bucket: bucketToPost as any,
+            reclassified_from: "AMBIGUOUS",
+            reclassification_note: reviewerNote.trim() || `Classified to ${bucketToPost}`,
+            matched_by_pass: `Manual Reclassification → ${bucketToPost}`,
+          };
+        }
+        return r;
+      });
+
+      const updatedSummary = { ...(data?.summary || fallbackSummary) };
+      if (updatedSummary.ambiguous_count && updatedSummary.ambiguous_count > 0) {
+        updatedSummary.ambiguous_count -= 1;
+      }
+      if (bucketToPost === "EXACT_MATCH") updatedSummary.exact_match_count = (updatedSummary.exact_match_count || 0) + 1;
+      else if (bucketToPost === "TOLERANCE_MATCH") updatedSummary.tolerance_match_count = (updatedSummary.tolerance_match_count || 0) + 1;
+      else if (bucketToPost === "NEAR_MATCH") updatedSummary.near_match_count = (updatedSummary.near_match_count || 0) + 1;
+      else if (bucketToPost === "GSTR_ONLY") updatedSummary.gstr_only_count = (updatedSummary.gstr_only_count || 0) + 1;
+      else if (bucketToPost === "PR_ONLY") updatedSummary.pr_only_count = (updatedSummary.pr_only_count || 0) + 1;
+
+      updatedSummary.total_reconciled_count = (updatedSummary.exact_match_count || 0) + (updatedSummary.tolerance_match_count || 0);
+      const tot = updatedSummary.total_gstr_rows || updatedRecords.length || 1;
+      updatedSummary.overall_reconciliation_rate = parseFloat(((updatedSummary.total_reconciled_count / tot) * 100).toFixed(1));
+
+      setData({
+        session_id: sessionId,
+        summary: updatedSummary,
+        records: updatedRecords,
+        ambiguities: data?.ambiguities || [],
+        compared_columns: data?.compared_columns || [],
+      });
+      setSelectedAmbiguousRecord(null);
+      setRecommendation(null);
+    } finally {
+      setIsReclassifying(false);
     }
   };
 
@@ -228,6 +317,17 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
 
   // Tab counts
   const tabCounts = useMemo(() => {
+    if (summary && summary.total_gstr_rows) {
+      return {
+        ALL: summary.total_gstr_rows,
+        EXACT_MATCH: summary.exact_match_count || 0,
+        TOLERANCE_MATCH: summary.tolerance_match_count || 0,
+        NEAR_MATCH: summary.near_match_count || 0,
+        AMBIGUOUS: summary.ambiguous_count || 0,
+        GSTR_ONLY: summary.gstr_only_count || 0,
+        PR_ONLY: summary.pr_only_count || 0,
+      };
+    }
     const counts = {
       ALL: records.length,
       EXACT_MATCH: 0,
@@ -243,7 +343,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
       }
     }
     return counts;
-  }, [records]);
+  }, [records, summary]);
 
   const WATERFALL_STEPS = [
     { tier: 1, name: "Pass 1: Exact Statutory Identity", desc: "Zero-tolerance match across GSTIN, Clean Invoice Number, Date, and Financials" },
@@ -354,8 +454,15 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
               <span className="v2-accuracy-rate-val">{summary.overall_reconciliation_rate}%</span>
               <span className="v2-accuracy-rate-lbl">Accuracy</span>
             </div>
-            <div className="v2-accuracy-count-tag">
-              Total Reconciled: <strong>{(summary.total_reconciled_count || 0).toLocaleString()}</strong> of {(summary.total_gstr_rows || 0).toLocaleString()} portal rows
+            <div
+              className="v2-accuracy-count-tag"
+              title={
+                sessionId?.toLowerCase().startsWith("v3")
+                  ? `${(summary.exact_match_count || 0).toLocaleString()} Exact + ${(summary.tolerance_match_count || 0).toLocaleString()} Tolerance = ${(summary.total_reconciled_count || 0).toLocaleString()} Reconciled; remaining ${((summary.total_gstr_rows || 0) - (summary.total_reconciled_count || 0)).toLocaleString()} are exceptions requiring review`
+                  : undefined
+              }
+            >
+              Total Reconciled: <strong>{(summary.total_reconciled_count || 0).toLocaleString()}</strong> of {(summary.total_gstr_rows || 0).toLocaleString()} {sessionId?.toLowerCase().startsWith("v3") ? "ledger transactions" : "portal rows"}
             </div>
             <button
               type="button"
@@ -365,7 +472,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                 setActiveTab("ALL");
               }}
             >
-              View All ({records.length.toLocaleString()})
+              View All ({(summary.total_gstr_rows || records.length).toLocaleString()})
             </button>
           </div>
         </div>
@@ -703,16 +810,16 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
           <table className="v2-ledger-table">
             <thead>
               <tr>
-                <th style={{ width: 40 }}></th>
-                <th>Classification</th>
-                <th>Supplier GSTIN</th>
-                <th>Document #</th>
-                <th>Date</th>
-                <th style={{ textAlign: "right" }}>Taxable Value</th>
-                <th style={{ textAlign: "right" }}>Tax Amount (ITC)</th>
-                <th style={{ textAlign: "right" }}>Total Value</th>
-                <th>Matching Waterfall Pass</th>
-                <th style={{ textAlign: "center", width: 100 }}>Action</th>
+                <th style={{ width: 36 }}></th>
+                <th style={{ minWidth: 175, width: 175 }}>Classification</th>
+                <th style={{ minWidth: 165, width: 165 }}>Supplier GSTIN</th>
+                <th style={{ minWidth: 150, width: 150 }}>Document #</th>
+                <th style={{ minWidth: 110, width: 110 }}>Date</th>
+                <th style={{ minWidth: 130, width: 130, textAlign: "right" }}>Taxable Value</th>
+                <th style={{ minWidth: 140, width: 140, textAlign: "right" }}>Tax Amount (ITC)</th>
+                <th style={{ minWidth: 140, width: 140, textAlign: "right" }}>Total Value</th>
+                <th style={{ minWidth: 170, width: 170 }}>Matching Waterfall Pass</th>
+                <th style={{ minWidth: 90, width: 90, textAlign: "center" }}>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -826,8 +933,7 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                               className="v2-btn-resolve-trigger"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const cluster = ambiguities.find((a) => a.cluster_id === rec.ambiguity_cluster_id);
-                                if (cluster) setSelectedCluster(cluster);
+                                handleOpenReclassifyModal(rec);
                               }}
                               style={{
                                 padding: "4px 10px",
@@ -889,6 +995,23 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                                   <div className="v2-reason-text">
                                     {rec.classification_reason || rec.ai_reason}
                                   </div>
+                                </div>
+                              )}
+
+                              {rec.bucket === "AMBIGUOUS" && (
+                                <div style={{ margin: "10px 0", display: "flex", alignItems: "center", gap: 10 }}>
+                                  <button
+                                    type="button"
+                                    className="v2-btn-accept-recom"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleOpenReclassifyModal(rec);
+                                    }}
+                                    style={{ padding: "7px 16px", fontSize: 12.5 }}
+                                  >
+                                    <Sparkles size={14} />
+                                    <span>Classify Ambiguity (AI &amp; Statutory Recommendation)</span>
+                                  </button>
                                 </div>
                               )}
 
@@ -984,38 +1107,68 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
                                   <div className="v2-fields-grid">
                                     <div className="v2-field-unit">
                                       <label>Vendor GSTIN</label>
-                                      <span>{rec.pr_preview?.gstin || (rec.bucket === "GSTR_ONLY" ? "Missing in Books" : rec.gstin) || "—"}</span>
+                                      <span>{rec.pr_preview?.gstin || rec.pr_preview?.GSTIN || (rec.bucket === "GSTR_ONLY" ? "Missing in Books" : (rec as any).target_gstin || rec.gstin) || "—"}</span>
                                     </div>
                                     <div className="v2-field-unit">
                                       <label>Document #</label>
-                                      <span>{rec.pr_preview?.document_number || (rec.bucket === "GSTR_ONLY" ? "—" : rec.document_number) || "—"}</span>
+                                      <span>{rec.pr_preview?.document_number || rec.pr_preview?.invoice_number || rec.pr_preview?.Invoice || (rec.bucket === "GSTR_ONLY" ? "—" : (rec as any).target_doc_num || rec.document_number) || "—"}</span>
                                     </div>
                                     <div className="v2-field-unit">
                                       <label>Invoice Date</label>
-                                      <span>{rec.pr_preview?.document_date || (rec.bucket === "GSTR_ONLY" ? "—" : rec.document_date) || "—"}</span>
+                                      <span>{rec.pr_preview?.document_date || rec.pr_preview?.invoice_date || rec.pr_preview?.Date || (rec.bucket === "GSTR_ONLY" ? "—" : (rec as any).target_date || "—")}</span>
                                     </div>
                                     <div className="v2-field-unit">
                                       <label>Taxable Value</label>
                                       <span>
-                                        {rec.pr_preview?.taxable_value !== undefined
-                                          ? `₹${Number(rec.pr_preview.taxable_value).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
-                                          : rec.bucket === "GSTR_ONLY" ? "—" : `₹${rec.taxable_value.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
+                                        {(() => {
+                                          const prTaxable = rec.pr_preview?.taxable_value ?? rec.pr_preview?.Taxable ?? (rec as any).target_taxable;
+                                          if (prTaxable !== undefined && prTaxable !== null && rec.bucket !== "GSTR_ONLY") {
+                                            return `₹${Number(prTaxable).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                          }
+                                          if (rec.bucket !== "GSTR_ONLY" && rec.taxable_value !== undefined && rec.variances?.taxable_diff !== undefined) {
+                                            const computedPr = Number(rec.taxable_value) - Number(rec.variances.taxable_diff);
+                                            return `₹${computedPr.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                          }
+                                          return rec.bucket === "GSTR_ONLY" ? "—" : `₹${rec.taxable_value.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                        })()}
                                       </span>
                                     </div>
                                     <div className="v2-field-unit">
                                       <label>Tax Amount</label>
                                       <span>
-                                        {rec.pr_preview?.tax_amount !== undefined
-                                          ? `₹${Number(rec.pr_preview.tax_amount).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
-                                          : rec.bucket === "GSTR_ONLY" ? "—" : `₹${rec.tax_amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
+                                        {(() => {
+                                          const prTax = rec.pr_preview?.tax_amount ?? rec.pr_preview?.igst ?? rec.pr_preview?.Tax ?? (rec as any).target_tax;
+                                          if (prTax !== undefined && prTax !== null && rec.bucket !== "GSTR_ONLY") {
+                                            return `₹${Number(prTax).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                          }
+                                          if (rec.bucket !== "GSTR_ONLY" && rec.tax_amount !== undefined && rec.variances?.tax_diff !== undefined) {
+                                            const computedPr = Number(rec.tax_amount) - Number(rec.variances.tax_diff);
+                                            return `₹${computedPr.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                          }
+                                          return rec.bucket === "GSTR_ONLY" ? "—" : `₹${rec.tax_amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                        })()}
                                       </span>
                                     </div>
                                     <div className="v2-field-unit">
                                       <label>Total Value</label>
                                       <span>
-                                        {rec.pr_preview?.total_value !== undefined
-                                          ? `₹${Number(rec.pr_preview.total_value).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`
-                                          : rec.bucket === "GSTR_ONLY" ? "—" : `₹${rec.total_value.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`}
+                                        {(() => {
+                                          const prTotal = rec.pr_preview?.total_value ?? rec.pr_preview?.Total;
+                                          if (prTotal !== undefined && prTotal !== null && rec.bucket !== "GSTR_ONLY") {
+                                            return `₹${Number(prTotal).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                          }
+                                          const prTaxable = rec.pr_preview?.taxable_value ?? rec.pr_preview?.Taxable ?? (rec as any).target_taxable;
+                                          const prTax = rec.pr_preview?.tax_amount ?? rec.pr_preview?.igst ?? rec.pr_preview?.Tax ?? (rec as any).target_tax;
+                                          if (prTaxable !== undefined && prTaxable !== null && prTax !== undefined && prTax !== null && rec.bucket !== "GSTR_ONLY") {
+                                            return `₹${(Number(prTaxable) + Number(prTax)).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                          }
+                                          if (rec.bucket !== "GSTR_ONLY" && rec.total_value !== undefined && (rec.variances?.taxable_diff !== undefined || rec.variances?.tax_diff !== undefined)) {
+                                            const totalDiff = Number(rec.variances?.taxable_diff || 0) + Number(rec.variances?.tax_diff || 0);
+                                            const computedTotal = Number(rec.total_value) - totalDiff;
+                                            return `₹${computedTotal.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                          }
+                                          return rec.bucket === "GSTR_ONLY" ? "—" : `₹${rec.total_value.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                                        })()}
                                       </span>
                                     </div>
                                     {rec.pr_preview?.SupplierName && (
@@ -1199,6 +1352,334 @@ export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
           </div>
         )}
       </div>
+
+      {/* 5A. AMBIGUOUS TRANSACTION MANUAL CLASSIFICATION & AI RECOMMENDATION MODAL */}
+      {selectedAmbiguousRecord && (
+        <div className="v2-modal-backdrop" onClick={() => setSelectedAmbiguousRecord(null)}>
+          <div className="v2-modal-content v2-reclassify-modal-shell" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="v2-modal-header">
+              <div className="v2-modal-title-row">
+                <Split size={20} color="#00338d" />
+                <div>
+                  <h3>Ambiguous Transaction Manual Classification</h3>
+                  <span style={{ fontSize: 12.5, color: "#64748b" }}>
+                    Record ID: {selectedAmbiguousRecord.id || "N/A"} • Invoice #{selectedAmbiguousRecord.document_number || "—"} • GSTIN: {selectedAmbiguousRecord.gstin || "—"}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="v2-modal-close-btn"
+                onClick={() => setSelectedAmbiguousRecord(null)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="v2-modal-body">
+              {/* 1. Side-by-Side Comparison */}
+              <div className="v2-recon-split-container">
+                {/* GSTR-2B Side */}
+                <div className="v2-recon-side-card gstr-side">
+                  <div className="v2-recon-side-header">
+                    <span className="v2-recon-side-title gstr">
+                      <FileSpreadsheet size={14} /> Counterparty (GSTR-2B)
+                    </span>
+                    <span style={{ fontSize: 11.5, color: "#1e40af", fontWeight: 700 }}>
+                      {selectedAmbiguousRecord.gstr_record_id || "Portal Entry"}
+                    </span>
+                  </div>
+                  <div className="v2-recon-kv-grid">
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">GSTIN</span>
+                      <span className="v2-recon-kv-value v2-gstin-code">
+                        {selectedAmbiguousRecord.gstr_preview?.gstin || selectedAmbiguousRecord.gstin || "—"}
+                      </span>
+                    </div>
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">Invoice Number</span>
+                      <span className="v2-recon-kv-value v2-doc-num">
+                        {selectedAmbiguousRecord.gstr_preview?.invoice_number || selectedAmbiguousRecord.document_number || "—"}
+                      </span>
+                    </div>
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">Date</span>
+                      <span className="v2-recon-kv-value">
+                        {selectedAmbiguousRecord.gstr_preview?.invoice_date || selectedAmbiguousRecord.document_date || "—"}
+                      </span>
+                    </div>
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">Taxable Value</span>
+                      <span className="v2-recon-kv-value">
+                        ₹{Number(selectedAmbiguousRecord.gstr_preview?.taxable_value ?? selectedAmbiguousRecord.taxable_value ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">Tax (ITC)</span>
+                      <span className="v2-recon-kv-value" style={{ color: "#1e40af" }}>
+                        ₹{Number(selectedAmbiguousRecord.gstr_preview?.igst ?? selectedAmbiguousRecord.tax_amount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* PR Side */}
+                <div className="v2-recon-side-card pr-side">
+                  <div className="v2-recon-side-header">
+                    <span className="v2-recon-side-title pr">
+                      <ShieldCheck size={14} /> Enterprise Books (Purchase Register)
+                    </span>
+                    <span style={{ fontSize: 11.5, color: "#065f46", fontWeight: 700 }}>
+                      {selectedAmbiguousRecord.pr_record_id || "ERP Voucher"}
+                    </span>
+                  </div>
+                  <div className="v2-recon-kv-grid">
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">GSTIN</span>
+                      <span className="v2-recon-kv-value v2-gstin-code">
+                        {selectedAmbiguousRecord.pr_preview?.gstin || selectedAmbiguousRecord.pr_preview?.GSTIN || (selectedAmbiguousRecord as any).target_gstin || selectedAmbiguousRecord.gstin || "—"}
+                      </span>
+                    </div>
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">Invoice Number</span>
+                      <span className="v2-recon-kv-value v2-doc-num">
+                        {selectedAmbiguousRecord.pr_preview?.document_number || selectedAmbiguousRecord.pr_preview?.invoice_number || selectedAmbiguousRecord.pr_preview?.Invoice || (selectedAmbiguousRecord as any).target_doc_num || selectedAmbiguousRecord.document_number || "—"}
+                      </span>
+                    </div>
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">Date</span>
+                      <span className="v2-recon-kv-value">
+                        {selectedAmbiguousRecord.pr_preview?.document_date || selectedAmbiguousRecord.pr_preview?.invoice_date || selectedAmbiguousRecord.pr_preview?.Date || (selectedAmbiguousRecord as any).target_date || "—"}
+                      </span>
+                    </div>
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">Taxable Value</span>
+                      <span className="v2-recon-kv-value">
+                        {(() => {
+                          const prTaxable = selectedAmbiguousRecord.pr_preview?.taxable_value ?? selectedAmbiguousRecord.pr_preview?.Taxable ?? (selectedAmbiguousRecord as any).target_taxable;
+                          if (prTaxable !== undefined && prTaxable !== null) {
+                            return `₹${Number(prTaxable).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                          }
+                          if (selectedAmbiguousRecord.taxable_value !== undefined && selectedAmbiguousRecord.variances?.taxable_diff !== undefined) {
+                            const computedPr = Number(selectedAmbiguousRecord.taxable_value) - Number(selectedAmbiguousRecord.variances.taxable_diff);
+                            return `₹${computedPr.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                          }
+                          return `₹${Number(selectedAmbiguousRecord.taxable_value ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                        })()}
+                      </span>
+                    </div>
+                    <div className="v2-recon-kv-item">
+                      <span className="v2-recon-kv-label">Tax (ITC)</span>
+                      <span className="v2-recon-kv-value" style={{ color: "#065f46" }}>
+                        {(() => {
+                          const prTax = selectedAmbiguousRecord.pr_preview?.tax_amount ?? selectedAmbiguousRecord.pr_preview?.igst ?? selectedAmbiguousRecord.pr_preview?.Tax ?? (selectedAmbiguousRecord as any).target_tax;
+                          if (prTax !== undefined && prTax !== null) {
+                            return `₹${Number(prTax).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                          }
+                          if (selectedAmbiguousRecord.tax_amount !== undefined && selectedAmbiguousRecord.variances?.tax_diff !== undefined) {
+                            const computedPr = Number(selectedAmbiguousRecord.tax_amount) - Number(selectedAmbiguousRecord.variances.tax_diff);
+                            return `₹${computedPr.toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                          }
+                          return `₹${Number(selectedAmbiguousRecord.tax_amount ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`;
+                        })()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Variances Bar */}
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", background: "#f8fafc", padding: "10px 16px", borderRadius: 8, fontSize: 12.5, alignItems: "center", border: "1px solid #e2e8f0" }}>
+                <strong style={{ color: "#334155" }}>Detected Discrepancies:</strong>
+                <span style={{ color: Number(selectedAmbiguousRecord.variances?.taxable_diff || 0) > 0 ? "#b45309" : "#166534", fontWeight: 700 }}>
+                  Taxable Diff: ₹{Number(selectedAmbiguousRecord.variances?.taxable_diff || 0).toFixed(2)}
+                </span>
+                <span style={{ color: Number(selectedAmbiguousRecord.variances?.tax_diff || 0) > 0 ? "#b45309" : "#166534", fontWeight: 700 }}>
+                  Tax Diff: ₹{Number(selectedAmbiguousRecord.variances?.tax_diff || 0).toFixed(2)}
+                </span>
+              </div>
+
+              {/* 2. TARS AI & Deterministic Recommendation Card */}
+              {isLoadingRecommendation ? (
+                <div style={{ padding: 24, textAlign: "center", color: "#6366f1", display: "flex", alignItems: "center", justifyContent: "center", gap: 10 }}>
+                  <RefreshCw size={18} className="v2-spin" />
+                  <span>Evaluating hybrid statutory rules and generating recommendation...</span>
+                </div>
+              ) : recommendation ? (
+                <div className="v2-ai-recom-card" style={{ flexShrink: 0, minHeight: "fit-content", overflow: "visible" }}>
+                  <div className="v2-ai-recom-top">
+                    <div className="v2-ai-recom-badge-group">
+                      <span className="v2-ai-sparkle-badge">
+                        <Sparkles size={13} /> TARS AI &amp; Deterministic Recommendation
+                      </span>
+                      <span className="v2-ai-confidence-pill">
+                        {recommendation.confidence.toFixed(1)}% Confidence
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="v2-btn-accept-recom"
+                      onClick={() => handleConfirmReclassification(recommendation.recommended_bucket)}
+                      disabled={isReclassifying}
+                    >
+                      <Zap size={14} />
+                      <span>⚡ Accept Recommendation &amp; Post ({recommendation.recommended_label})</span>
+                    </button>
+                  </div>
+
+                  <div className="v2-ai-recom-heading">
+                    <h4>Recommended Category:</h4>
+                    <span className="v2-ai-recom-target">{recommendation.recommended_label}</span>
+                  </div>
+
+                  <p className="v2-ai-rationale-text">
+                    {recommendation.accounting_rationale}
+                  </p>
+
+                  {recommendation.deterministic_factors && recommendation.deterministic_factors.length > 0 && (
+                    <div className="v2-ai-factors-row">
+                      <span style={{ fontSize: 11.5, fontWeight: 750, color: "#4338ca", textTransform: "uppercase" }}>
+                        Key Factors:
+                      </span>
+                      {recommendation.deterministic_factors.map((f, fIdx) => (
+                        <span key={fIdx} className="v2-ai-factor-chip">
+                          ✓ {f}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
+
+              {/* 3. Five Standard Category Selector */}
+              <div className="v2-category-options-section">
+                <label className="v2-category-options-label">
+                  Select Classification Category (All 5 Categories Available):
+                </label>
+                <div className="v2-category-grid">
+                  {[
+                    { id: "EXACT_MATCH", label: "Exact Match", sub: "Section 16(2)(aa) zero variance", icon: "✓" },
+                    { id: "TOLERANCE_MATCH", label: "Tolerance Match", sub: "Within ±₹10 rounding margin", icon: "±" },
+                    { id: "NEAR_MATCH", label: "Near Match", sub: "Doc punctuation / typo normalization", icon: "≈" },
+                    { id: "GSTR_ONLY", label: "GSTR - 2B Match", sub: "GSTR-2B Only / Vendor Follow-up", icon: "→" },
+                    { id: "PR_ONLY", label: "PR Match", sub: "Books Only / DRC-01C Audit Risk", icon: "←" },
+                  ].map((cat) => {
+                    const isSelected = targetBucket === cat.id;
+                    const isRecommended = recommendation?.recommended_bucket === cat.id;
+                    const confScore = recommendation?.category_confidences?.[cat.id] ?? (isRecommended ? recommendation?.confidence : undefined);
+                    return (
+                      <div
+                        key={cat.id}
+                        className={`v2-category-card ${isSelected ? "is-selected" : ""} ${isRecommended ? "is-recommended" : ""}`}
+                        onClick={() => setTargetBucket(cat.id)}
+                      >
+                        {isRecommended && <span className="v2-category-recom-tag">AI Pick</span>}
+                        <div className="v2-category-icon-wrap">{cat.icon}</div>
+                        <span className="v2-category-name">{cat.label}</span>
+                        <span className="v2-category-subtext">{cat.sub}</span>
+                        {confScore !== undefined && (
+                          <div
+                            style={{
+                              marginTop: 4,
+                              fontSize: 10.5,
+                              fontWeight: 750,
+                              padding: "2px 7px",
+                              borderRadius: 10,
+                              background: isRecommended ? "#dbeafe" : confScore > 50 ? "#e0f2fe" : "#f1f5f9",
+                              color: isRecommended ? "#1e40af" : confScore > 50 ? "#0369a1" : "#64748b",
+                              border: isRecommended ? "1px solid #bfdbfe" : "1px solid #e2e8f0",
+                            }}
+                          >
+                            {confScore.toFixed(0)}% Conf
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 4. Policy Determination Box (OKAY vs NOT OKAY) */}
+              {(() => {
+                const policyVerdict = recommendation?.category_policies?.[targetBucket];
+                const isOkay = policyVerdict ? policyVerdict.verdict === "OKAY" : true;
+                const msg = policyVerdict?.message || (
+                  isOkay
+                    ? "Transaction classification complies with standard statutory and commercial guidelines."
+                    : "Discrepancy detected: verify voucher before manual override."
+                );
+
+                return (
+                  <div className={`v2-policy-verdict-box ${isOkay ? "is-okay" : "is-not-okay"}`}>
+                    <div className="v2-policy-icon-wrap">
+                      {isOkay ? (
+                        <CheckCircle2 size={18} color="#16a34a" />
+                      ) : (
+                        <AlertTriangle size={18} color="#d97706" />
+                      )}
+                    </div>
+                    <div className="v2-policy-content">
+                      <div className="v2-policy-status-title">
+                        {isOkay ? "✓ Statutory Determination: OKAY" : "⚠️ Statutory Determination: NOT OKAY (Policy Override)"}
+                      </div>
+                      <p className="v2-policy-message">{msg}</p>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* 5. Senior Reviewer Note */}
+              <div className="v2-reviewer-note-wrap">
+                <label>Reviewer Note / Justification (Audit Trail):</label>
+                <textarea
+                  className="v2-reviewer-note-input"
+                  rows={2}
+                  placeholder="e.g., Verified physical invoice #INV-101. Discrepancy accepted following cross-department verification."
+                  value={reviewerNote}
+                  onChange={(e) => setReviewerNote(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="v2-modal-footer">
+              <button
+                type="button"
+                className="v2-btn-reject-all"
+                onClick={() => setSelectedAmbiguousRecord(null)}
+                disabled={isReclassifying}
+              >
+                Discard / Cancel
+              </button>
+              <button
+                type="button"
+                className="v2-btn-select-candidate"
+                onClick={() => handleConfirmReclassification()}
+                disabled={isReclassifying}
+                style={{ background: "#00338d", color: "#ffffff", padding: "8px 20px" }}
+              >
+                {isReclassifying ? (
+                  <>
+                    <RefreshCw size={14} className="v2-spin" />
+                    <span>Posting Classification...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check size={14} />
+                    <span>Confirm &amp; Post to {
+                      targetBucket === "EXACT_MATCH" ? "Exact Match" :
+                      targetBucket === "TOLERANCE_MATCH" ? "Tolerance Match" :
+                      targetBucket === "NEAR_MATCH" ? "Near Match" :
+                      targetBucket === "GSTR_ONLY" ? "GSTR - 2B Match (GSTR-2B Only)" : "PR Match (Books Only)"
+                    }</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 5. AMBIGUITY RESOLUTION MODAL / DRAWER */}
       {selectedCluster && (

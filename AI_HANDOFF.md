@@ -1,5 +1,28 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 3.0: Stage 4 Results Workbench Field Normalization & Ambiguity Manual Classification Enhancement (20th September 2026)
+
+- **Checkpoint Name**: `Reconciliation 3.0: Stage 4 Results Field Normalization & Ambiguity Classification`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-20-v3-ambiguity-classification-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Stage 4 Side-by-Side Preview Key Normalization & Data Integrity*:
+     - Normalized `gstr_preview` and `pr_preview` key contracts in `reconciliations_v2.py` and `matching_engine_v3.py` to include standard lowercase keys (`taxable_value`, `tax_amount`, `total_value`, `document_date`, `document_number`, `gstin`) alongside legacy uppercase aliases (`Taxable`, `Tax`, `Date`, `Invoice`, `GSTIN`).
+     - Enhanced `ReconciliationV2ResultsStage.tsx` side-by-side comparison cards with robust fallback logic (`pr_preview?.taxable_value ?? pr_preview?.Taxable ?? (rec.taxable_value - rec.variances.taxable_diff)`), ensuring ERP Purchase Register values (`₹50,500.00`, `2023-06-26`) are accurately rendered side-by-side without masquerading as GSTR portal values.
+  2. *Per-Category AI Confidence Breakdown in Manual Classification Modal*:
+     - Extended `AmbiguityRecommendation` schema with `category_confidences: dict[str, float]`.
+     - Computed individual percentage confidence scores across all 5 classification buckets (`Exact Match`, `Tolerance Match`, `Near Match`, `GSTR - 2B Match`, `PR Match`).
+     - Added confidence percentage pills (`92% Conf`, `85% Conf`, `0% Conf`) to all 5 category cards in `ReconciliationV2ResultsStage.tsx`.
+  3. *Taxonomy Wording & Reviewer Note Label Simplification*:
+     - Renamed `Chasing` category across backend services, policy messages, and frontend UI to **`GSTR - 2B Match`**.
+     - Simplified reviewer justification textarea label from `Senior Accountant Reviewer Note / Justification (Audit Trail):` to **`Reviewer Note / Justification (Audit Trail):`**.
+  4. *Modal & Results Matrix Table Layout Resolution*:
+     - Resolved squashed `.v2-ai-recom-card` height by setting `flex-shrink: 0`, `min-height: fit-content`, `overflow: visible`, and adding `flex: 1 1 auto; min-height: 0;` to `.v2-modal-body`.
+     - Resolved results table column text collision between `Classification` badge (`⚡ Tolerance Matched`) and `Supplier GSTIN` by adding `table-layout: auto !important;` to `.v2-ledger-table`, setting `white-space: nowrap` on `td`, and assigning explicit min-widths to all 10 column headers (`th`).
+
+---
+
 ## Reconciliation 3.0: Rules Wiki & Stage 3 Rules Engine Visual & Functional Parity with Recon 2.0 (20th September 2026)
 
 - **Checkpoint Name**: `Reconciliation 3.0: Rules Wiki & Stage 3 Rules Engine Visual & Functional Parity with Recon 2.0`

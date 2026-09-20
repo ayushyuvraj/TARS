@@ -30,6 +30,7 @@ from app.services.direct_schema_correlator_v3 import (
     DirectSchemaCorrelatorV3,
 )
 from app.services.matching_engine_v3 import (
+    AmbiguityRecommendation,
     ReconciliationRecordItemV3,
     Rule3Item,
     Stage4ExecutionResponseV3,
@@ -37,6 +38,8 @@ from app.services.matching_engine_v3 import (
     WaterfallMatchingEngineV3,
     build_default_rules_v3,
     compile_rule_v3_from_nl,
+    evaluate_ambiguity_recommendation,
+    evaluate_target_category_policy,
 )
 
 logger = logging.getLogger(__name__)
@@ -678,6 +681,128 @@ def get_stage4_results_v3(session_id: str) -> Stage4ExecutionResponseV3:
     if cached and isinstance(cached, dict) and cached.get("summary"):
         return Stage4ExecutionResponseV3(**cached)
     return _execute_stage4_v3_internal(session_id)
+
+
+class ReclassifyRecordRequestV3(BaseModel):
+    target_bucket: str  # EXACT_MATCH, TOLERANCE_MATCH, NEAR_MATCH, GSTR_ONLY, PR_ONLY
+    reviewer_note: str | None = None
+    override_policy: bool = False
+
+
+@router_v3.post("/{session_id}/records/{record_id}/recommend", response_model=AmbiguityRecommendation)
+def get_record_recommendation_v3(
+    session_id: str,
+    record_id: str,
+    body: dict[str, Any] | None = None,
+) -> AmbiguityRecommendation:
+    session = _ensure_session_v3(session_id)
+    cached = session.get("stage4_results")
+    record_data = None
+    if cached and isinstance(cached, dict):
+        records = cached.get("records", [])
+        for r in records:
+            r_dict = r if isinstance(r, dict) else (r.model_dump() if hasattr(r, "model_dump") else dict(r))
+            if str(r_dict.get("id")) == str(record_id) or str(r_dict.get("index")) == str(record_id):
+                record_data = r_dict
+                break
+
+    if not record_data and body and isinstance(body, dict):
+        record_data = body.get("record") or body
+
+    if not record_data:
+        raise HTTPException(status_code=404, detail=f"Record '{record_id}' not found in session results.")
+
+    return evaluate_ambiguity_recommendation(record_data)
+
+
+@router_v3.post("/{session_id}/records/{record_id}/reclassify", response_model=Stage4ExecutionResponseV3)
+def reclassify_record_v3(
+    session_id: str,
+    record_id: str,
+    req: ReclassifyRecordRequestV3,
+) -> Stage4ExecutionResponseV3:
+    session = _ensure_session_v3(session_id)
+    cached = session.get("stage4_results")
+    if not cached or not isinstance(cached, dict):
+        raise HTTPException(status_code=404, detail="No reconciliation results found for this session.")
+
+    records = cached.get("records", [])
+    summary = cached.get("summary", {})
+
+    target_rec = None
+    for r in records:
+        r_id = r.get("id") if isinstance(r, dict) else getattr(r, "id", None)
+        r_idx = r.get("index") if isinstance(r, dict) else getattr(r, "index", None)
+        if str(r_id) == str(record_id) or str(r_idx) == str(record_id):
+            target_rec = r
+            break
+
+    if not target_rec:
+        raise HTTPException(status_code=404, detail=f"Record '{record_id}' not found.")
+
+    if not isinstance(target_rec, dict) and hasattr(target_rec, "model_dump"):
+        target_rec_dict = target_rec.model_dump()
+        target_rec_is_model = True
+    else:
+        target_rec_dict = target_rec
+        target_rec_is_model = False
+
+    old_bucket = target_rec_dict.get("bucket") or (
+        "EXACT_MATCH" if target_rec_dict.get("tars_verdict") == "Exact Match"
+        else "TOLERANCE_MATCH" if target_rec_dict.get("tars_verdict") == "Tolerance Match"
+        else "NEAR_MATCH" if target_rec_dict.get("tars_verdict") == "Near Match"
+        else "GSTR_ONLY" if target_rec_dict.get("tars_verdict") == "GST Only"
+        else "PR_ONLY" if target_rec_dict.get("tars_verdict") == "PR Only"
+        else "AMBIGUOUS"
+    )
+    new_bucket = req.target_bucket
+
+    verdict, policy_msg = evaluate_target_category_policy(target_rec_dict, new_bucket)
+
+    target_rec_dict["reclassified_from"] = old_bucket
+    target_rec_dict["bucket"] = new_bucket
+    target_rec_dict["pass_tier"] = f"Manual Reclassification → {new_bucket}"
+    target_rec_dict["reclassification_note"] = req.reviewer_note or f"Manually classified to {new_bucket} ({verdict}): {policy_msg}"
+    target_rec_dict["disparity_reason"] = f"Accountant Manual Disposition: {policy_msg}"
+
+    verdict_labels = {
+        "EXACT_MATCH": "Exact Match",
+        "TOLERANCE_MATCH": "Tolerance Match",
+        "NEAR_MATCH": "Near Match",
+        "GSTR_ONLY": "GST Only",
+        "PR_ONLY": "PR Only",
+    }
+    target_rec_dict["tars_verdict"] = verdict_labels.get(new_bucket, "Ambiguous")
+
+    if target_rec_is_model:
+        for i, rec_item in enumerate(records):
+            r_id = rec_item.get("id") if isinstance(rec_item, dict) else getattr(rec_item, "id", None)
+            if str(r_id) == str(record_id):
+                records[i] = target_rec_dict
+                break
+
+    # Update summary counts
+    v3_bucket_map = {
+        "EXACT_MATCH": "exact_matches",
+        "TOLERANCE_MATCH": "tolerance_matches",
+        "NEAR_MATCH": "near_matches",
+        "AMBIGUOUS": "ambiguous",
+        "GSTR_ONLY": "gst_only",
+        "PR_ONLY": "pr_only",
+    }
+    old_k = v3_bucket_map.get(old_bucket)
+    new_k = v3_bucket_map.get(new_bucket)
+    if old_k and summary.get(old_k, 0) > 0:
+        summary[old_k] -= 1
+    if new_k:
+        summary[new_k] = summary.get(new_k, 0) + 1
+
+    cached["records"] = records
+    cached["summary"] = summary
+    session["stage4_results"] = cached
+    _persist_session_disk_v3(session)
+
+    return Stage4ExecutionResponseV3(**cached)
 
 
 # =========================================================================

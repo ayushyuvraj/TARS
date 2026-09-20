@@ -366,17 +366,43 @@ export interface Stage5SummaryResponse {
   ai_playbook?: AiOperationalPlaybook;
 }
 
+export interface CategoryPolicyVerdict {
+  bucket: string;
+  label: string;
+  verdict: "OKAY" | "NOT_OKAY";
+  message: string;
+}
+
+export interface AmbiguityRecommendation {
+  recommended_bucket: string;
+  recommended_label: string;
+  confidence: number;
+  accounting_rationale: string;
+  deterministic_factors: string[];
+  policy_verdict: "OKAY" | "NOT_OKAY";
+  policy_message: string;
+  category_policies: Record<string, CategoryPolicyVerdict>;
+  category_confidences?: Record<string, number>;
+}
+
+export interface ReclassifyRecordRequest {
+  target_bucket: string;
+  reviewer_note?: string;
+  override_policy?: boolean;
+}
+
 const API_BASE = "/api/reconciliations-v2";
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
-    let errorDetail = "API Error";
+    const text = await res.text();
+    let errorDetail = text || `API Error (${res.status})`;
     try {
-      const errJson = await res.json();
-      errorDetail = errJson.detail || JSON.stringify(errJson);
+      const errJson = JSON.parse(text);
+      errorDetail = errJson.detail || (typeof errJson === "string" ? errJson : JSON.stringify(errJson));
     } catch {
-      errorDetail = await res.text();
+      // retain raw response text
     }
     throw new Error(errorDetail);
   }
@@ -564,6 +590,36 @@ export const apiV2 = {
         action
       })
     });
+  },
+
+  async getRecordRecommendation(
+    sessionId: string,
+    recordId: string,
+    record?: any
+  ): Promise<AmbiguityRecommendation> {
+    return request<AmbiguityRecommendation>(
+      `${API_BASE}/${sessionId}/records/${recordId}/recommend`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ record }),
+      }
+    );
+  },
+
+  async reclassifyRecord(
+    sessionId: string,
+    recordId: string,
+    payload: ReclassifyRecordRequest
+  ): Promise<Stage4ExecutionResponse> {
+    return request<Stage4ExecutionResponse>(
+      `${API_BASE}/${sessionId}/records/${recordId}/reclassify`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
   },
 
   // --- Audit 2.0 Endpoints ---

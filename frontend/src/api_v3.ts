@@ -1,3 +1,5 @@
+import type { AmbiguityRecommendation } from "./api_v2";
+
 export interface AlternativeMatchV3 {
   target_column: string;
   confidence: number;
@@ -259,12 +261,13 @@ const API_BASE = "/api/reconciliations-v3";
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
   if (!res.ok) {
-    let errorDetail = "API Error";
+    const text = await res.text();
+    let errorDetail = text || `API Error (${res.status})`;
     try {
-      const errJson = await res.json();
-      errorDetail = errJson.detail || JSON.stringify(errJson);
+      const errJson = JSON.parse(text);
+      errorDetail = errJson.detail || (typeof errJson === "string" ? errJson : JSON.stringify(errJson));
     } catch {
-      errorDetail = await res.text();
+      // retain raw response text
     }
     throw new Error(errorDetail);
   }
@@ -400,4 +403,35 @@ export const apiV3 = {
       headers: { "Content-Type": "application/json" },
     });
   },
+
+  async getRecordRecommendation(
+    id: string,
+    recordId: string,
+    record?: any
+  ): Promise<AmbiguityRecommendation> {
+    return request<AmbiguityRecommendation>(
+      `${API_BASE}/${id}/records/${recordId}/recommend`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ record }),
+      }
+    );
+  },
+
+  async reclassifyRecord(
+    id: string,
+    recordId: string,
+    payload: { target_bucket: string; reviewer_note?: string; override_policy?: boolean }
+  ): Promise<Stage4ExecutionResponseV3> {
+    return request<Stage4ExecutionResponseV3>(
+      `${API_BASE}/${id}/records/${recordId}/reclassify`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      }
+    );
+  },
 };
+
