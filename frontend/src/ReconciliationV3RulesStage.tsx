@@ -34,6 +34,7 @@ import "./reconciliation_v2.css";
 
 interface Props {
   sessionId: string;
+  isReadOnly?: boolean;
   onBackToMapping: () => void;
   onProceedToResults: (selectedRuleIds: string[], executionOrder: string[]) => void;
 }
@@ -61,6 +62,7 @@ interface SimulationResultV3 {
 
 export const ReconciliationV3RulesStage: React.FC<Props> = ({
   sessionId,
+  isReadOnly = false,
   onBackToMapping,
   onProceedToResults,
 }) => {

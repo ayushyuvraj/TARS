@@ -661,13 +661,24 @@
   user-select: text;              /* Allow text selection for viewing */
 }
 
+.v2-read-only-wrapper button:not(.v2-btn-export-dispatch):not(.v2-hero-btn-back),
+.v2-read-only-wrapper input,
+.v2-read-only-wrapper select,
+.v2-read-only-wrapper textarea,
+.v2-read-only-wrapper [role="button"],
+.v2-read-only-wrapper [role="slider"] {
+  pointer-events: none !important;
+  opacity: 0.65 !important;
+  cursor: not-allowed !important;
+}
+
 .v2-read-only-shield {
   position: absolute;
   inset: 0;
-  z-index: 50;
+  z-index: 90;
   cursor: not-allowed;
-  background: transparent;
-  /* Blocks ALL pointer events (clicks, drags, hovers on interactive elements) */
+  background: rgba(255, 255, 255, 0.01);
+  pointer-events: auto !important;
 }
 
 .v2-stage-canvas::-webkit-scrollbar {

@@ -810,25 +810,26 @@ export const Audit2Workspace: React.FC = () => {
               />
             </div>
             <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
-              {(["all", "v2", "v3"] as const).map((filterVal) => (
+              {(["all", "v3", "v2"] as const).map((filterVal) => (
                 <button
                   key={filterVal}
                   type="button"
                   onClick={() => setReconFilter(filterVal)}
                   style={{
                     flex: 1,
-                    padding: "4px 8px",
+                    padding: "6px 6px",
                     borderRadius: 6,
                     fontSize: 10.5,
                     fontWeight: 600,
-                    border: reconFilter === filterVal ? "1px solid #3b82f6" : "1px solid rgba(255,255,255,0.08)",
-                    background: reconFilter === filterVal ? "#00338D" : "rgba(30, 41, 59, 0.4)",
-                    color: reconFilter === filterVal ? "#ffffff" : "#94a3b8",
+                    border: reconFilter === filterVal ? "1px solid #00338D" : "1px solid #cbd5e1",
+                    background: reconFilter === filterVal ? "#00338D" : "#f1f5f9",
+                    color: reconFilter === filterVal ? "#ffffff" : "#334155",
                     cursor: "pointer",
                     transition: "all 0.15s ease",
+                    boxShadow: reconFilter === filterVal ? "0 1px 3px rgba(0, 51, 141, 0.2)" : "none",
                   }}
                 >
-                  {filterVal === "all" ? "All" : filterVal === "v2" ? "Recon 2.0" : "Recon 3.0"}
+                  {filterVal === "all" ? "All" : filterVal === "v3" ? "Single Ledger" : "Double Ledger"}
                 </button>
               ))}
             </div>

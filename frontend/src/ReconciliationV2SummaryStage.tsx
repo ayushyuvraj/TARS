@@ -37,6 +37,7 @@ import {
 interface ReconciliationV2SummaryStageProps {
   sessionId: string;
   initialSummary?: Stage5SummaryResponse | null;
+  isReadOnly?: boolean;
   onProceedToExport: () => void;
   onBack: () => void;
 }
@@ -44,6 +45,7 @@ interface ReconciliationV2SummaryStageProps {
 export const ReconciliationV2SummaryStage: React.FC<ReconciliationV2SummaryStageProps> = ({
   sessionId,
   initialSummary,
+  isReadOnly = false,
   onProceedToExport,
   onBack,
 }) => {

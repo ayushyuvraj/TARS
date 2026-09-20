@@ -254,6 +254,8 @@ export interface ReconciliationV3Session {
   selected_rule_ids: string[];
   rule_execution_order: string[];
   rules_v3: Rule3Item[];
+  is_completed?: boolean;
+  completed_stages_count?: number;
 }
 
 const API_BASE = "/api/reconciliations-v3";

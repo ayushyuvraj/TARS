@@ -40,12 +40,14 @@ import "./reconciliation_v2.css";
 
 interface ResultsStageProps {
   sessionId: string;
+  isReadOnly?: boolean;
   onBackToRules: () => void;
   onProceedToSummary: () => void;
 }
 
 export const ReconciliationV2ResultsStage: React.FC<ResultsStageProps> = ({
   sessionId,
+  isReadOnly = false,
   onBackToRules,
   onProceedToSummary,
 }) => {

@@ -210,6 +210,8 @@ class ReconciliationV3Session(BaseModel):
     selected_rule_ids: list[str] = Field(default_factory=list)
     rule_execution_order: list[str] = Field(default_factory=list)
     rules_v3: list[Rule3Item] = Field(default_factory=list)
+    is_completed: bool = False
+    completed_stages_count: int = 0
 
 
 class UserMappingUpdateRequestV3(BaseModel):
@@ -252,6 +254,18 @@ def create_v3_session() -> ReconciliationV3Session:
 @router_v3.get("/{session_id}", response_model=ReconciliationV3Session)
 def get_v3_session(session_id: str) -> ReconciliationV3Session:
     data = _ensure_session_v3(session_id)
+    lifecycle = audit_v2_service.get_session_lifecycle(session_id)
+    is_completed = False
+    completed_stages_count = 0
+    if lifecycle:
+        is_completed = lifecycle.get("is_completed", False)
+        completed_stages_count = lifecycle.get("completed_stages_count", 0)
+    if is_completed or data.get("status") in ["completed", "exported"]:
+        is_completed = True
+        data["status"] = "completed"
+        data["is_completed"] = True
+        completed_stages_count = 6
+
     return ReconciliationV3Session(
         id=data["id"],
         recon_type="v3",
@@ -267,6 +281,8 @@ def get_v3_session(session_id: str) -> ReconciliationV3Session:
         selected_rule_ids=data.get("selected_rule_ids", []),
         rule_execution_order=data.get("rule_execution_order", []),
         rules_v3=data.get("rules_v3") or build_default_rules_v3(),
+        is_completed=is_completed,
+        completed_stages_count=completed_stages_count,
     )
 
 

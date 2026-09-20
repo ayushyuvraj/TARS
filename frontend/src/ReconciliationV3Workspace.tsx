@@ -113,8 +113,9 @@ export const ReconciliationV3Workspace: React.FC = () => {
   const [hasVisitedSummary, setHasVisitedSummary] = useState(false);
   const [hasExported, setHasExported] = useState(false);
   const [sessionStatus, setSessionStatus] = useState<string>("initialized");
+  const [sessionIsCompletedState, setSessionIsCompletedState] = useState(false);
 
-  const isSessionCompleted = sessionStatus === "completed" || sessionStatus === "exported" || hasExported;
+  const isSessionCompleted = sessionIsCompletedState || sessionStatus === "completed" || sessionStatus === "exported" || hasExported;
 
   // Dynamic progressive stage unlocking predicate
   const isStageUnlocked = (stageKey: V3Stage): boolean => {
@@ -302,6 +303,10 @@ export const ReconciliationV3Workspace: React.FC = () => {
         .getSession(routeSessionId)
         .then((sess) => {
           setSessionStatus(sess.status);
+          if (sess.is_completed || sess.completed_stages_count === 6 || ["completed", "exported"].includes(sess.status)) {
+            setSessionIsCompletedState(true);
+            setHasExported(true);
+          }
           if (sess.correlation) {
             setCorrelationResult(sess.correlation as any as DirectCorrelationResult);
             setAgentThoughts((sess.correlation.agent_thoughts || []) as any as AgentThought[]);
@@ -668,7 +673,8 @@ export const ReconciliationV3Workspace: React.FC = () => {
                     type="button"
                     className="v2-hero-btn-secondary"
                     onClick={() => executeFastUploadAndMapping(undefined, true)}
-                    title="Load pre-installed 20,000-row KICS benchmark workbook"
+                    disabled={isSessionCompleted}
+                    title={isSessionCompleted ? "Session audit ledger finalized (Read-Only)" : "Load pre-installed 20,000-row KICS benchmark workbook"}
                   >
                     <Sparkles size={13} className="text-amber-400" />
                     <span>Load 20k Row Sample</span>
@@ -681,7 +687,8 @@ export const ReconciliationV3Workspace: React.FC = () => {
                         setReconFile(null);
                         setCorrelationResult(null);
                       }}
-                      title="Clear selected workbook"
+                      disabled={isSessionCompleted}
+                      title={isSessionCompleted ? "Session audit ledger finalized (Read-Only)" : "Clear selected workbook"}
                     >
                       <Trash2 size={13} />
                       <span>Clear File</span>
@@ -1068,6 +1075,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
             {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
             <ReconciliationV3RulesStage
               sessionId={sessionId || ""}
+              isReadOnly={isSessionCompleted}
               onBackToMapping={() => {
                 setCurrentStage("mapping");
                 if (sessionId) navigate(`/reconciliations-v3/${sessionId}/mapping`);
@@ -1091,6 +1099,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
             {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
             <ReconciliationV2ResultsStage
               sessionId={sessionId || ""}
+              isReadOnly={isSessionCompleted}
               onBackToRules={() => {
                 setCurrentStage("rules");
                 if (sessionId) navigate(`/reconciliations-v3/${sessionId}/rules`);
@@ -1113,6 +1122,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
             {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
             <ReconciliationV2SummaryStage
               sessionId={sessionId || ""}
+              isReadOnly={isSessionCompleted}
               onBack={() => {
                 setCurrentStage("results");
                 if (sessionId) navigate(`/reconciliations-v3/${sessionId}/results`);
