@@ -5,6 +5,7 @@
 - **Checkpoint Name**: `Stage 1 Sample Button Removal & High-Throughput Engine Card Text Standardization`
 - **Current Branch**: `stable-copilot-quickreconcile`
 - **Checkpoint Tag**: `tars-2026-09-21-sample-button-card-text-checkpoint`
+- **Current HEAD Commit**: `067ceb1`
 - **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Current Implementation Summary**:
   1. *Removal of "Load 20k Row Sample" Button (`ReconciliationV3Workspace.tsx`)*:
