@@ -1126,12 +1126,12 @@ export const ReconciliationV2Workspace: React.FC = () => {
                     <div className="v2-trust-icon-box blue">
                       <Zap size={15} />
                     </div>
-                    <h4>Instant Ingestion for 5 Lakh+ Rows</h4>
+                    <h4>Instant High-Throughput Ingestion</h4>
                   </div>
                   <p>
                     Processes large multi-sheet Excel workbooks in seconds with zero browser freezing and memory virtualization.
                   </p>
-                  <div className="v2-trust-foot">Tested up to 500,000 Line Items</div>
+                  <div className="v2-trust-foot">Streaming Dual-Ledger Ingestion Engine</div>
                 </div>
               </div>
 

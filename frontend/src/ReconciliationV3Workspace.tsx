@@ -676,16 +676,6 @@ export const ReconciliationV3Workspace: React.FC = () => {
                 </div>
 
                 <div className="v2-stage-hero-actions">
-                  <button
-                    type="button"
-                    className="v2-hero-btn-secondary"
-                    onClick={() => executeFastUploadAndMapping(undefined, true)}
-                    disabled={isSessionCompleted}
-                    title={isSessionCompleted ? "Session audit ledger finalized (Read-Only)" : "Load pre-installed 20,000-row benchmark workbook"}
-                  >
-                    <Sparkles size={13} className="text-amber-400" />
-                    <span>Load 20k Row Sample</span>
-                  </button>
                   {effectiveFileName && (
                     <button
                       type="button"
@@ -710,12 +700,14 @@ export const ReconciliationV3Workspace: React.FC = () => {
                         if (sessionId) navigate(`/reconciliations-v3/${sessionId}/mapping`);
                       } else if (reconFile) {
                         executeFastUploadAndMapping(reconFile, false);
-                      } else {
-                        executeFastUploadAndMapping(undefined, true);
                       }
                     }}
-                    disabled={isUploadingAndCorrelating}
-                    title="Proceed to Stage 2: Schema Mapping"
+                    disabled={isUploadingAndCorrelating || (!correlationResult && !reconFile)}
+                    title={
+                      !correlationResult && !reconFile
+                        ? "Please select a reconciliation workbook file first"
+                        : "Proceed to Stage 2: Schema Mapping"
+                    }
                   >
                     {isUploadingAndCorrelating ? (
                       <>
@@ -959,12 +951,12 @@ export const ReconciliationV3Workspace: React.FC = () => {
                       <div className="v2-trust-icon-box blue">
                         <Zap size={15} />
                       </div>
-                      <h4>Instant Ingestion for 20,000+ Rows</h4>
+                      <h4>Instant High-Throughput Ingestion</h4>
                     </div>
                     <p>
                       Processes large single-workbook files in seconds with zero browser freezing and memory virtualization.
                     </p>
-                    <div className="v2-trust-foot">Tested on 20,000 Rows Benchmark</div>
+                    <div className="v2-trust-foot">Streaming XML Ingestion Engine</div>
                   </div>
                 </div>
 

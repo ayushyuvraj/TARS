@@ -1,5 +1,22 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Stage 1 Sample Button Removal & High-Throughput Engine Card Text Standardization (21st September 2026)
+
+- **Checkpoint Name**: `Stage 1 Sample Button Removal & High-Throughput Engine Card Text Standardization`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-21-sample-button-card-text-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Removal of "Load 20k Row Sample" Button (`ReconciliationV3Workspace.tsx`)*:
+     - Removed the secondary `Load 20k Row Sample` hero button from Stage 1 setup.
+     - Updated primary `Proceed to Schema Mapping` button to disable (`disabled={!correlationResult && !reconFile}`) until a user uploads or selects a file.
+  2. *High-Throughput Engine Card Text Standardization (`ReconciliationV3Workspace.tsx`, `ReconciliationV2Workspace.tsx`)*:
+     - Removed hardcoded benchmark references ("20,000+ Rows", "20,000 Rows Benchmark", "5 Lakh+ Rows", "500,000 Line Items").
+     - Standardized V3 card title to `Instant High-Throughput Ingestion` and footer badge to `Streaming XML Ingestion Engine`.
+     - Standardized V2 card title to `Instant High-Throughput Ingestion` and footer badge to `Streaming Dual-Ledger Ingestion Engine`.
+
+---
+
 ## Reconciliation Stepper Ingestion Guards & Top Header Standardization (21st September 2026)
 
 - **Checkpoint Name**: `Reconciliation Stepper Ingestion Guards & Top Header Standardization`
