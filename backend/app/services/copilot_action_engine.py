@@ -302,7 +302,7 @@ class CopilotActionEngine:
         """Determines if a prompt is completely unrelated to TARS, KPMG, GST, ledgers, or data reconciliation."""
         msg = prompt.lower().strip()
 
-        # In-domain whitelist terms (GST, accounting, ledgers, TARS, KPMG, reconciliation concepts)
+        # In-domain whitelist terms (GST, accounting, ledgers, TARS, KPMG, reconciliation concepts, product capabilities)
         in_domain_terms = [
             "tars", "kpmg", "gst", "gstin", "gstr", "gstr-2b", "gstr-1", "gstr-3b", "gstr2b",
             "reconcil", "reconciliation", "ledger", "purchase register", "pr", "erp",
@@ -313,7 +313,9 @@ class CopilotActionEngine:
             "waterfall", "variance", "threshold", "rule", "rules", "profile", "export",
             "mapping", "schema", "audit", "workbench", "ingestion", "dispatch",
             "row", "record", "candidate", "mismatch", "turnover", "hsn", "sac", "pos",
-            "rate", "amount", "total", "value", "summary", "kpi", "pass", "screen", "stage", "page"
+            "rate", "amount", "total", "value", "summary", "kpi", "pass", "screen", "stage", "page",
+            "product", "features", "capabilities", "what can i do", "what can you do", "how does tars",
+            "how to use", "how do i use", "overview", "guide", "workflow", "help"
         ]
         for term in in_domain_terms:
             if re.search(r"\b" + re.escape(term) + r"\b", msg):
@@ -376,7 +378,8 @@ class CopilotActionEngine:
             f"STRICT DOMAIN GUARDRAIL:",
             f"- You are exclusively an assistant for TARS (KPMG GST Reconciliation Workbench).",
             f"- You MUST NEVER answer questions unrelated to TARS, KPMG, GST taxation, financial ledgers, reconciliation data, compliance rules, or accounting.",
-            f"- If the user asks about ANY unrelated topic (e.g. food, recipes, cooking, movies, entertainment, sports, weather, jokes, general programming, casual trivia, world news, etc.), politely decline with:",
+            f"- Product & Workflow Guidance (e.g. 'what can I do with this product?', 'what can you do?', 'how does TARS work?', 'how to reconcile?'): These inquiries are 100% IN-DOMAIN. Answer them thoroughly and helpfully by explaining TARS's automated GST reconciliation capabilities, stages, and active workspace tools.",
+            f"- If the user asks about ANY truly unrelated off-topic subject (e.g. food, recipes, cooking, movies, entertainment, sports, weather, jokes, general programming, casual trivia, world news, etc.), politely decline with:",
             f"  'I am Katalyst, a specialized assistant for TARS GST reconciliation, KPMG tax compliance, and financial data analysis. I can only assist with questions related to this product, your reconciliation data, rules, statutory compliance, and workflow guidance.'",
             f"Rules & Guidance:",
             f"- If the user asks whether to select a rule, evaluate its risk, statutory alignment (GST rules), and variance implications.",
@@ -464,17 +467,11 @@ class CopilotActionEngine:
             total_records = exact + tolerance + near_match + unresolved
 
             thought = (
-                f"Analyzing user query: '{prompt}'.\n"
-                f"Target metric: Unresolved exceptions within Stage 4 Waterfall Matrix.\n"
-                f"Introspecting live session state (Session: {str(session_id)[:8] if session_id else 'active'})...\n"
-                f"Retrieved active matrix distribution:\n"
-                f"  - Exact Matches: {exact:,}\n"
-                f"  - Numerical Tolerance: {tolerance:,}\n"
-                f"  - Near Matches: {near_match:,}\n"
-                f"  - Unresolved Records: {unresolved:,}\n"
-                f"Total processed ledger entries: {total_records:,}.\n"
-                f"Evaluating compliance risk under GST Rule 36(4): Credit on {unresolved:,} unlinked items is blocked until matched or manually approved.\n"
-                f"Formulating direct executive response with exact active ledger count."
+                f"🎯 Intent: Querying unresolved exceptions within Stage 4 Waterfall Matrix.\n"
+                f"🔍 Telemetry: Introspecting active session (Session: {str(session_id)[:8] if session_id else 'active'}).\n"
+                f"📊 Distribution: Exact: {exact:,} | Tolerance: {tolerance:,} | Near: {near_match:,} | Unresolved: {unresolved:,} (Total: {total_records:,}).\n"
+                f"⚖️ Statutory Compliance: Evaluating GST Rule 36(4) credit block for {unresolved:,} unlinked records.\n"
+                f"💡 Synthesis: Formulating executive summary with verified ledger count."
             )
             answer = f"Unresolved records: **{unresolved:,}**."
             if total_records > 0:
@@ -486,11 +483,11 @@ class CopilotActionEngine:
         if "near match" in p_lower:
             near_count = results_summary.get("nearMatch", 0) if results_summary else 0
             thought = (
-                f"Evaluating conceptual inquiry: 'Near Match' within Stage 3 Rules Engine.\n"
-                f"Inspecting active rules configuration for Session {str(session_id)[:8] if session_id else 'active'}...\n"
-                f"Reviewing Rule R-03 heuristics: Normalized invoice number Levenshtein distance <= 2, invoice date proximity <= 15 days.\n"
-                f"Active matrix state reflects {near_count:,} records categorized under this pass.\n"
-                f"Synthesizing operational guidance for audit verification."
+                f"🎯 Intent: Evaluating conceptual inquiry on 'Near Match' criteria in Rules Engine.\n"
+                f"🔍 Rules Inspection: Inspecting active heuristics for Session {str(session_id)[:8] if session_id else 'active'}.\n"
+                f"⚖️ Criteria: Rule R-03 heuristics (Levenshtein distance <= 2, invoice date lag <= 15 days).\n"
+                f"📊 Matrix State: Active matrix reflects {near_count:,} records categorized under Near Match.\n"
+                f"💡 Synthesis: Formulating operational guidance for audit verification."
             )
             answer = (
                 "A **Near Match** in TARS represents candidate pairings where counterparty GSTINs match, but secondary fields have slight variations:\n\n"
@@ -501,25 +498,76 @@ class CopilotActionEngine:
             )
             return thought, answer
 
-        # 3. Selected record query
-        if sel_rec or "record" in p_lower or "invoice" in p_lower:
-            rec_id = stage_context.get("selectedRecordId", "REC-01") if stage_context else "selected record"
+        # 3. Product capabilities / help query
+        is_product_query = any(phrase in p_lower for phrase in [
+            "what can i do", "what can you do", "what does this product", "what is this product",
+            "what can this product", "how do i use", "how does tars work", "what does tars do",
+            "how to use this", "features of", "capabilities", "product capabilities",
+            "what is tars", "tell me about tars", "what is this tool"
+        ])
+        if is_product_query:
+            stg_num = stage_context.get("stageNumber", 1) if stage_context else 1
             thought = (
-                f"Parsing user prompt for record-level audit inspection.\n"
-                f"Target record ID: {rec_id}.\n"
-                f"Row telemetry retrieved: {json.dumps(sel_rec, default=str) if sel_rec else 'Row telemetry available in matrix'}.\n"
-                f"Comparing GSTR-2B filing line against Purchase Register ERP line items...\n"
-                f"Formulating grounded audit explanation."
+                f"🎯 Intent: Inquiring about TARS system capabilities and workflow automation.\n"
+                f"📍 Active Location: {stg_lbl} (Stage {stg_num}).\n"
+                f"⚖️ Core Architecture: Dual Ingestion → AI Mapping → Multi-Pass Matching → Exception Matrix → ERP Dispatch.\n"
+                f"💡 Synthesis: Providing comprehensive walkthrough of TARS capabilities and current stage actions."
             )
+            answer = (
+                "### What You Can Do with TARS\n\n"
+                "**TARS** (Tax Agentic Reconciliation System) is an autonomous GST reconciliation workbench designed to match your ERP Purchase Register against counterparty GSTR-2B filings to secure Input Tax Credit (ITC) under Section 16(2)(aa):\n\n"
+                "- **Dual Workbook Ingestion (Stage 1)**: Simultaneously upload and parse 20,000+ row government GSTR-2B files and ERP Purchase Registers.\n"
+                "- **AI Schema Correlation (Stage 2)**: Automatically link mismatched column headers with confidence scoring.\n"
+                "- **Configurable Rules Engine (Stage 3)**: Execute deterministic exact matching, numeric tolerances (₹/%), and fuzzy/near-match heuristics (Levenshtein date/invoice proximity).\n"
+                "- **Interactive Waterfall Matrix (Stage 4)**: Inspect matched, near-matched, and unresolved records, reclassify candidates, and resolve variances.\n"
+                "- **Audit Ledger & Export Dispatch (Stage 5)**: Generate audit-proof trail ledgers and dispatch verified records directly to ERP.\n\n"
+                f"You are currently on **{stg_lbl}**. Upload your files or ask me to guide you through the next workflow step!"
+            )
+            return thought, answer
+
+        # 4. Selected record query (STRICT: only if prompt actually refers to a record, row, or invoice)
+        is_record_query = any(w in p_lower for w in ["record", "invoice", "row", "entry", "item", "rec_"]) or (
+            sel_rec and isinstance(sel_rec, dict) and sel_rec.get("document_number") and str(sel_rec["document_number"]).lower() in p_lower
+        )
+        if is_record_query and sel_rec:
+            rec_id = stage_context.get("selectedRecordId", "REC-01") if stage_context else "selected record"
+            if isinstance(sel_rec, dict):
+                doc_no = sel_rec.get("document_number") or sel_rec.get("Invoice") or (sel_rec.get("gstr_preview") or {}).get("document_number") or rec_id
+                gstin = sel_rec.get("gstin") or sel_rec.get("GSTIN") or (sel_rec.get("gstr_preview") or {}).get("gstin") or "N/A"
+                doc_date = sel_rec.get("document_date") or sel_rec.get("Date") or "N/A"
+                bucket = str(sel_rec.get("bucket", "EXACT_MATCH")).replace("_", " ").title()
+                taxable = float(sel_rec.get("taxable_value") or sel_rec.get("Taxable") or 0)
+                tax = float(sel_rec.get("tax_amount") or sel_rec.get("Tax") or 0)
+                pass_name = sel_rec.get("matched_by_pass") or sel_rec.get("kics_verdict") or "Pass 01: Direct Exact"
+                variances = sel_rec.get("variances") if isinstance(sel_rec.get("variances"), dict) else {}
+                tax_diff = float(variances.get("tax_diff", 0))
+
+                thought = (
+                    f"🎯 Intent: Record-level audit inspection for {rec_id}.\n"
+                    f"📄 Document: Invoice {doc_no} (Date: {doc_date}).\n"
+                    f"🏢 Counterparty: GSTIN {gstin}.\n"
+                    f"💰 Financials: Taxable ₹{taxable:,.2f} | Tax ₹{tax:,.2f} (Tax Variance: ₹{tax_diff:,.2f}).\n"
+                    f"⚖️ Reconciliation Status: {bucket} ({pass_name}).\n"
+                    f"🔍 Verification: Comparing GSTR-2B filing line against Purchase Register ERP line items.\n"
+                    f"💡 Synthesis: Formulating grounded audit guidance for {rec_id}."
+                )
+            else:
+                thought = (
+                    f"🎯 Intent: Record-level audit inspection for {rec_id}.\n"
+                    f"🔍 Telemetry: Inspecting active row parameters in Waterfall Match Matrix.\n"
+                    f"⚖️ Verification: Cross-referencing filing line items against ERP entries.\n"
+                    f"💡 Synthesis: Formulating grounded audit explanation."
+                )
             answer = f"Inspecting **Record {rec_id}**: Review the candidate matches in the center preview panel. Check for invoice date drift or suffix variations between your Purchase Register and the vendor's GSTR-2B filing."
             return thought, answer
 
-        # 4. What is this screen / where am I
+        # 5. What is this screen / where am I
         if any(w in p_lower for w in ["what is this screen", "what is this page", "explain this screen", "where am i"]):
             thought = (
-                f"Analyzing workspace navigation state.\n"
-                f"Active Location: {stg_lbl} (Stage key: {curr_stg}).\n"
-                f"Retrieving stage purpose, available automation tools, and statutory compliance objectives."
+                f"🎯 Intent: Workspace navigation query for active screen.\n"
+                f"📍 Active Location: {stg_lbl} (Stage key: {curr_stg}).\n"
+                f"⚖️ Objectives: Retrieving stage purpose, workflow automation, and compliance goals.\n"
+                f"💡 Synthesis: Formulating screen overview and capabilities."
             )
             answer = stage_explanations.get(curr_stg, f"You are on **{stg_lbl}**.")
             return thought, answer
@@ -533,11 +581,10 @@ class CopilotActionEngine:
         files_str = ", ".join(files_info) if files_info else "No files attached"
 
         thought = (
-            f"Analyzing query: '{prompt}'.\n"
-            f"Active location: {stg_lbl}.\n"
-            f"Session telemetry: {files_str}.\n"
-            f"Evaluating Section 16(2)(aa) statutory guidelines and stage workflow constraints.\n"
-            f"Synthesizing advisory guidance tailored to {stg_lbl}."
+            f"🎯 Intent: Analyzing prompt '{prompt}'.\n"
+            f"📍 Active Context: {stg_lbl} (Session: {files_str}).\n"
+            f"⚖️ Regulatory Scope: Section 16(2)(aa) statutory guidelines and stage workflow constraints.\n"
+            f"💡 Synthesis: Formulating context-aware guidance tailored to {stg_lbl}."
         )
         answer = stage_explanations.get(
             curr_stg,

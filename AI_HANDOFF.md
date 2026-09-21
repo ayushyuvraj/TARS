@@ -1,5 +1,32 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Katalyst Copilot: Contrast, Timer, Trace Reorganization & Intent Routing Fix (21st September 2026)
+
+- **Checkpoint Name**: `Katalyst Copilot: Contrast, Timer, Trace Reorganization & Intent Routing Fix`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-21-katalyst-trace-checkpoint`
+- **Current HEAD Commit**: `06f598e`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *User Message Contrast Fix (`copilot_agentic.css` & `CopilotPanel.tsx`)*:
+     - Fixed illegible black text on blue user message bubbles in `.theme-light` by introducing explicit white text color rules (`color: #ffffff !important`) for `.tars-msg.is-user .tars-msg-bubble` and all descendant tags (`*`, `p`, `span`, `strong`, `li`, `code`).
+     - Removed hardcoded inline style `color: "#cbd5e1"` on user bubble list items.
+     - Scoped light-theme assistant text colors cleanly to `.tars-msg.is-assistant` and `.tars-copilot-thought-accordion`.
+  2. *Static Timer Premature Accordion Bug Fix*:
+     - Removed hardcoded `: 2100` fallback from `ThoughtAccordion` in `CopilotPanel.tsx`.
+     - Modified accordion render guard to suppress `ThoughtAccordion` while reasoning is actively in-flight (`!(busy && isLast && reasoning_duration_ms == null)`).
+     - Captured real elapsed millisecond duration in `ask()` (`reasoningDurationMs = Math.round(now - start)`) when transitioning from reasoning to answer streaming.
+  3. *Scattered Thought Trace Reorganization & UI Formatting*:
+     - Refactored `_generate_dynamic_fallback_cognition` in `copilot_action_engine.py` to format record inspection thoughts into clean executive bullet phases (`🎯 Intent`, `📄 Document`, `🏢 Counterparty`, `💰 Financials`, `⚖️ Status`, `🔍 Verification`, `💡 Synthesis`) instead of raw JSON payload dumps.
+     - Built `OrganizedThoughtTrace` and `TracePropertyCard` components in `CopilotPanel.tsx` with CSS grid key-value property cards, category badges (`INTENT`, `FINANCIALS`, `DOCUMENT`), and collapsible `[View Raw JSON Payload]` toggles.
+     - Added a "Copy trace" action button with clipboard feedback inside `ThoughtAccordion`.
+  4. *Intent Routing & Product Domain Refusal Fix*:
+     - Added product capability prompt handler (`is_product_query`) in `copilot_action_engine.py` for queries like *"what can I do with this product?"*, *"what can you do?"*, returning a structured 5-stage GST workflow guide.
+     - Restricted record inspection thoughts (`is_record_query`) to trigger ONLY when the prompt explicitly mentions record/invoice keywords (`"record"`, `"invoice"`, `"row"`, `"entry"`, `"item"`, `"rec_"`).
+     - Added product domain terms (`"product"`, `"features"`, `"capabilities"`, `"what can i do"`) to `in_domain_terms` and updated system prompts so product guidance is recognized as 100% in-domain.
+
+---
+
 ## Sidebar Navigation: Consolidated Reconciliation Menu with Single Ledger & Double Ledger Hover Flyout (20th September 2026)
 
 - **Checkpoint Name**: `Sidebar Navigation: Consolidated Reconciliation Menu with Single Ledger & Double Ledger Hover Flyout`

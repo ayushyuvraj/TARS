@@ -1056,13 +1056,32 @@ button.tars-copilot-sidebar-collapse-btn:hover svg {
 
 .tars-msg.is-user .tars-msg-bubble {
   background: linear-gradient(135deg, var(--kpmg-heritage-navy, #00338d) 0%, var(--kpmg-cobalt, #005eb8) 100%);
-  color: #f8fafc;
+  color: #ffffff !important;
   border-radius: 12px 12px 2px 12px;
   padding: 10px 14px;
   font-size: 12.5px;
   line-height: 1.5;
   box-shadow: 0 4px 16px rgba(0, 51, 141, 0.28);
   border: 1px solid rgba(114, 205, 244, 0.25);
+}
+
+.tars-msg.is-user .tars-msg-bubble,
+.tars-msg.is-user .tars-msg-bubble *,
+.tars-msg.is-user .tars-msg-bubble p,
+.tars-msg.is-user .tars-msg-bubble span,
+.tars-msg.is-user .tars-msg-bubble li {
+  color: #ffffff !important;
+}
+
+.tars-msg.is-user .tars-msg-bubble strong {
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+.tars-msg.is-user .tars-msg-bubble code {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.35) !important;
 }
 
 /* Assistant Message Area */
@@ -1278,6 +1297,181 @@ button.tars-copilot-sidebar-collapse-btn:hover svg {
 .tars-copilot-thought-raw strong {
   color: var(--kpmg-glacier, #72cdf4);
   font-weight: 600;
+}
+
+/* Executive Audit Trace Timeline */
+.tars-copilot-trace-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0;
+  position: relative;
+  padding-left: 2px;
+}
+
+.tars-trace-timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  position: relative;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.tars-trace-bullet-wrapper {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  border-radius: 4px;
+  background: rgba(0, 145, 218, 0.12);
+  border: 1px solid rgba(0, 145, 218, 0.2);
+}
+
+.tars-trace-item-body {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--kpmg-text-secondary, #cbd5e1);
+}
+
+.tars-trace-tag {
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: rgba(0, 145, 218, 0.2);
+  color: var(--kpmg-glacier, #72cdf4);
+  border: 1px solid rgba(0, 145, 218, 0.25);
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.tars-trace-text {
+  flex: 1;
+  min-width: 180px;
+}
+
+/* Inspected Telemetry Property Card */
+.tars-trace-property-card {
+  width: 100%;
+  margin: 6px 0;
+  padding: 10px 12px;
+  background: rgba(8, 17, 30, 0.85);
+  border: 1px solid rgba(0, 145, 218, 0.22);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.tars-trace-prop-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 7px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tars-trace-prop-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--kpmg-glacier, #72cdf4);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+}
+
+.tars-trace-bucket-badge {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: #0284c7;
+  color: #ffffff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tars-trace-prop-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(135px, 1fr));
+  gap: 6px 12px;
+}
+
+.tars-trace-prop-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.tars-prop-k {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.tars-prop-v {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #f1f5f9;
+  word-break: break-all;
+}
+
+.tars-trace-raw-toggle {
+  background: transparent;
+  border: none;
+  font-size: 10px;
+  color: #64748b;
+  cursor: pointer;
+  padding: 2px 4px;
+  text-decoration: underline;
+}
+
+.tars-trace-raw-toggle:hover {
+  color: var(--kpmg-glacier, #72cdf4);
+}
+
+.tars-trace-raw-json {
+  margin: 6px 0 0 0;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, "Fira Code", monospace;
+  font-size: 10px;
+  color: #94a3b8;
+  max-height: 140px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.tars-trace-copy-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 10px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+}
+
+.tars-trace-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #f1f5f9;
 }
 
 .tars-copilot-live-thought-preview {
@@ -1731,21 +1925,43 @@ button.tars-copilot-sidebar-collapse-btn:hover svg {
   box-shadow: 0 4px 16px rgba(0, 51, 141, 0.22) !important;
 }
 
+.theme-light .tars-msg.is-user .tars-msg-bubble,
+.theme-light .tars-msg.is-user .tars-msg-bubble *,
+.theme-light .tars-msg.is-user .tars-msg-bubble p,
+.theme-light .tars-msg.is-user .tars-msg-bubble span,
+.theme-light .tars-msg.is-user .tars-msg-bubble li {
+  color: #ffffff !important;
+}
+
+.theme-light .tars-msg.is-user .tars-msg-bubble strong {
+  color: #ffffff !important;
+  font-weight: 700;
+}
+
+.theme-light .tars-msg.is-user .tars-msg-bubble code {
+  background: rgba(255, 255, 255, 0.2) !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(255, 255, 255, 0.35) !important;
+}
+
 /* Assistant Message Area */
 .theme-light .tars-msg.is-assistant .tars-msg-bubble {
   background: transparent !important;
   color: #1e293b !important;
 }
 
-.theme-light .tars-copilot-markdown p {
+.theme-light .tars-msg.is-assistant .tars-copilot-markdown p,
+.theme-light .tars-copilot-thought-accordion .tars-copilot-markdown p {
   color: #1e293b !important;
 }
 
-.theme-light .tars-copilot-markdown strong {
+.theme-light .tars-msg.is-assistant .tars-copilot-markdown strong,
+.theme-light .tars-copilot-thought-accordion .tars-copilot-markdown strong {
   color: #0f172a !important;
 }
 
-.theme-light .tars-copilot-markdown code {
+.theme-light .tars-msg.is-assistant .tars-copilot-markdown code,
+.theme-light .tars-copilot-thought-accordion .tars-copilot-markdown code {
   background: #eef2f6 !important;
   color: #00338d !important;
   border: 1px solid #dce3ea !important;
@@ -1769,7 +1985,8 @@ button.tars-copilot-sidebar-collapse-btn:hover svg {
   color: #334155 !important;
 }
 
-.theme-light .tars-copilot-markdown li {
+.theme-light .tars-msg.is-assistant .tars-copilot-markdown li,
+.theme-light .tars-copilot-thought-accordion .tars-copilot-markdown li {
   color: #334155 !important;
 }
 
@@ -1830,6 +2047,68 @@ button.tars-copilot-sidebar-collapse-btn:hover svg {
 
 .theme-light .tars-copilot-telemetry-line .step-ms {
   color: #64748b !important;
+}
+
+/* Light Theme Trace Timeline Overrides */
+.theme-light .tars-trace-bullet-wrapper {
+  background: rgba(0, 94, 184, 0.08) !important;
+  border: 1px solid rgba(0, 94, 184, 0.15) !important;
+}
+
+.theme-light .tars-trace-item-body {
+  color: #334155 !important;
+}
+
+.theme-light .tars-trace-tag {
+  background: #e0f2fe !important;
+  color: #00338d !important;
+  border: 1px solid #bae6fd !important;
+}
+
+.theme-light .tars-trace-property-card {
+  background: #ffffff !important;
+  border: 1px solid #dce3ea !important;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06) !important;
+}
+
+.theme-light .tars-trace-prop-header {
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+
+.theme-light .tars-trace-prop-title {
+  color: #00338d !important;
+}
+
+.theme-light .tars-trace-prop-cell .tars-prop-k {
+  color: #64748b !important;
+}
+
+.theme-light .tars-trace-prop-cell .tars-prop-v {
+  color: #0f172a !important;
+}
+
+.theme-light .tars-trace-raw-toggle {
+  color: #64748b !important;
+}
+
+.theme-light .tars-trace-raw-toggle:hover {
+  color: #00338d !important;
+}
+
+.theme-light .tars-trace-raw-json {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #334155 !important;
+}
+
+.theme-light .tars-trace-copy-btn {
+  border: 1px solid #dce3ea !important;
+  color: #64748b !important;
+}
+
+.theme-light .tars-trace-copy-btn:hover {
+  background: #f1f5f9 !important;
+  color: #0f172a !important;
 }
 
 /* Light Mode Live Telemetry Banner during generation */

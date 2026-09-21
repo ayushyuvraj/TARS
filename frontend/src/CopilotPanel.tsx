@@ -23,6 +23,8 @@ import {
   PanelLeftOpen,
   Sun,
   Moon,
+  Copy,
+  Check,
 } from "lucide-react";
 import { KatalystKBadge } from "./KatalystKBadge";
 import "./copilot_agentic.css";
@@ -39,6 +41,20 @@ interface CopilotPanelProps {
 }
 
 const CLI_SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function formatSpan(str: string): React.ReactNode {
+  // Basic regex parser for inline code and bold
+  const parts = str.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return <code key={i}>{part.slice(1, -1)}</code>;
+    }
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return part;
+  });
+}
 
 function renderFormattedContent(text: string) {
   if (!text) return null;
@@ -85,20 +101,6 @@ function renderFormattedContent(text: string) {
   // Render paragraphs with bold and inline code formatting
   const paragraphs = cleaned.split("\n\n").filter((p) => p.trim());
 
-  const formatSpan = (str: string) => {
-    // Basic regex parser for inline code and bold
-    const parts = str.split(/(`[^`]+`|\*\*[^*]+\*\*)/g);
-    return parts.map((part, i) => {
-      if (part.startsWith("`") && part.endsWith("`")) {
-        return <code key={i}>{part.slice(1, -1)}</code>;
-      }
-      if (part.startsWith("**") && part.endsWith("**")) {
-        return <strong key={i}>{part.slice(2, -2)}</strong>;
-      }
-      return part;
-    });
-  };
-
   return (
     <div className="tars-copilot-markdown">
       {paragraphs.map((p, idx) => {
@@ -140,7 +142,7 @@ function renderFormattedContent(text: string) {
           return (
             <ul key={idx} style={{ margin: "6px 0 10px 18px", padding: 0 }}>
               {items.map((item, iIdx) => (
-                <li key={iIdx} style={{ margin: "3px 0", color: "#cbd5e1" }}>
+                <li key={iIdx} style={{ margin: "3px 0" }}>
                   {formatSpan(item)}
                 </li>
               ))}
@@ -148,6 +150,223 @@ function renderFormattedContent(text: string) {
           );
         }
         return <p key={idx}>{formatSpan(trimmed)}</p>;
+      })}
+    </div>
+  );
+}
+
+function extractJsonFromText(text: string): { prefix: string; data: Record<string, any> | null; suffix: string } {
+  const startIdx = text.indexOf("{");
+  const endIdx = text.lastIndexOf("}");
+  if (startIdx !== -1 && endIdx > startIdx) {
+    const candidate = text.slice(startIdx, endIdx + 1);
+    try {
+      const parsed = JSON.parse(candidate);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        return {
+          prefix: text.slice(0, startIdx).trim(),
+          data: parsed,
+          suffix: text.slice(endIdx + 1).trim(),
+        };
+      }
+    } catch {
+      // Not JSON
+    }
+  }
+  return { prefix: text, data: null, suffix: "" };
+}
+
+function parseTraceLine(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  // Check for emoji or bullet prefixes
+  const phaseMatch = trimmed.match(/^([🎯🔍📊⚖️💡📄🏢💰📍•\-\*]\s*)(.+)$/u);
+  if (phaseMatch) {
+    const glyph = phaseMatch[1].trim();
+    const rest = phaseMatch[2].trim();
+    const colonIdx = rest.indexOf(":");
+    if (colonIdx > 0 && colonIdx < 30) {
+      return {
+        glyph,
+        tag: rest.slice(0, colonIdx).trim(),
+        content: rest.slice(colonIdx + 1).trim(),
+      };
+    }
+    return {
+      glyph,
+      tag: null,
+      content: rest,
+    };
+  }
+
+  // Check if starts with "Label:"
+  const colonMatch = trimmed.match(/^([A-Za-z\s]{3,24}):\s*(.+)$/);
+  if (colonMatch) {
+    return {
+      glyph: "›",
+      tag: colonMatch[1].trim(),
+      content: colonMatch[2].trim(),
+    };
+  }
+
+  return {
+    glyph: "›",
+    tag: null,
+    content: trimmed,
+  };
+}
+
+function TracePropertyCard({ data }: { data: Record<string, any> }) {
+  const [showRaw, setShowRaw] = useState(false);
+
+  const docNo =
+    data.document_number ||
+    data.Invoice ||
+    (data.gstr_preview && data.gstr_preview.document_number) ||
+    data.id;
+  const gstin = data.gstin || data.GSTIN || (data.gstr_preview && data.gstr_preview.gstin);
+  const docDate =
+    data.document_date ||
+    data.Date ||
+    (data.gstr_preview && data.gstr_preview.document_date);
+  const bucket = data.bucket || data.kics_verdict || "MATCHED";
+  const taxable = data.taxable_value !== undefined ? data.taxable_value : data.Taxable;
+  const tax = data.tax_amount !== undefined ? data.tax_amount : data.Tax;
+  const passName = data.matched_by_pass;
+  const variances = data.variances;
+
+  return (
+    <div className="tars-trace-property-card">
+      <div className="tars-trace-prop-header">
+        <span className="tars-trace-prop-title">
+          <Database size={12} style={{ marginRight: 5, verticalAlign: "middle" }} />
+          Inspected Telemetry Payload
+        </span>
+        {bucket && (
+          <span className="tars-trace-bucket-badge">
+            {String(bucket).replace("_", " ")}
+          </span>
+        )}
+      </div>
+
+      <div className="tars-trace-prop-grid">
+        {data.id && (
+          <div className="tars-trace-prop-cell">
+            <span className="tars-prop-k">Record ID</span>
+            <span className="tars-prop-v">{String(data.id)}</span>
+          </div>
+        )}
+        {docNo && (
+          <div className="tars-trace-prop-cell">
+            <span className="tars-prop-k">Invoice Number</span>
+            <span className="tars-prop-v">{String(docNo)}</span>
+          </div>
+        )}
+        {docDate && (
+          <div className="tars-trace-prop-cell">
+            <span className="tars-prop-k">Document Date</span>
+            <span className="tars-prop-v">{String(docDate)}</span>
+          </div>
+        )}
+        {gstin && (
+          <div className="tars-trace-prop-cell">
+            <span className="tars-prop-k">Counterparty GSTIN</span>
+            <span className="tars-prop-v">{String(gstin)}</span>
+          </div>
+        )}
+        {taxable !== undefined && (
+          <div className="tars-trace-prop-cell">
+            <span className="tars-prop-k">Taxable Value</span>
+            <span className="tars-prop-v">₹{Number(taxable).toLocaleString("en-IN")}</span>
+          </div>
+        )}
+        {tax !== undefined && (
+          <div className="tars-trace-prop-cell">
+            <span className="tars-prop-k">Tax Amount</span>
+            <span className="tars-prop-v">₹{Number(tax).toLocaleString("en-IN")}</span>
+          </div>
+        )}
+        {passName && (
+          <div className="tars-trace-prop-cell">
+            <span className="tars-prop-k">Engine Pass</span>
+            <span className="tars-prop-v">{String(passName)}</span>
+          </div>
+        )}
+        {variances && typeof variances === "object" && variances.tax_diff !== undefined && (
+          <div className="tars-trace-prop-cell">
+            <span className="tars-prop-k">Tax Variance</span>
+            <span className="tars-prop-v">₹{Number(variances.tax_diff).toLocaleString("en-IN")}</span>
+          </div>
+        )}
+      </div>
+
+      <div style={{ marginTop: 6, display: "flex", justifyContent: "flex-end" }}>
+        <button
+          type="button"
+          onClick={() => setShowRaw(!showRaw)}
+          className="tars-trace-raw-toggle"
+        >
+          {showRaw ? "Hide Raw Payload" : "View Raw JSON Payload"}
+        </button>
+      </div>
+
+      {showRaw && (
+        <pre className="tars-trace-raw-json">
+          {JSON.stringify(data, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+function OrganizedThoughtTrace({ thoughtContent }: { thoughtContent: string }) {
+  if (!thoughtContent) return null;
+
+  const rawLines = thoughtContent.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  return (
+    <div className="tars-copilot-trace-timeline">
+      {rawLines.map((line, idx) => {
+        const { prefix, data, suffix } = extractJsonFromText(line);
+
+        if (data) {
+          return (
+            <div key={idx} className="tars-trace-timeline-item">
+              <div className="tars-trace-bullet-wrapper">
+                <span className="tars-trace-bullet-glyph">📋</span>
+              </div>
+              <div className="tars-trace-item-body">
+                {prefix && (
+                  <div className="tars-trace-text" style={{ width: "100%", marginBottom: 4 }}>
+                    {formatSpan(prefix)}
+                  </div>
+                )}
+                <TracePropertyCard data={data} />
+                {suffix && (
+                  <div className="tars-trace-text" style={{ width: "100%", marginTop: 4 }}>
+                    {formatSpan(suffix)}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        const parsed = parseTraceLine(line);
+        if (!parsed) return null;
+
+        return (
+          <div key={idx} className="tars-trace-timeline-item">
+            <div className="tars-trace-bullet-wrapper">
+              <span className="tars-trace-bullet-glyph">{parsed.glyph}</span>
+            </div>
+            <div className="tars-trace-item-body">
+              {parsed.tag && <span className="tars-trace-tag">{parsed.tag}</span>}
+              <span className="tars-trace-text">{formatSpan(parsed.content)}</span>
+            </div>
+          </div>
+        );
       })}
     </div>
   );
@@ -163,13 +382,27 @@ function ThoughtAccordion({
   durationMs?: number;
 }) {
   const [isOpen, setIsOpen] = useState(false);
-  const totalMs = durationMs || (steps && steps.length > 0 ? steps.reduce((acc, s) => acc + (s.duration_ms || 15), 0) : 2100);
-  const seconds = (totalMs / 1000).toFixed(1);
+  const [copied, setCopied] = useState(false);
+  const totalMs =
+    durationMs != null
+      ? durationMs
+      : steps && steps.length > 0
+      ? steps.reduce((acc, s) => acc + (s.duration_ms || 0), 0)
+      : null;
+  const seconds = totalMs != null && totalMs > 0 ? (totalMs / 1000).toFixed(1) : null;
 
   const hasThought = Boolean(thoughtContent && thoughtContent.trim().length > 0);
   const hasSteps = Boolean(steps && steps.length > 0);
 
   if (!hasThought && !hasSteps) return null;
+
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!thoughtContent) return;
+    navigator.clipboard?.writeText(thoughtContent);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1600);
+  };
 
   return (
     <div className="tars-copilot-thought-accordion">
@@ -182,26 +415,35 @@ function ThoughtAccordion({
         <div className="tars-copilot-thought-summary-left">
           <span className="glyph">{isOpen ? "▾" : "▸"}</span>
           <span>
-            Reasoned in {seconds}s
+            {seconds ? `Reasoned in ${seconds}s` : "Reasoned"}
             {hasSteps ? ` · ${steps!.length} operation${steps!.length === 1 ? "" : "s"}` : ""}
           </span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#64748b" }}>
-          <span>{isOpen ? "Hide trace" : "Show trace"}</span>
-          {isOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {isOpen && hasThought && (
+            <button
+              type="button"
+              className="tars-trace-copy-btn"
+              onClick={handleCopy}
+              title="Copy reasoning trace"
+            >
+              {copied ? <Check size={11} style={{ color: "#10b981" }} /> : <Copy size={11} />}
+              <span>{copied ? "Copied" : "Copy trace"}</span>
+            </button>
+          )}
+          <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 10, color: "#64748b" }}>
+            <span>{isOpen ? "Hide trace" : "Show trace"}</span>
+            {isOpen ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+          </div>
         </div>
       </button>
 
       {isOpen && (
         <div className="tars-copilot-thought-details">
-          {hasThought && (
-            <div className="tars-copilot-thought-raw">
-              {renderFormattedContent(thoughtContent!)}
-            </div>
-          )}
+          {hasThought && <OrganizedThoughtTrace thoughtContent={thoughtContent!} />}
 
           {hasSteps && (
-            <div className="tars-copilot-thought-steps-list">
+            <div className="tars-copilot-thought-steps-list" style={{ marginTop: hasThought ? 6 : 0 }}>
               {steps!.map((step) => (
                 <div key={step.id} className="tars-copilot-telemetry-line">
                   <span className="step-glyph">›</span>
@@ -579,6 +821,7 @@ export function CopilotPanel({
 
       const hadAttachments = attachedFiles.length > 0;
       const startTime = Date.now();
+      let reasoningDurationMs: number | null = null;
       let accumulatedContent = "";
       let accumulatedThought = "";
       const collectedSteps: CopilotTelemetryStep[] = [];
@@ -645,11 +888,19 @@ export function CopilotPanel({
             try {
               const data = JSON.parse(jsonStr);
               if (data.type === "token") {
+                if (reasoningDurationMs === null && (accumulatedThought.length > 0 || collectedSteps.length > 0)) {
+                  reasoningDurationMs = Math.max(Date.now() - startTime, 100);
+                }
                 accumulatedContent += data.content;
                 setMessages((current) =>
                   current.map((m) =>
                     m.id === assistantId
-                      ? { ...m, content: accumulatedContent, thought_content: accumulatedThought }
+                      ? {
+                          ...m,
+                          content: accumulatedContent,
+                          thought_content: accumulatedThought,
+                          reasoning_duration_ms: reasoningDurationMs ?? m.reasoning_duration_ms,
+                        }
                       : m
                   )
                 );
@@ -684,6 +935,9 @@ export function CopilotPanel({
                   )
                 );
               } else if (data.type === "action") {
+                if (reasoningDurationMs === null && (accumulatedThought.length > 0 || collectedSteps.length > 0)) {
+                  reasoningDurationMs = Math.max(Date.now() - startTime, 100);
+                }
                 copilotV2Bridge.dispatchAction({
                   action: data.action,
                   payload: data.payload,
@@ -691,6 +945,8 @@ export function CopilotPanel({
                 });
               } else if (data.type === "done") {
                 const totalDuration = Date.now() - startTime;
+                const finalReasoningDuration =
+                  reasoningDurationMs ?? (accumulatedThought.length > 0 ? totalDuration : undefined);
                 setThinkingStatus(null);
                 setLiveThought("");
                 setMessages((current) =>
@@ -700,7 +956,7 @@ export function CopilotPanel({
                           ...m,
                           thought_content: accumulatedThought,
                           telemetry_steps: [...collectedSteps],
-                          reasoning_duration_ms: totalDuration,
+                          reasoning_duration_ms: finalReasoningDuration,
                         }
                       : m
                   )
@@ -1226,7 +1482,10 @@ export function CopilotPanel({
                     </div>
 
                     {/* Post-Completion Collapsible Thought Accordion (Claude Code Style) */}
-                    {!isUser && ((message.thought_content && message.thought_content.trim().length > 0) || (message.telemetry_steps && message.telemetry_steps.length > 0)) && (
+                    {!isUser &&
+                      !(busy && idx === messages.length - 1 && message.reasoning_duration_ms == null) &&
+                      ((message.thought_content && message.thought_content.trim().length > 0) ||
+                        (message.telemetry_steps && message.telemetry_steps.length > 0)) && (
                       <ThoughtAccordion
                         thoughtContent={message.thought_content}
                         steps={message.telemetry_steps}
