@@ -31,7 +31,7 @@ export interface V2WorkspaceContext {
 
 let currentContext: V2WorkspaceContext | null = null;
 const contextListeners = new Set<(ctx: V2WorkspaceContext | null) => void>();
-const actionHandlers = new Map<V2ActionType, (payload: any) => void | Promise<void>>();
+const actionHandlers = new Map<V2ActionType, Set<(payload: any) => void | Promise<void>>>();
 
 export const katalystV2Bridge = {
   setContext(ctx: Partial<V2WorkspaceContext> | null) {
@@ -39,12 +39,10 @@ export const katalystV2Bridge = {
       currentContext = null;
     } else {
       currentContext = {
-        ...(currentContext || {
-          activeStage: "setup",
-          stageNumber: 1,
-          stageLabel: "Stage 1: Setup",
-          sessionId: null,
-        }),
+        activeStage: ctx.activeStage || "setup",
+        stageNumber: ctx.stageNumber ?? 1,
+        stageLabel: ctx.stageLabel || "Setup & Dual Ingestion",
+        sessionId: ctx.sessionId ?? null,
         ...ctx,
       };
     }
@@ -67,22 +65,36 @@ export const katalystV2Bridge = {
     type: V2ActionType,
     handler: (payload: any) => void | Promise<void>
   ): () => void {
-    actionHandlers.set(type, handler);
+    if (!actionHandlers.has(type)) {
+      actionHandlers.set(type, new Set());
+    }
+    actionHandlers.get(type)!.add(handler);
     return () => {
-      actionHandlers.delete(type);
+      const handlers = actionHandlers.get(type);
+      if (handlers) {
+        handlers.delete(handler);
+        if (handlers.size === 0) {
+          actionHandlers.delete(type);
+        }
+      }
     };
   },
 
   dispatchAction(action: V2Action): boolean {
-    const handler = actionHandlers.get(action.action);
-    if (handler) {
-      try {
-        void handler(action.payload);
-        return true;
-      } catch (err) {
-        console.error(`[KatalystV2Bridge] Action handler error for ${action.action}:`, err);
+    const handlers = actionHandlers.get(action.action);
+    if (handlers && handlers.size > 0) {
+      let anySuccess = false;
+      for (const handler of Array.from(handlers)) {
+        try {
+          void handler(action.payload);
+          anySuccess = true;
+        } catch (err) {
+          console.error(`[KatalystV2Bridge] Action handler error for ${action.action}:`, err);
+        }
       }
+      return anySuccess;
     }
+    console.warn(`[KatalystV2Bridge] No handlers registered for action: ${action.action}`);
     return false;
   },
 };

@@ -431,6 +431,21 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    const unregAutoRec = copilotV2Bridge.registerActionHandler("AUTO_RECONCILE_SUCCESS", (payload: any) => {
+      if (payload?.session_id) {
+        if (payload.recon_type === "v3") {
+          nav(`/reconciliations-v3/${payload.session_id}/results`);
+        } else {
+          nav(`/reconciliations-v2/${payload.session_id}/results`);
+        }
+      }
+    });
+    return () => {
+      unregAutoRec();
+    };
+  }, [nav]);
+
+  useEffect(() => {
     localStorage.setItem("tars_copilot_mode_v2", copilotMode);
   }, [copilotMode]);
 

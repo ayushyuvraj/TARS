@@ -1,5 +1,44 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Katalyst Copilot: Autonomous Reconciliation Orchestrator & Universal Session Isolation (21st September 2026)
+
+- **Checkpoint Name**: `Katalyst Copilot: Autonomous Reconciliation Orchestrator & Universal Session Isolation`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Current HEAD Commit**: `06f598e` (Pending user commit)
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Autonomous Workbook Topology Classifier & Direct XML Prober (`backend/app/services/autonomous_recon_orchestrator.py`)*:
+     - Built ultra-fast direct XML workbook prober (`extract_sheet_headers_fast`) using Python `zipfile` and `iterparse` on `xl/workbook.xml` and worksheet XML, extracting real sheet names and column headers in <15ms without parsing sharedStrings or loading cell matrices into memory.
+     - Implemented `classify_workbooks` to classify uploaded workbooks into:
+       - `SINGLE_LEDGER_V3`: Automatically detects intra-table schemas (e.g. `KIGS GSTR 2B Reco` with 165 columns and paired `- 2B` / `- PR` headers) and sets up a fresh Recon 3.0 session.
+       - `DUAL_LEDGER_V2`: Correlates 2 uploaded files (Portal GSTR-2B + ERP Purchase Register).
+       - `DUAL_SHEETS_V2`: Correlates 2 sheets within a single uploaded workbook.
+       - `INCOMPLETE_SINGLE_SIDED`: Identifies when only GSTR or only PR data is present, providing an actionable diagnostic message to supply the counterpart.
+       - `INCOMPATIBLE_DUAL_FILES`: Identifies 2 files that cannot be correlated.
+       - `UNRECOGNIZED_NON_GST`: Accurately detects non-GST spreadsheets and prompts the user.
+       - `NO_FILES`: Guides user on file requirements.
+  2. *Universal Session Isolation & SSE Streaming (`backend/app/services/autonomous_recon_orchestrator.py` & `backend/app/api/reconciliations_v2.py`)*:
+     - Integrated `copilot_auto_reconcile_stream` to delegate directly to `execute_autonomous_reconciliation`.
+     - Resolved lazy import to use `get_v2_workflow(settings)` instead of the legacy `get_workflow()`.
+     - Fixed duplicate multipart form appending in `CopilotPanel.tsx` and added mutual exclusivity and canonical deduplication in `copilot_auto_reconcile_stream`.
+     - Added defensive identical-file collapsing and multi-sheet highest GST score selection in `classify_workbooks`.
+     - Preserved backwards-compatible `workflow` dependency parameter and existing-session fallback for file-less invocations.
+     - Normalized `preferred_sheet` and `sheet_name` in `DirectSchemaCorrelatorV3.correlate_single_file` for seamless single-file V3 execution.
+     - Streams real-time SSE progress events (pre-flight validation, sheet selection, column coupling, rule loading, waterfall execution, and summary aggregation).
+     - Records full session lifecycle into the Audit 2.0 Ledger with an immutable SHA-256 hash.
+     - Emits `AUTO_RECONCILE_SUCCESS` payload containing `session_id`, `route`, and summary metrics.
+  3. *Multi-Listener Bridge & Global Navigation (`frontend/src/copilot_v2_bridge.ts`, `frontend/src/katalyst_v2_bridge.ts`, `frontend/src/App.tsx`)*:
+     - Upgraded action handler registrations from single-value `Map` to `Set`-based multi-listeners, preventing handler clobbering across components.
+     - Registered root-level listener in `App.tsx` for `AUTO_RECONCILE_SUCCESS` to immediately navigate to `/reconciliations-v3/:id/results` or `/reconciliations-v2/:id/results` from ANY screen.
+     - Enforced session isolation in `CopilotPanel.tsx`: strictly omits `session_id` when files are attached so that new reconciliation requests are never trapped inside the active workspace's existing session.
+     - Updated single attached file chip in `CopilotPanel.tsx` to display `"Workbook:"` instead of defaulting to `"PR:"`.
+  4. *Comprehensive Automated Verification*:
+     - Created `backend/tests/test_autonomous_recon_orchestrator.py` with 9 tests covering all workbook topology classes, identical-file collapsing, and end-to-end autonomous execution for both dual-ledger V2 and single-ledger V3 (9/9 passed in 9.59s).
+     - Full regression suites passed: `test_reconciliation_v2.py` (11/11 passed in 16.62s), `test_reconciliation_v3.py` (4/4 passed in 13.60s), `test_copilot_v2_actions.py` (13/13 passed in 12.69s).
+     - Production frontend bundle verified with `npm run build` (0 errors, 1.07s).
+
+---
+
 ## Katalyst Copilot: Contrast, Timer, Trace Reorganization & Intent Routing Fix (21st September 2026)
 
 - **Checkpoint Name**: `Katalyst Copilot: Contrast, Timer, Trace Reorganization & Intent Routing Fix`

@@ -833,13 +833,12 @@ export function CopilotPanel({
         if (attachedFiles.length > 0) {
           const filesToProcess = [...attachedFiles];
           setAttachedFiles([]);
-          const { gstr, pr } = classifyFiles(filesToProcess);
           const formData = new FormData();
-          if (gstr) formData.append("government_file", gstr);
-          if (pr) formData.append("purchase_file", pr);
-          if (v2Context?.sessionId || effectiveSessionId) {
-            formData.append("session_id", v2Context?.sessionId || effectiveSessionId || "");
+          for (const f of filesToProcess) {
+            formData.append("files", f);
           }
+          // Strict Session Isolation Invariant:
+          // Never send old session_id when new files are attached!
           formData.append("prompt", finalMessage);
 
           res = await fetch("/api/reconciliations-v2/copilot/auto-reconcile", {
@@ -1573,7 +1572,7 @@ export function CopilotPanel({
                         <div key={i} className="tars-copilot-chip">
                           <FileSpreadsheet size={13} style={{ color: "var(--kpmg-glacier, #72cdf4)" }} />
                           <span style={{ fontWeight: 700, color: "var(--kpmg-glacier, #72cdf4)" }}>
-                            {isGstr && attachedFiles.length > 1 ? "GSTR-2B:" : "PR:"}
+                            {attachedFiles.length === 1 ? "Workbook:" : (isGstr ? "GSTR-2B:" : "PR:")}
                           </span>
                           <span style={{ maxWidth: 120, textOverflow: "ellipsis", overflow: "hidden", whiteSpace: "nowrap" }}>
                             {f.name}

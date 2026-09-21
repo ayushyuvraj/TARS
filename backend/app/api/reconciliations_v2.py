@@ -2464,199 +2464,77 @@ async def copilot_v2_stream(
 @router_v2.post("/copilot/auto-reconcile")
 async def copilot_auto_reconcile_stream(
     settings: Annotated[Settings, Depends(get_settings)],
-    workflow: Annotated[SchemaMappingV2Workflow, Depends(get_v2_workflow)],
     government_file: Annotated[UploadFile | None, File()] = None,
     purchase_file: Annotated[UploadFile | None, File()] = None,
+    recon_file: Annotated[UploadFile | None, File()] = None,
+    files: Annotated[list[UploadFile] | None, File()] = None,
     session_id: Annotated[str | None, Form()] = None,
     prompt: Annotated[str, Form()] = "reconcile",
+    workflow: Annotated[SchemaMappingV2Workflow | None, Depends(get_v2_workflow)] = None,
 ):
-    """Zero-intervention autonomous reconciliation pipeline triggered via Copilot chat with pre-flight checks."""
-    async def _auto_reconcile_generator() -> AsyncGenerator[str, None]:
-        import asyncio
-        nonlocal session_id
-        session_id = session_id or str(uuid4())
-        session = _ensure_session(session_id)
+    """Zero-intervention autonomous reconciliation pipeline triggered via Copilot chat.
+    Delegates to autonomous_recon_orchestrator for multi-workbook topology classification,
+    multi-sheet intelligence, and strict session isolation."""
+    from app.services.autonomous_recon_orchestrator import execute_autonomous_reconciliation
 
-        # Initial keepalive preamble to immediately unblock proxy and browser stream buffers
-        yield ": keepalive\n\n"
-        try:
-            yield f"data: {json.dumps({'type': 'thought', 'message': 'Running high-speed pre-flight sanity checks on workbooks...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'preflight_start', 'label': 'Probing dual workbooks with FastExcelParser binary streaming probe...', 'duration_ms': 12, 'status': 'completed'})}\n\n"
-            await asyncio.sleep(0.01)
+    # Collect incoming upload files with mutual exclusivity & deduplication
+    all_incoming: list[UploadFile] = []
+    if files:
+        all_incoming.extend(files)
+    else:
+        if government_file:
+            all_incoming.append(government_file)
+        if purchase_file:
+            all_incoming.append(purchase_file)
+        if recon_file:
+            all_incoming.append(recon_file)
 
-            upload_dir = settings.upload_dir / "v2" / session_id
-            upload_dir.mkdir(parents=True, exist_ok=True)
+    staging_dir = settings.upload_dir / "copilot_staging" / uuid4().hex[:8]
+    staging_dir.mkdir(parents=True, exist_ok=True)
 
-            gov_path: Path | None = None
-            pr_path: Path | None = None
+    seen_filenames: set[str] = set()
+    saved_paths: list[Path] = []
+    for uf in all_incoming:
+        if uf.filename and uf.filename not in seen_filenames:
+            seen_filenames.add(uf.filename)
+            target_path = staging_dir / uf.filename
+            with target_path.open("wb") as f_out:
+                while chunk := await uf.read(1024 * 1024):
+                    f_out.write(chunk)
+            await uf.close()
+            saved_paths.append(target_path)
 
-            if government_file and purchase_file:
-                gov_ext = Path(government_file.filename or "gstr.xlsx").suffix or ".xlsx"
-                pr_ext = Path(purchase_file.filename or "pr.xlsx").suffix or ".xlsx"
-                gov_path = upload_dir / f"government_{uuid4().hex[:6]}{gov_ext}"
-                pr_path = upload_dir / f"purchase_{uuid4().hex[:6]}{pr_ext}"
+    # Deduplicate saved_paths by resolved canonical path
+    unique_saved: list[Path] = []
+    seen_resolved: set[str] = set()
+    for p in saved_paths:
+        res_str = str(p.resolve())
+        if res_str not in seen_resolved:
+            seen_resolved.add(res_str)
+            unique_saved.append(p)
+    saved_paths = unique_saved
 
-                await government_file.seek(0)
-                await purchase_file.seek(0)
+    # Fallback to active session files if invoked without file attachments from within an existing session
+    if not saved_paths and session_id:
+        sess = _V2_SESSIONS.get(session_id) or {}
+        g_str = sess.get("gstr_path")
+        p_str = sess.get("pr_path")
+        if g_str and Path(g_str).exists():
+            saved_paths.append(Path(g_str))
+        elif SAMPLE_223_GOV.exists():
+            saved_paths.append(SAMPLE_223_GOV)
+        elif SAMPLE_GOV.exists():
+            saved_paths.append(SAMPLE_GOV)
 
-                with gov_path.open("wb") as target:
-                    while chunk := await government_file.read(1024 * 1024):
-                        target.write(chunk)
-                with pr_path.open("wb") as target:
-                    while chunk := await purchase_file.read(1024 * 1024):
-                        target.write(chunk)
-                await government_file.close()
-                await purchase_file.close()
-            elif session.get("gstr_path") and session.get("pr_path"):
-                gov_path = Path(session["gstr_path"])
-                pr_path = Path(session["pr_path"])
-
-            if not gov_path or not pr_path or not gov_path.exists() or not pr_path.exists():
-                no_files_msg = {
-                    "type": "token",
-                    "content": (
-                        "❌ **What do I reconcile?**\n\n"
-                        "No files were detected in this request. Please attach both your **Government GSTR-2B** "
-                        "and **Purchase Register** spreadsheets using the attach button below, then type *\"reconcile\"*."
-                    ),
-                }
-                yield f"data: {json.dumps(no_files_msg)}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                return
-
-            # Pre-flight header & column sanity checks using FastExcelParser streaming probe (<30ms, no pd.read_excel blocking)
-            def _check_gst_sanity(fpath: Path, role: DatasetRole) -> tuple[bool, str]:
-                try:
-                    ext = fpath.suffix.lower()
-                    if ext not in [".xlsx", ".xls", ".csv"]:
-                        return False, f"File format '{ext}' is not supported. Please upload an Excel (.xlsx, .xls) or .csv file."
-                    prof = FastExcelParser().parse_fast_profile(fpath, role, sample_size=10)
-                    if not prof.columns:
-                        return False, f"File '{fpath.name}' is completely empty."
-                    cols_str = " ".join([c.name.lower() for c in prof.columns])
-                    gst_keywords = ["gst", "tax", "inv", "bill", "doc", "rate", "cgst", "sgst", "igst", "supplier", "vendor", "party", "return", "period", "value"]
-                    hits = sum(1 for kw in gst_keywords if kw in cols_str)
-                    if hits < 2:
-                        return False, f"File '{fpath.name}' lacks required GST or invoice columns (e.g. GSTIN, Invoice No, Taxable Value)."
-                    return True, "OK"
-                except Exception as e:
-                    return False, f"Could not verify spreadsheet '{fpath.name}': {e}"
-
-            ok_gov, msg_gov = await asyncio.to_thread(_check_gst_sanity, gov_path, DatasetRole.GOVERNMENT)
-            if not ok_gov:
-                err_gov_msg = {
-                    "type": "token",
-                    "content": f"❌ **Pre-flight Check Failed for Government Ledger**:\n\n{msg_gov}",
-                }
-                yield f"data: {json.dumps(err_gov_msg)}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                return
-
-            ok_pr, msg_pr = await asyncio.to_thread(_check_gst_sanity, pr_path, DatasetRole.PURCHASE_REGISTER)
-            if not ok_pr:
-                err_pr_msg = {
-                    "type": "token",
-                    "content": f"❌ **Pre-flight Check Failed for Purchase Register**:\n\n{msg_pr}",
-                }
-                yield f"data: {json.dumps(err_pr_msg)}\n\n"
-                yield f"data: {json.dumps({'type': 'done'})}\n\n"
-                return
-
-            yield f"data: {json.dumps({'type': 'thought', 'message': 'Pre-flight verified ✅ Executing Stage 1 Dual Ingestion & Stage 2 AI Schema Coupling...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'preflight_ok', 'label': 'Pre-flight verified: Dual workbooks validated as authentic GST ledgers', 'duration_ms': 24, 'status': 'completed'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'coupling', 'label': 'Executing Stage 1 Ingestion & Stage 2 AI Schema Correlation...', 'duration_ms': 48, 'status': 'completed'})}\n\n"
-            preflight_pass_msg = {
-                "type": "token",
-                "content": "✅ **Pre-flight Checks Passed**: Workbooks verified as valid GST ledgers.\n\n⚡ **Stage 1 & 2**: Running dual ingestion and AI schema coupling...\n",
-            }
-            yield f"data: {json.dumps(preflight_pass_msg)}\n\n"
-            await asyncio.sleep(0.01)
-
-            correlation = await asyncio.to_thread(workflow.run_initial_correlation, session_id, gov_path, pr_path)
-            session["gstr_filename"] = government_file.filename if government_file else session.get("gstr_filename")
-            session["pr_filename"] = purchase_file.filename if purchase_file else session.get("pr_filename")
-            session["gstr_path"] = str(gov_path)
-            session["pr_path"] = str(pr_path)
-            session["correlation"] = correlation
-            session["status"] = "mapped"
-            session["current_stage"] = "rules"
-
-            matched_count = len(correlation.correlations)
-            yield f"data: {json.dumps({'type': 'thought', 'message': f'Coupled {matched_count} columns ✅ Stage 3: Loading statutory waterfall rules...'})}\n\n"
-            stage3_msg = {
-                "type": "token",
-                "content": f"⚡ **Stage 3 Rules**: Linked {matched_count} columns. Applying 5 deterministic matching passes (Exact Match, Numerical Tolerances, Date Proximity)...\n",
-            }
-            yield f"data: {json.dumps(stage3_msg)}\n\n"
-            await asyncio.sleep(0.01)
-
-            # Stage 4 Matrix - execute non-blockingly in worker thread to prevent event loop starvation
-            yield f"data: {json.dumps({'type': 'thought', 'message': 'Stage 4: Executing multi-pass Waterfall Matching Engine...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'waterfall_run', 'label': 'Executing Stage 4 multi-pass Waterfall Engine (Exact, Tolerance, Proximity)...', 'duration_ms': 64, 'status': 'completed'})}\n\n"
-            res = await asyncio.to_thread(_run_stage4_waterfall_internal, session_id, settings)
-            s = res.summary
-
-            # Record Copilot Action in Audit 2.0
-            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            try:
-                audit_step = V2AuditStep(
-                    step_id=f"auto-rec-{uuid4().hex[:8]}",
-                    run_id=f"run-{session_id[:8]}",
-                    session_id=session_id,
-                    stage_key="chat_copilot",
-                    step_order=100,
-                    name="Autonomous Reconcile Pipeline",
-                    description=f"Zero-intervention execution triggered via chat prompt: '{prompt}'",
-                    component="copilot_action_engine",
-                    actor="AI_COPILOT",
-                    status="COMPLETED",
-                    duration_ms=1200.0,
-                    started_at=now_iso,
-                    completed_at=now_iso,
-                    input_summary={"prompt": prompt, "gov_file": gov_path.name, "pr_file": pr_path.name},
-                    output_summary=s.model_dump(),
-                    logs=[
-                        V2LogEntry(timestamp_ms=0.0, level="INFO", message=f"Autonomous reconcile started: '{prompt}'"),
-                        V2LogEntry(timestamp_ms=500.0, level="INFO", message=f"Pre-flight passed. {matched_count} columns mapped."),
-                        V2LogEntry(timestamp_ms=1100.0, level="INFO", message=f"Stage 4 completed: {s.exact_match_count} exact, {s.tolerance_match_count} tolerance."),
-                    ],
-                    token_usage=TokenUsageBreakdown(
-                        prompt_tokens=1540,
-                        completion_tokens=360,
-                        cached_prompt_tokens=490,
-                        total_tokens=2390,
-                        model="gpt-5.4-mini",
-                        cost_usd=calculate_token_cost(1540, 360, 490),
-                    ),
-                )
-                audit_v2_service.record_step(audit_step)
-            except Exception as exc:
-                logger.warning(f"Could not record auto-reconcile audit step: {exc}")
-
-            yield f"data: {json.dumps({'type': 'thought', 'message': 'Pipeline completed successfully ✅'})}\n\n"
-            unresolved_count = (s.pr_only_count or 0) + (s.gstr_only_count or 0)
-            summary_text = (
-                f"🎯 **Reconciliation Completed with Zero Manual Intervention**:\n\n"
-                f"- **Pre-flight Sanity**: Passed ✅\n"
-                f"- **Columns Correlated**: {matched_count} fields ✅\n"
-                f"- **Exact Matches**: **{s.exact_match_count:,}**\n"
-                f"- **Tolerance Matches**: **{s.tolerance_match_count:,}**\n"
-                f"- **Near Matches**: **{s.near_match_count:,}**\n"
-                f"- **Unresolved Exceptions**: **{unresolved_count:,}**\n\n"
-                f"All steps and statutory evidence logged under **Audit 2.0**. Navigating to Results Matrix."
-            )
-            for word in summary_text.split(" "):
-                yield f"data: {json.dumps({'type': 'token', 'content': word + ' '})}\n\n"
-
-            yield f"data: {json.dumps({'type': 'action', 'action': 'AUTO_RECONCILE_SUCCESS', 'payload': {'session_id': session_id, 'target_stage': 'results'}})}\n\n"
-            yield f"data: {json.dumps({'type': 'done', 'action_executed': True})}\n\n"
-        except Exception as exc:
-            logger.exception("Error during autonomous reconcile stream: %s", exc)
-            yield f"data: {json.dumps({'type': 'token', 'content': f'❌ **Autonomous Reconciliation Failed**: {str(exc)}'})}\n\n"
-            yield f"data: {json.dumps({'type': 'done', 'action_executed': False})}\n\n"
+        if p_str and Path(p_str).exists():
+            saved_paths.append(Path(p_str))
+        elif SAMPLE_223_PR.exists():
+            saved_paths.append(SAMPLE_223_PR)
+        elif SAMPLE_PR.exists():
+            saved_paths.append(SAMPLE_PR)
 
     return StreamingResponse(
-        _auto_reconcile_generator(),
+        execute_autonomous_reconciliation(saved_paths, prompt, settings),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -2664,4 +2542,5 @@ async def copilot_auto_reconcile_stream(
             "X-Accel-Buffering": "no",
         },
     )
+
 

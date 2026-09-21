@@ -287,9 +287,18 @@ export const ReconciliationV3Workspace: React.FC = () => {
       }
     });
 
+    const unregAutoRec = copilotV2Bridge.registerActionHandler("AUTO_RECONCILE_SUCCESS", (payload: any) => {
+      if (payload?.session_id && payload?.recon_type === "v3") {
+        setSessionId(payload.session_id);
+        setCurrentStage("results");
+        navigate(`/reconciliations-v3/${payload.session_id}/results`);
+      }
+    });
+
     return () => {
       unregNav();
       unregReconcile();
+      unregAutoRec();
     };
   }, [sessionId, currentStage]);
 

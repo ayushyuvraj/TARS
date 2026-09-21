@@ -180,13 +180,14 @@ class DirectSchemaCorrelatorV3:
         file_path: Path,
         session_id: str = "",
         preferred_sheet: str | None = None,
+        sheet_name: str | None = None,
     ) -> DirectCorrelationResultV3:
         """Convenience method that reads the column headers and preview samples from a file and correlates intra-table schema."""
         import pandas as pd
         if not file_path.exists():
             raise FileNotFoundError(f"Recon file not found: {file_path}")
 
-        sheet_name = preferred_sheet or "KIGS GSTR 2B Reco"
+        sheet_name = sheet_name or preferred_sheet or "KIGS GSTR 2B Reco"
         cache_dir = file_path.parent.parent / "data" / "cache_v3"
         stat = file_path.stat()
         stem_cache = cache_dir / f"{file_path.stem}_{stat.st_size}_{int(stat.st_mtime)}.pkl"
