@@ -153,7 +153,7 @@ export const ReconciliationV3ResultsStage: React.FC<Props> = ({
               20,000 Unified Reconciliation Records
             </h2>
             <p style={{ color: "#94a3b8", fontSize: 14, margin: 0, maxWidth: 820, lineHeight: 1.5 }}>
-              TARS matched and benchmarked each transaction against the KICS baseline column <code>{data.kics_status_column}</code>.
+              TARS matched and benchmarked each transaction against the baseline column <code>{data.kics_status_column}</code>.
             </p>
           </div>
 
@@ -168,7 +168,7 @@ export const ReconciliationV3ResultsStage: React.FC<Props> = ({
               }}
             >
               <div style={{ fontSize: 11, textTransform: "uppercase", color: "#34d399", fontWeight: 700, letterSpacing: "0.05em" }}>
-                KICS Concurrence Rate
+                Concurrence Rate
               </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: "#34d399", marginTop: 1 }}>
                 {s.kics_concurrence_rate}%
@@ -304,7 +304,7 @@ export const ReconciliationV3ResultsStage: React.FC<Props> = ({
             <tr style={{ background: "rgba(30, 41, 59, 0.85)", borderBottom: "1px solid rgba(255, 255, 255, 0.1)" }}>
               <th style={{ padding: "10px 14px", color: "#cbd5e1", fontWeight: 600, width: "6%" }}>Row</th>
               <th style={{ padding: "10px 14px", color: "#cbd5e1", fontWeight: 600, width: "14%" }}>TARS Verdict</th>
-              <th style={{ padding: "10px 14px", color: "#cbd5e1", fontWeight: 600, width: "14%" }}>KICS Baseline</th>
+              <th style={{ padding: "10px 14px", color: "#cbd5e1", fontWeight: 600, width: "14%" }}>Baseline</th>
               <th style={{ padding: "10px 14px", color: "#cbd5e1", fontWeight: 600, width: "12%" }}>Concurrence</th>
               <th style={{ padding: "10px 14px", color: "#cbd5e1", fontWeight: 600, width: "18%" }}>CP / PR Invoice No</th>
               <th style={{ padding: "10px 14px", color: "#cbd5e1", fontWeight: 600, width: "16%" }}>CP / PR Taxable (₹)</th>

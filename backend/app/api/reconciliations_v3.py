@@ -99,13 +99,35 @@ def _load_df_safely_v3(path: Path, sheet_name: str | None = None) -> pd.DataFram
             df = pd.read_csv(path)
         else:
             sheet_to_read = sheet_name or "KIGS GSTR 2B Reco"
+            df = None
             try:
-                excel_file = pd.ExcelFile(path)
-                if sheet_to_read not in excel_file.sheet_names:
-                    sheet_to_read = excel_file.sheet_names[0]
-                df = pd.read_excel(excel_file, sheet_name=sheet_to_read)
-            except Exception:
-                df = pd.read_excel(path)
+                from openpyxl import load_workbook
+                wb = load_workbook(path, read_only=True, data_only=True)
+                actual_sheet = sheet_to_read if sheet_to_read in wb.sheetnames else wb.sheetnames[0]
+                ws = wb[actual_sheet]
+                row_iter = ws.iter_rows(values_only=True)
+                header = None
+                data = []
+                for row in row_iter:
+                    if header is None:
+                        if any(v is not None for v in row):
+                            header = [str(c) if c is not None else f"Column_{i+1}" for i, c in enumerate(row)]
+                    else:
+                        data.append(list(row))
+                wb.close()
+                if header:
+                    df = pd.DataFrame(data, columns=header)
+            except Exception as e_fast:
+                logger.info(f"Streaming Excel loader fallback for {path.name}: {e_fast}")
+
+            if df is None:
+                try:
+                    excel_file = pd.ExcelFile(path)
+                    if sheet_to_read not in excel_file.sheet_names:
+                        sheet_to_read = excel_file.sheet_names[0]
+                    df = pd.read_excel(excel_file, sheet_name=sheet_to_read)
+                except Exception:
+                    df = pd.read_excel(path)
 
         try:
             df.to_pickle(stem_cache)
@@ -148,13 +170,13 @@ def _ensure_session_v3(session_id: str) -> dict[str, Any]:
 
     # Create new session structure
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    default_filename = SAMPLE_RECON_FILE.name if SAMPLE_RECON_FILE.exists() else "TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx"
+    default_filename = SAMPLE_RECON_FILE.name if SAMPLE_RECON_FILE.exists() else "TARS_RECON_20000_Rows_All_Scenarios.xlsx"
     default_path = str(SAMPLE_RECON_FILE) if SAMPLE_RECON_FILE.exists() else None
 
     session_data: dict[str, Any] = {
         "id": session_id,
         "recon_type": "v3",
-        "title": "Reconciliation 3.0 • Single KICS Recon File",
+        "title": "Reconciliation 3.0 • Single Recon File",
         "status": "setup",
         "current_stage": "setup",
         "created_at": now,
@@ -198,7 +220,7 @@ def _persist_session_disk_v3(session: dict[str, Any]) -> None:
 class ReconciliationV3Session(BaseModel):
     id: str
     recon_type: str = "v3"
-    title: str = "Reconciliation 3.0 • Single KICS Recon File"
+    title: str = "Reconciliation 3.0 • Single Recon File"
     status: str
     current_stage: str = "setup"
     created_at: str
@@ -306,7 +328,7 @@ async def upload_single_recon_file(
 
     if recon_file and not use_sample:
         ext = Path(recon_file.filename or "recon.xlsx").suffix or ".xlsx"
-        target_path = upload_dir / f"kics_recon_{uuid4().hex[:6]}{ext}"
+        target_path = upload_dir / f"recon_{uuid4().hex[:6]}{ext}"
         filename = recon_file.filename or target_path.name
         try:
             with target_path.open("wb") as f_out:

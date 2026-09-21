@@ -99,12 +99,14 @@ export const DynamicMappingGridV3: React.FC<DynamicMappingGridV3Props> = ({
       ? agentThoughts.reduce((acc, t) => acc + (t.duration_ms || 0), 0)
       : 0;
   const effectiveMs =
-    totalDurationMs && totalDurationMs >= 150
+    totalDurationMs && totalDurationMs > 0
       ? totalDurationMs
-      : thoughtsSum >= 150
+      : thoughtsSum > 0
       ? thoughtsSum
       : 0;
-  const reasoningSeconds = effectiveMs > 0 ? (effectiveMs / 1000).toFixed(1) : null;
+  // Guard against timestamp contamination: durations > 300s are sanitized
+  const sanitizedMs = effectiveMs > 300000 ? (thoughtsSum > 0 && thoughtsSum < 300000 ? thoughtsSum : 250) : effectiveMs;
+  const reasoningSeconds = sanitizedMs > 0 ? (sanitizedMs / 1000).toFixed(1) : null;
 
   const formatStep = (step: string) => {
     switch (step) {

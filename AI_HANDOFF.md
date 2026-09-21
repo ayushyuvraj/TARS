@@ -1,5 +1,21 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation Stepper Ingestion Guards & Top Header Standardization (21st September 2026)
+
+- **Checkpoint Name**: `Reconciliation Stepper Ingestion Guards & Top Header Standardization`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-09-21-stepper-ingestion-guards-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Reconciliation 3.0 & 2.0 Stage 1 Completion Icon & Stage 2 Stepper Locking Fix (`ReconciliationV3Workspace.tsx`, `ReconciliationV2Workspace.tsx`)*:
+     - Fixed premature Stage 1 checkmark (`✓`) display and premature Stage 2 (Mapping) unlocking on initial session creation and un-ingested states.
+     - Updated `isStageCompleted("setup")` and `isStageUnlocked("mapping")` predicates in both V3 and V2 workspace components to strictly require completed file ingestion/correlation (`correlationResult !== null`) or a downstream session status (`["mapped", "mapping_confirmed", ...]`).
+     - Stage 1 now displays step number `1` until file ingestion actually completes, and Stage 2 remains strictly locked (`is-locked`) and disabled/unclickable.
+  2. *Top Header Brand Ribbon Title Standardization*:
+     - Updated top telemetry header ribbon in `ReconciliationV3Workspace.tsx` from `RECONCILIATION 3.0` to `RECONCILIATION` for 1:1 brand parity across workspace headers.
+
+---
+
 ## Katalyst Copilot: Autonomous Reconciliation Orchestrator & Universal Session Isolation (21st September 2026)
 
 - **Checkpoint Name**: `Katalyst Copilot: Autonomous Reconciliation Orchestrator & Universal Session Isolation`

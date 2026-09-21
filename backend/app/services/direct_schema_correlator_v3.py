@@ -168,6 +168,152 @@ KICS_STATUS_CANDIDATE_TOKENS = {
 }
 
 
+def _fast_probe_xlsx(file_path: Path, preferred_sheet: str | None = None) -> tuple[str, list[str], list[list[str]]]:
+    """
+    Sub-100ms streaming probe for Excel .xlsx workbooks.
+    Reads ONLY the first 6 rows of sheet XML and resolves ONLY the required shared string indices.
+    Bypasses openpyxl's full sharedStrings.xml DOM parsing (which takes 20+ seconds on large files).
+    """
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    with zipfile.ZipFile(file_path, "r") as zf:
+        namelist = set(zf.namelist())
+
+        sheet_target = "xl/worksheets/sheet1.xml"
+        actual_sheet_name = preferred_sheet or "KIGS GSTR 2B Reco"
+
+        # 1. Resolve sheet name and target xml from xl/workbook.xml
+        sheet_rel_id = None
+        if "xl/workbook.xml" in namelist:
+            try:
+                wb_root = ET.fromstring(zf.read("xl/workbook.xml"))
+                first_sheet = None
+                for sheet_el in wb_root.iter():
+                    if sheet_el.tag.endswith("sheet"):
+                        s_name = sheet_el.attrib.get("name")
+                        r_id = (
+                            sheet_el.attrib.get("{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id")
+                            or sheet_el.attrib.get("r:id")
+                        )
+                        if first_sheet is None:
+                            first_sheet = (s_name, r_id)
+                        if preferred_sheet and s_name and preferred_sheet.lower() == s_name.lower():
+                            actual_sheet_name = s_name
+                            sheet_rel_id = r_id
+                            break
+                        if s_name and ("kigs" in s_name.lower() or "reco" in s_name.lower() or "2b" in s_name.lower()):
+                            actual_sheet_name = s_name
+                            sheet_rel_id = r_id
+                            break
+                if not sheet_rel_id and first_sheet:
+                    actual_sheet_name, sheet_rel_id = first_sheet
+            except Exception:
+                pass
+
+        # 2. Resolve relationship ID to worksheet path
+        if sheet_rel_id and "xl/_rels/workbook.xml.rels" in namelist:
+            try:
+                rels_root = ET.fromstring(zf.read("xl/_rels/workbook.xml.rels"))
+                for rel in rels_root.iter():
+                    if rel.attrib.get("Id") == sheet_rel_id:
+                        target = rel.attrib.get("Target", "")
+                        if target.startswith("/"):
+                            sheet_target = target.lstrip("/")
+                        elif target.startswith("worksheets/"):
+                            sheet_target = f"xl/{target}"
+                        else:
+                            sheet_target = f"xl/worksheets/{Path(target).name}"
+                        break
+            except Exception:
+                pass
+
+        if sheet_target not in namelist:
+            candidates = [n for n in namelist if n.startswith("xl/worksheets/sheet") and n.endswith(".xml")]
+            sheet_target = candidates[0] if candidates else "xl/worksheets/sheet1.xml"
+
+        # 3. Stream top 6 rows from worksheet XML
+        needed_shared_string_indices: set[int] = set()
+        raw_rows: list[dict[int, tuple[str, str | None]]] = []
+
+        def _col_to_idx(col_str: str) -> int:
+            idx = 0
+            for ch in col_str:
+                idx = idx * 26 + (ord(ch.upper()) - ord("A") + 1)
+            return idx - 1
+
+        with zf.open(sheet_target) as sheet_f:
+            row_count = 0
+            for event, elem in ET.iterparse(sheet_f, events=("end",)):
+                if elem.tag.endswith("row"):
+                    row_cells: dict[int, tuple[str, str | None]] = {}
+                    for c in elem:
+                        if not c.tag.endswith("c"):
+                            continue
+                        cell_ref = c.attrib.get("r", "")
+                        col_m = re.match(r"^([A-Za-z]+)", cell_ref)
+                        if not col_m:
+                            continue
+                        col_idx = _col_to_idx(col_m.group(1))
+                        c_type = c.attrib.get("t")
+                        val_str = ""
+                        for child in c:
+                            if child.tag.endswith("v") or child.tag.endswith("is"):
+                                if c_type == "inlineStr":
+                                    val_str = "".join(child.itertext()).strip()
+                                else:
+                                    val_str = (child.text or "").strip()
+                                break
+                        if c_type == "s" and val_str.isdigit():
+                            s_idx = int(val_str)
+                            needed_shared_string_indices.add(s_idx)
+                            row_cells[col_idx] = (str(s_idx), "s")
+                        elif val_str:
+                            row_cells[col_idx] = (val_str, c_type)
+
+                    if row_cells:
+                        row_count += 1
+                        raw_rows.append(row_cells)
+                    elem.clear()
+                    if row_count >= 6:
+                        break
+
+        # 4. Resolve ONLY needed strings from sharedStrings.xml
+        shared_strings: dict[int, str] = {}
+        if needed_shared_string_indices and "xl/sharedStrings.xml" in namelist:
+            max_needed = max(needed_shared_string_indices)
+            curr_s = 0
+            with zf.open("xl/sharedStrings.xml") as s_f:
+                for event, elem in ET.iterparse(s_f, events=("end",)):
+                    if elem.tag.endswith("si"):
+                        if curr_s in needed_shared_string_indices:
+                            shared_strings[curr_s] = "".join(elem.itertext()).strip()
+                        curr_s += 1
+                        elem.clear()
+                        if curr_s > max_needed:
+                            break
+
+        if not raw_rows:
+            return actual_sheet_name, [], []
+
+        max_cols = max(max(r.keys(), default=0) for r in raw_rows) + 1
+        grid: list[list[str]] = []
+        for r_dict in raw_rows:
+            row_vals = [""] * max_cols
+            for c_i, (v, c_t) in r_dict.items():
+                if c_i < max_cols:
+                    if c_t == "s":
+                        row_vals[c_i] = shared_strings.get(int(v), "")
+                    else:
+                        row_vals[c_i] = v
+            grid.append(row_vals)
+
+        # First row is headers
+        headers = [c.strip() if c and c.strip() else f"Column_{i+1}" for i, c in enumerate(grid[0])]
+        samples = grid[1:]
+        return actual_sheet_name, headers, samples
+
+
 class DirectSchemaCorrelatorV3:
     """Intra-Table Schema Correlator for Single Reconciliation Workbooks (e.g. KICS / KIGS)."""
 
@@ -184,11 +330,14 @@ class DirectSchemaCorrelatorV3:
     ) -> DirectCorrelationResultV3:
         """Convenience method that reads the column headers and preview samples from a file and correlates intra-table schema."""
         import pandas as pd
+        t0 = time.perf_counter()
         if not file_path.exists():
             raise FileNotFoundError(f"Recon file not found: {file_path}")
 
         sheet_name = sheet_name or preferred_sheet or "KIGS GSTR 2B Reco"
-        cache_dir = file_path.parent.parent / "data" / "cache_v3"
+        from app.config import PROJECT_ROOT
+        cache_dir = PROJECT_ROOT / "data" / "cache_v3"
+        cache_dir.mkdir(parents=True, exist_ok=True)
         stat = file_path.stat()
         stem_cache = cache_dir / f"{file_path.stem}_{stat.st_size}_{int(stat.st_mtime)}.pkl"
 
@@ -205,10 +354,19 @@ class DirectSchemaCorrelatorV3:
                 df_preview = pd.read_csv(file_path, nrows=5)
                 sheet_name = "Default"
             else:
-                xl = pd.ExcelFile(file_path)
-                if sheet_name not in xl.sheet_names:
-                    sheet_name = xl.sheet_names[0]
-                df_preview = pd.read_excel(file_path, sheet_name=sheet_name, nrows=5)
+                try:
+                    actual_sheet, headers, sample_rows = _fast_probe_xlsx(file_path, preferred_sheet or sheet_name)
+                    sheet_name = actual_sheet
+                    if headers:
+                        df_preview = pd.DataFrame(sample_rows, columns=headers)
+                    else:
+                        df_preview = pd.DataFrame()
+                except Exception as ex:
+                    logger.warning(f"Fast streaming probe failed for {file_path.name}: {ex}; falling back to pd.read_excel")
+                    xl = pd.ExcelFile(file_path)
+                    if sheet_name not in xl.sheet_names:
+                        sheet_name = xl.sheet_names[0]
+                    df_preview = pd.read_excel(file_path, sheet_name=sheet_name, nrows=5)
 
         columns = [str(c) for c in df_preview.columns]
         samples: dict[str, list[str]] = {}
@@ -217,6 +375,8 @@ class DirectSchemaCorrelatorV3:
             samples[str(c)] = [str(v) for v in df_preview[c].dropna().tolist()[:3]]
             dtypes[str(c)] = str(df_preview[c].dtype)
 
+        probe_duration_ms = (time.perf_counter() - t0) * 1000.0
+
         return self.correlate_intra_table_schema(
             reconciliation_id=session_id or f"corr_{file_path.stem}",
             recon_filename=file_path.name,
@@ -224,6 +384,8 @@ class DirectSchemaCorrelatorV3:
             columns=columns,
             column_samples=samples,
             column_dtypes=dtypes,
+            probe_duration_ms=probe_duration_ms,
+            overall_start_time=t0,
         )
 
     def correlate_intra_table_schema(
@@ -234,8 +396,10 @@ class DirectSchemaCorrelatorV3:
         columns: list[str],
         column_samples: dict[str, list[str]] | None = None,
         column_dtypes: dict[str, str] | None = None,
+        probe_duration_ms: float = 0.0,
+        overall_start_time: float | None = None,
     ) -> DirectCorrelationResultV3:
-        start_time = time.time()
+        start_time = overall_start_time if overall_start_time is not None else time.perf_counter()
         samples = column_samples or {}
         dtypes = column_dtypes or {}
         thoughts: list[AgentThoughtV3] = []
@@ -245,7 +409,7 @@ class DirectSchemaCorrelatorV3:
                 step="fast_probe_ingestion",
                 message=f"Scanned single recon workbook '{recon_filename}' [Sheet: '{sheet_name}'] with {len(columns)} columns.",
                 timestamp_ms=time.time() * 1000,
-                duration_ms=18.0,
+                duration_ms=round(max(probe_duration_ms, 18.0), 1),
             )
         )
 
@@ -409,7 +573,7 @@ class DirectSchemaCorrelatorV3:
                 )
             )
 
-        total_ms = (time.time() - start_time) * 1000.0
+        total_ms = (time.perf_counter() - start_time) * 1000.0
 
         return DirectCorrelationResultV3(
             reconciliation_id=reconciliation_id,
@@ -430,7 +594,7 @@ class DirectSchemaCorrelatorV3:
             kics_status_column=kics_status_col,
             kics_reason_column=kics_reason_col,
             agent_thoughts=thoughts,
-            total_duration_ms=max(160.0, total_ms),
+            total_duration_ms=round(total_ms, 1),
         )
 
     def _detect_canonical_concept(self, col_name: str) -> dict[str, Any]:

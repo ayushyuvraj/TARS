@@ -128,8 +128,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
       case "mapping":
         return Boolean(
           correlationResult !== null ||
-          (gstrFile && prFile) ||
-          (sessionStatus && sessionStatus !== "initialized")
+          (sessionStatus && ["mapped", "mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "rules":
       case "policy":
@@ -169,8 +168,7 @@ export const ReconciliationV2Workspace: React.FC = () => {
       case "setup":
         return Boolean(
           correlationResult !== null ||
-          (gstrFile && prFile) ||
-          (sessionStatus && sessionStatus !== "initialized")
+          (sessionStatus && ["mapped", "mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "mapping":
         return Boolean(

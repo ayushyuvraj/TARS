@@ -52,7 +52,7 @@ export const ReconciliationV3SummaryStage: React.FC<Props> = ({
     return (
       <div style={{ padding: "5rem", textAlign: "center", color: "#94a3b8" }}>
         <div className="spinner" style={{ margin: "0 auto 16px" }} />
-        <h3 style={{ color: "#f8fafc", marginBottom: 6 }}>Compiling Executive Intelligence & KICS Benchmark...</h3>
+        <h3 style={{ color: "#f8fafc", marginBottom: 6 }}>Compiling Executive Intelligence & Benchmark...</h3>
         <p style={{ margin: 0, fontSize: 14 }}>Aggregating 20,000 transactions across vendor risk and disparity taxonomies</p>
       </div>
     );
@@ -108,7 +108,7 @@ export const ReconciliationV3SummaryStage: React.FC<Props> = ({
               Reconciliation 3.0 Concurrence Benchmark
             </h2>
             <p style={{ color: "#94a3b8", fontSize: 14, margin: 0, maxWidth: 820, lineHeight: 1.5 }}>
-              Comprehensive disparity taxonomy, vendor stratification, and operational directives derived from the unified KICS 20,000-row workbook.
+              Comprehensive disparity taxonomy, vendor stratification, and operational directives derived from the unified 20,000-row workbook.
             </p>
           </div>
 
@@ -123,7 +123,7 @@ export const ReconciliationV3SummaryStage: React.FC<Props> = ({
               }}
             >
               <div style={{ fontSize: 11, textTransform: "uppercase", color: "#34d399", fontWeight: 700, letterSpacing: "0.05em" }}>
-                KICS Concurrence
+                Concurrence
               </div>
               <div style={{ fontSize: 22, fontWeight: 800, color: "#34d399", marginTop: 1 }}>
                 {b.concurrence_rate}%
@@ -163,14 +163,14 @@ export const ReconciliationV3SummaryStage: React.FC<Props> = ({
         >
           <h3 style={{ fontSize: 16, fontWeight: 700, color: "#f8fafc", margin: "0 0 12px 0", display: "flex", alignItems: "center", gap: 8 }}>
             <Layers size={16} style={{ color: "#38bdf8" }} />
-            TARS vs KICS Category Alignment
+            TARS vs Baseline Category Alignment
           </h3>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, textAlign: "left" }}>
             <thead>
               <tr style={{ color: "#94a3b8", borderBottom: "1px solid rgba(255, 255, 255, 0.08)" }}>
                 <th style={{ padding: "8px 0" }}>Category</th>
                 <th style={{ padding: "8px 0", textAlign: "right" }}>TARS</th>
-                <th style={{ padding: "8px 0", textAlign: "right" }}>KICS Baseline</th>
+                <th style={{ padding: "8px 0", textAlign: "right" }}>Baseline</th>
                 <th style={{ padding: "8px 0", textAlign: "right" }}>Concurrence</th>
               </tr>
             </thead>

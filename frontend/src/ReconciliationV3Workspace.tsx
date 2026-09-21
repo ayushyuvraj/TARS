@@ -127,8 +127,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
       case "mapping":
         return Boolean(
           correlationResult !== null ||
-          reconFile !== null ||
-          (sessionStatus && sessionStatus !== "initialized")
+          (sessionStatus && ["mapped", "mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "rules":
       case "policy":
@@ -168,8 +167,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
       case "setup":
         return Boolean(
           correlationResult !== null ||
-          reconFile !== null ||
-          (sessionStatus && sessionStatus !== "initialized")
+          (sessionStatus && ["mapped", "mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "mapping":
         return Boolean(
@@ -436,13 +434,13 @@ export const ReconciliationV3Workspace: React.FC = () => {
       clearTimeout(t2);
 
       const elapsedTotal = Date.now() - startTime;
-      const measuredDuration = result.total_duration_ms && result.total_duration_ms >= 150
-        ? Math.round(result.total_duration_ms)
-        : Math.max(elapsedTotal, 250);
+      const rawBackend = result.total_duration_ms ? Math.round(result.total_duration_ms) : 0;
+      const backendDuration = rawBackend > 0 && rawBackend < 300000 ? rawBackend : 0;
+      const measuredDuration = Math.max(elapsedTotal, backendDuration, 100);
 
       isIngestionFinishedRef.current = true;
       setTotalMeasuredDurationMs(measuredDuration);
-      setElapsedSec(Math.round(measuredDuration / 100) / 10);
+      setElapsedSec(Number((measuredDuration / 1000).toFixed(1)));
       if (result) {
         result.total_duration_ms = measuredDuration;
       }
@@ -537,7 +535,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
     }
   };
 
-  const effectiveFileName = reconFile?.name || correlationResult?.gstr_filename || (correlationResult ? "TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx" : null);
+  const effectiveFileName = reconFile?.name || correlationResult?.gstr_filename || (correlationResult ? "TARS_RECON_20000_Rows_All_Scenarios.xlsx" : null);
 
   return (
     <div className="v2-executive-root">
@@ -548,7 +546,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
             <div className="v2-brand-icon-halo">
               <Sparkles size={13} className="v2-sparkle-spin" />
             </div>
-            <span className="v2-brand-title">RECONCILIATION 3.0</span>
+            <span className="v2-brand-title">RECONCILIATION</span>
           </div>
         </div>
 
@@ -670,10 +668,10 @@ export const ReconciliationV3Workspace: React.FC = () => {
                   <h2 className="v2-stage-hero-title">Bring the reconciliation ledger together.</h2>
                   <div className="v2-stage-hero-tag">
                     <Sparkles size={12} />
-                    <span>Stage 1 of 6 • Unified Recon Ingestion (KICS 20,000 Rows)</span>
+                    <span>Stage 1 of 6 • Unified Recon Ingestion</span>
                   </div>
                   <p className="v2-stage-hero-desc">
-                    Upload your single KICS reconciliation workbook containing corresponding Counterparty and Books records. Autonomous agents pair columns and verify statutory integrity in seconds.
+                    Upload your single reconciliation workbook containing corresponding Counterparty and Books records. Autonomous agents pair columns and verify statutory integrity in seconds.
                   </p>
                 </div>
 
@@ -683,7 +681,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
                     className="v2-hero-btn-secondary"
                     onClick={() => executeFastUploadAndMapping(undefined, true)}
                     disabled={isSessionCompleted}
-                    title={isSessionCompleted ? "Session audit ledger finalized (Read-Only)" : "Load pre-installed 20,000-row KICS benchmark workbook"}
+                    title={isSessionCompleted ? "Session audit ledger finalized (Read-Only)" : "Load pre-installed 20,000-row benchmark workbook"}
                   >
                     <Sparkles size={13} className="text-amber-400" />
                     <span>Load 20k Row Sample</span>
@@ -765,7 +763,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
                         <span className="v2-dot-indicator blue" />
                         <span>TAX AUTHORITY LEDGER</span>
                       </div>
-                      <span className="v2-format-badge">OFFICIAL KICS EXTRACT</span>
+                      <span className="v2-format-badge">OFFICIAL EXTRACT</span>
                     </div>
 
                     {/* Content Bay */}
@@ -805,7 +803,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
                           </div>
                           <h3 className="v2-drop-title">Unified Reconciliation Workbook</h3>
                           <p className="v2-drop-subtitle">
-                            Drag & drop official KICS recon file or browse local files
+                            Drag & drop official recon file or browse local files
                           </p>
 
                           <label className="v2-browse-button blue">
@@ -879,7 +877,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
                   <div className="v2-telemetry-conduit">
                     <div className="v2-conduit-node">
                       <span className={`v2-conduit-pip ${effectiveFileName ? "is-primed" : ""}`} />
-                      <span>KICS Unified Recon File {effectiveFileName ? "Primed" : "Awaiting Ingestion"}</span>
+                      <span>Unified Recon File {effectiveFileName ? "Primed" : "Awaiting Ingestion"}</span>
                     </div>
                   </div>
                 )}
@@ -964,7 +962,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
                       <h4>Instant Ingestion for 20,000+ Rows</h4>
                     </div>
                     <p>
-                      Processes large single-workbook KICS files in seconds with zero browser freezing and memory virtualization.
+                      Processes large single-workbook files in seconds with zero browser freezing and memory virtualization.
                     </p>
                     <div className="v2-trust-foot">Tested on 20,000 Rows Benchmark</div>
                   </div>
@@ -996,7 +994,7 @@ export const ReconciliationV3Workspace: React.FC = () => {
                       <h4>Deterministic Tax Accuracy</h4>
                     </div>
                     <p>
-                      All GSTIN checksums, invoice numbers, and tax differentials verified down to the rupee against KICS baseline verdicts.
+                      All GSTIN checksums, invoice numbers, and tax differentials verified down to the rupee against baseline verdicts.
                     </p>
                     <div className="v2-trust-foot">Auditable & Human-Governed</div>
                   </div>
@@ -1016,9 +1014,9 @@ export const ReconciliationV3Workspace: React.FC = () => {
               <DynamicMappingGridV3
                 correlations={(correlationResult.correlations as any) || []}
                 allColumns={(correlationResult.all_columns && correlationResult.all_columns.length > 0 ? correlationResult.all_columns : correlationResult.pr_columns) || []}
-                workbookFileName={correlationResult.recon_filename || correlationResult.gstr_filename || reconFile?.name || "TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx"}
+                workbookFileName={correlationResult.recon_filename || correlationResult.gstr_filename || reconFile?.name || "TARS_RECON_20000_Rows_All_Scenarios.xlsx"}
                 agentThoughts={agentThoughts.length > 0 ? (agentThoughts as any) : ((correlationResult.agent_thoughts as any) || [])}
-                totalDurationMs={totalMeasuredDurationMs || (correlationResult?.total_duration_ms && correlationResult.total_duration_ms >= 150 ? correlationResult.total_duration_ms : 0)}
+                totalDurationMs={totalMeasuredDurationMs || (correlationResult?.total_duration_ms ? correlationResult.total_duration_ms : 0)}
                 isConfirmed={mappingConfirmed}
                 disabled={isSessionCompleted}
                 onChange={handleCorrelationsChange as any}

@@ -90,7 +90,7 @@ export const ReconciliationV3ExportStage: React.FC<Props> = ({
               Production Ledger Export
             </h2>
             <p style={{ color: "#94a3b8", fontSize: 14, margin: 0, maxWidth: 820, lineHeight: 1.5 }}>
-              Export the complete 20,000-row reconciled ledger with CP and PR source values, calculated variances, TARS classification verdicts, and KICS concurrence markers formatted with authentic Microsoft Excel palettes.
+              Export the complete 20,000-row reconciled ledger with CP and PR source values, calculated variances, TARS classification verdicts, and concurrence markers formatted with authentic Microsoft Excel palettes.
             </p>
           </div>
 
@@ -247,7 +247,7 @@ export const ReconciliationV3ExportStage: React.FC<Props> = ({
         </button>
 
         <span style={{ fontSize: 13, color: "#64748b" }}>
-          Reconciliation 3.0 • Single KICS Recon File Architecture
+          Reconciliation 3.0 • Single Recon File Architecture
         </span>
       </div>
     </div>
