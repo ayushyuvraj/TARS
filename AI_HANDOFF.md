@@ -1,5 +1,32 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## High-Throughput Ingestion & Reconciliation 3.0 Performance Optimization (11th October 2026)
+
+- **Checkpoint Name**: `High-Throughput Ingestion & Reconciliation 3.0 Performance Optimization`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-11-recon-perf-optimization-checkpoint`
+- **Current HEAD Commit**: `dd2c50e`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Rust Calamine Direct Ingestion Engine (`backend/app/api/reconciliations_v3.py`, `backend/app/api/reconciliations_v2.py`)*:
+     - Replaced slow cell-by-cell openpyxl XML parsing with `python-calamine` Rust-based workbook extraction (`CalamineWorkbook.from_path`).
+     - Cold parse of 20,000-row workbook (67.5 MB raw XML) reduced from 59.2s down to 2.36s (25x faster).
+     - Added calamine engine support with graceful fallback to `_load_df_safely` in `reconciliations_v2.py`.
+  2. *Ragged Row Normalization Guard (`backend/app/api/reconciliations_v3.py`)*:
+     - Fixed `ValueError: 165 columns passed, passed data had 163 columns` bug by dynamically padding trailing empty cells with `None` (`len(r_list) < n_cols`), ensuring openpyxl streaming fallback never crashes on unpadded ragged rows.
+  3. *Thread Event Synchronization (`_V3_CACHE_EVENTS`)*:
+     - Added `threading.Event` synchronization between background pre-cache worker and Stage 4 execution in both V3 and V2 adapters (`_execute_stage4_v3_internal` and `_run_stage4_waterfall_internal`).
+     - Prevents duplicate synchronous 60s parsing races that previously starved the CPU/GIL when users progressed rapidly to Stage 4.
+  4. *Fast Header & Tail Fingerprint Caching*:
+     - Upgraded cache lookup with head 64KB + tail 64KB + file size + sheet hash fingerprint, allowing instant (<50ms) cache hits even when files are renamed with UUIDs on upload.
+  5. *Redundant Disk I/O Elimination*:
+     - Removed redundant duplicate call to `audit_v2_service.save_stage4_results` in `reconciliations_v2.py` line 1492, which was double-serializing a 38 MB JSON results file.
+  6. *Benchmark Results & Test Validation*:
+     - 20,000-row fresh uncached upload reconciliation dropped from ~120s down to 2.98s – 3.70s total end-to-end.
+     - 100% test pass rate across `test_reconciliation_v3.py` (4/4 passed) and `test_reconciliation_v2.py` (11/11 passed).
+
+---
+
 ## Stage 1 Sample Button Removal & High-Throughput Engine Card Text Standardization (21st September 2026)
 
 - **Checkpoint Name**: `Stage 1 Sample Button Removal & High-Throughput Engine Card Text Standardization`

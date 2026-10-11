@@ -313,7 +313,10 @@ def _load_df_safely(path: Path, nrows: int | None = None) -> pd.DataFrame:
                 best_header = max(0, prof.header_row - 1)
             except Exception:
                 best_header = 0
-            df = pd.read_excel(path, header=best_header)
+            try:
+                df = pd.read_excel(path, header=best_header, engine="calamine")
+            except Exception:
+                df = pd.read_excel(path, header=best_header)
 
         # 4. Ensure tabular headers
         df = WaterfallMatchingEngine._ensure_tabular_headers(df)
@@ -1324,8 +1327,16 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
         recon_path = Path(recon_path_str) if recon_path_str and Path(recon_path_str).exists() else SAMPLE_RECON_FILE
         df = session.get("_cached_df")
         if not isinstance(df, pd.DataFrame) or df.empty:
-            df = _load_df_safely_v3(recon_path, session.get("sheet_name"))
-            session["_cached_df"] = df
+            from app.api.reconciliations_v3 import _V3_CACHE_EVENTS
+            evt = _V3_CACHE_EVENTS.get(session_id)
+            if evt and not evt.is_set():
+                logger.info(f"Recon V2 adapter: waiting for in-flight V3 background cache event for {session_id}...")
+                evt.wait(timeout=15.0)
+                df = session.get("_cached_df")
+
+            if not isinstance(df, pd.DataFrame) or df.empty:
+                df = _load_df_safely_v3(recon_path, session.get("sheet_name"))
+                session["_cached_df"] = df
 
         # 1. Load active rules for V3 session
         rules_v3 = session.get("rules_v3")
@@ -1489,7 +1500,6 @@ def _run_stage4_waterfall_internal(session_id: str, settings: Settings) -> Stage
             to_save.pop("_cached_gstr_df", None)
             to_save.pop("_cached_pr_df", None)
             audit_v2_service.save_session(to_save)
-            audit_v2_service.save_stage4_results(session_id, response.model_dump())
         except Exception as exc:
             logger.warning(f"Error persisting stage 4 results to audit: {exc}")
 

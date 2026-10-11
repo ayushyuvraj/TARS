@@ -5,6 +5,7 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 from pathlib import Path
+import threading
 from typing import Annotated, Any
 from uuid import uuid4
 
@@ -52,6 +53,7 @@ CACHE_DIR_V3 = PROJECT_ROOT / "data" / "cache_v3"
 RULES_V3_CATALOG_FILE = PROJECT_ROOT / "data" / "rules_v3_catalog.json"
 
 _V3_SESSIONS: dict[str, dict[str, Any]] = {}
+_V3_CACHE_EVENTS: dict[str, Any] = {}
 
 
 def load_master_rules_v3_catalog() -> list[Rule3Item]:
@@ -80,6 +82,28 @@ def save_master_rules_v3_catalog(rules: list[Rule3Item]) -> None:
         logger.error(f"Failed to write master rules v3 catalog: {exc}")
 
 
+def _compute_fast_file_fingerprint_v3(path: Path, sheet_name: str | None = None) -> str:
+    import hashlib
+    try:
+        stat = path.stat()
+        size = stat.st_size
+        h = hashlib.md5()
+        h.update(str(size).encode())
+        if sheet_name:
+            h.update(str(sheet_name).encode())
+        with open(path, "rb") as f:
+            head = f.read(65536)
+            h.update(head)
+            if size > 131072:
+                f.seek(max(0, size - 65536))
+                tail = f.read(65536)
+                h.update(tail)
+        clean_sheet = re.sub(r"[^a-zA-Z0-9_]", "_", str(sheet_name or "default"))
+        return f"fp3_{size}_{h.hexdigest()[:12]}_{clean_sheet}.pkl"
+    except Exception:
+        return f"fp3_{path.stem}.pkl"
+
+
 def _load_df_safely_v3(path: Path, sheet_name: str | None = None) -> pd.DataFrame:
     try:
         if not path.exists():
@@ -87,49 +111,128 @@ def _load_df_safely_v3(path: Path, sheet_name: str | None = None) -> pd.DataFram
 
         CACHE_DIR_V3.mkdir(parents=True, exist_ok=True)
         stat = path.stat()
+        fp_key = _compute_fast_file_fingerprint_v3(path, sheet_name)
+        fp_cache = CACHE_DIR_V3 / fp_key
         stem_cache = CACHE_DIR_V3 / f"{path.stem}_{stat.st_size}_{int(stat.st_mtime)}.pkl"
 
-        if stem_cache.exists():
+        # 1. Ultra-fast path: fingerprint cache or stem cache (~30-80ms)
+        target_cache = fp_cache if fp_cache.exists() else (stem_cache if stem_cache.exists() else None)
+        if target_cache and target_cache.exists():
             try:
-                return pd.read_pickle(stem_cache)
+                full_df = pd.read_pickle(target_cache)
+                if not fp_cache.exists():
+                    try:
+                        full_df.to_pickle(fp_cache)
+                    except Exception:
+                        pass
+                return full_df
             except Exception:
                 pass
 
-        if path.suffix.lower() == ".csv":
-            df = pd.read_csv(path)
-        else:
-            sheet_to_read = sheet_name or "KIGS GSTR 2B Reco"
-            df = None
-            try:
-                from openpyxl import load_workbook
-                wb = load_workbook(path, read_only=True, data_only=True)
-                actual_sheet = sheet_to_read if sheet_to_read in wb.sheetnames else wb.sheetnames[0]
-                ws = wb[actual_sheet]
-                row_iter = ws.iter_rows(values_only=True)
-                header = None
-                data = []
-                for row in row_iter:
-                    if header is None:
-                        if any(v is not None for v in row):
-                            header = [str(c) if c is not None else f"Column_{i+1}" for i, c in enumerate(row)]
-                    else:
-                        data.append(list(row))
-                wb.close()
-                if header:
-                    df = pd.DataFrame(data, columns=header)
-            except Exception as e_fast:
-                logger.info(f"Streaming Excel loader fallback for {path.name}: {e_fast}")
+        # 2. Fast secondary lookup: check if any cache exists with the exact same file size
+        try:
+            for existing_pkl in CACHE_DIR_V3.glob(f"*_{stat.st_size}_*.pkl"):
+                try:
+                    full_df = pd.read_pickle(existing_pkl)
+                    try:
+                        full_df.to_pickle(fp_cache)
+                    except Exception:
+                        pass
+                    return full_df
+                except Exception:
+                    continue
+        except Exception:
+            pass
 
+        # 3. Source read: CSV or Calamine/Excel
+        if path.suffix.lower() == ".csv":
+            df = pd.read_csv(path, low_memory=False)
+        else:
+            df = None
+            # Fast path A: High-speed Rust Calamine extraction (~2.3s for 20k rows)
+            try:
+                from python_calamine import CalamineWorkbook
+                wb = CalamineWorkbook.from_path(path)
+                target = None
+                if sheet_name and sheet_name in wb.sheet_names:
+                    target = sheet_name
+                elif sheet_name:
+                    for s in wb.sheet_names:
+                        if sheet_name.lower() in s.lower():
+                            target = s
+                            break
+                if not target:
+                    for s in wb.sheet_names:
+                        if any(k in s.lower() for k in ["reco", "2b", "kigs", "pr", "gstr", "recon"]):
+                            target = s
+                            break
+                if not target:
+                    target = wb.sheet_names[0]
+
+                sheet = wb.get_sheet_by_name(target)
+                data = sheet.to_python()
+                header = None
+                rows = []
+                for idx, r in enumerate(data):
+                    if any(c is not None and str(c).strip() != "" for c in r):
+                        header = [str(c) if c is not None else f"Column_{i+1}" for i, c in enumerate(r)]
+                        rows = data[idx + 1 :]
+                        break
+                if header:
+                    df = pd.DataFrame(rows, columns=header)
+            except Exception as e_cal:
+                logger.info(f"Calamine direct loader fallback for {path.name}: {e_cal}")
+
+            # Fast path B: pandas read_excel with calamine engine
+            if df is None:
+                try:
+                    sheet_to_read = sheet_name or "KIGS GSTR 2B Reco"
+                    df = pd.read_excel(path, sheet_name=sheet_to_read, engine="calamine")
+                except Exception as e_pd_cal:
+                    logger.info(f"Pandas calamine fallback for {path.name}: {e_pd_cal}")
+
+            # Fast path C: openpyxl with padded rows (guards against ragged row mismatch)
+            if df is None:
+                try:
+                    from openpyxl import load_workbook
+                    wb = load_workbook(path, read_only=True, data_only=True)
+                    actual_sheet = sheet_name if sheet_name and sheet_name in wb.sheetnames else (
+                        "KIGS GSTR 2B Reco" if "KIGS GSTR 2B Reco" in wb.sheetnames else wb.sheetnames[0]
+                    )
+                    ws = wb[actual_sheet]
+                    row_iter = ws.iter_rows(values_only=True)
+                    header = None
+                    data = []
+                    n_cols = 0
+                    for row in row_iter:
+                        if header is None:
+                            if any(v is not None for v in row):
+                                header = [str(c) if c is not None else f"Column_{i+1}" for i, c in enumerate(row)]
+                                n_cols = len(header)
+                        else:
+                            r_list = list(row)
+                            if len(r_list) < n_cols:
+                                r_list.extend([None] * (n_cols - len(r_list)))
+                            elif len(r_list) > n_cols:
+                                r_list = r_list[:n_cols]
+                            data.append(r_list)
+                    wb.close()
+                    if header:
+                        df = pd.DataFrame(data, columns=header)
+                except Exception as e_openpyxl:
+                    logger.info(f"Openpyxl fallback for {path.name}: {e_openpyxl}")
+
+            # Fast path D: standard pandas read_excel fallback
             if df is None:
                 try:
                     excel_file = pd.ExcelFile(path)
-                    if sheet_to_read not in excel_file.sheet_names:
-                        sheet_to_read = excel_file.sheet_names[0]
+                    sheet_to_read = sheet_name if sheet_name and sheet_name in excel_file.sheet_names else excel_file.sheet_names[0]
                     df = pd.read_excel(excel_file, sheet_name=sheet_to_read)
                 except Exception:
                     df = pd.read_excel(path)
 
         try:
+            df.to_pickle(fp_cache)
             df.to_pickle(stem_cache)
         except Exception:
             pass
@@ -357,8 +460,11 @@ async def upload_single_recon_file(
     session["status"] = "mapped"
     session["current_stage"] = "mapping"
 
-    # Pre-cache dataframe in background thread
-    def _bg_cache(sid: str, p: Path, sheet: str):
+    # Pre-cache dataframe in background thread with event synchronization
+    cache_evt = threading.Event()
+    _V3_CACHE_EVENTS[session_id] = cache_evt
+
+    def _bg_cache(sid: str, p: Path, sheet: str, evt: threading.Event):
         try:
             df = _load_df_safely_v3(p, sheet_name=sheet)
             if sid in _V3_SESSIONS:
@@ -367,9 +473,10 @@ async def upload_single_recon_file(
             logger.info(f"Recon 3.0 dataframe pre-cached successfully ({len(df)} rows, {len(df.columns)} columns)")
         except Exception as e:
             logger.warning(f"Recon 3.0 background pre-cache error: {e}")
+        finally:
+            evt.set()
 
-    import threading
-    threading.Thread(target=_bg_cache, args=(session_id, target_path, correlation.sheet_name), daemon=True).start()
+    threading.Thread(target=_bg_cache, args=(session_id, target_path, correlation.sheet_name, cache_evt), daemon=True).start()
 
     _persist_session_disk_v3(session)
 
@@ -599,11 +706,19 @@ def _execute_stage4_v3_internal(session_id: str) -> Stage4ExecutionResponseV3:
     # 1. Fetch dataframe
     df = session.get("_cached_df")
     if not isinstance(df, pd.DataFrame) or df.empty:
-        file_path_str = session.get("recon_path")
-        file_path = Path(file_path_str) if file_path_str and Path(file_path_str).exists() else SAMPLE_RECON_FILE
-        sheet_name = session.get("sheet_name", "KIGS GSTR 2B Reco")
-        df = _load_df_safely_v3(file_path, sheet_name=sheet_name)
-        session["_cached_df"] = df
+        # Check if background ingestion cache is currently in-flight
+        evt = _V3_CACHE_EVENTS.get(session_id)
+        if evt and not evt.is_set():
+            logger.info(f"Waiting for in-flight background cache event for session {session_id}...")
+            evt.wait(timeout=15.0)
+            df = session.get("_cached_df")
+
+        if not isinstance(df, pd.DataFrame) or df.empty:
+            file_path_str = session.get("recon_path")
+            file_path = Path(file_path_str) if file_path_str and Path(file_path_str).exists() else SAMPLE_RECON_FILE
+            sheet_name = session.get("sheet_name", "KIGS GSTR 2B Reco")
+            df = _load_df_safely_v3(file_path, sheet_name=sheet_name)
+            session["_cached_df"] = df
 
     if df.empty:
         raise HTTPException(status_code=400, detail="Recon file contains no records or could not be parsed.")
