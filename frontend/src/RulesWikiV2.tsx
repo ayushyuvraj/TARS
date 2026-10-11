@@ -16,6 +16,12 @@ import {
   toggleNormalizerInConfig,
 } from "./api_v3";
 import {
+  apiV4,
+  Rule4Item,
+  configToActiveNormalizersV4,
+  toggleNormalizerInConfigV4,
+} from "./api_v4";
+import {
   Play,
   ChevronDown,
   Info,
@@ -67,9 +73,23 @@ function formatAuditDate(iso?: string | null): string {
 
 export const RulesWikiV2: React.FC = () => {
   const navigate = useNavigate();
-  const [reconMode, setReconMode] = useState<"v2" | "v3">("v2");
+  const [reconMode, setReconMode] = useState<"v2" | "v3" | "v4">("v4");
   const [rules, setRules] = useState<Rule2Item[]>([]);
   const [rulesV3, setRulesV3] = useState<Rule3Item[]>([]);
+  const [rulesV4, setRulesV4] = useState<Rule4Item[]>([]);
+  const [selectedRuleV4Ids, setSelectedRuleV4Ids] = useState<Set<string>>(new Set());
+  const [expandedRuleV4Ids, setExpandedRuleV4Ids] = useState<Set<string>>(new Set());
+  const [explainingRuleV4, setExplainingRuleV4] = useState<Rule4Item | null>(null);
+
+  const toggleRuleExpandV4 = (ruleId: string) => {
+    setExpandedRuleV4Ids((prev) => {
+      const next = new Set(prev);
+      if (next.has(ruleId)) next.delete(ruleId);
+      else next.add(ruleId);
+      return next;
+    });
+  };
+
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSimulating, setIsSimulating] = useState<boolean>(false);
   const [simulationResult, setSimulationResult] = useState<SimulationResultV2 | null>(null);
@@ -206,6 +226,13 @@ export const RulesWikiV2: React.FC = () => {
       }
 
       try {
+              try {
+        const catalogV4 = await apiV4.getMasterRulesCatalog();
+        const permV4 = (catalogV4 || []).filter((r: Rule4Item) => !r.is_temporary && r.scope !== "temporary");
+        setRulesV4(permV4);
+      } catch (e) {
+        console.warn("Could not load V4 rules catalog:", e);
+      }
         const catalogV3 = await apiV3.getMasterRulesCatalog();
         const permV3 = (catalogV3 || []).filter((r) => !r.is_temporary && r.scope !== "temporary");
         setRulesV3(permV3);
@@ -627,6 +654,78 @@ export const RulesWikiV2: React.FC = () => {
     setEditFormV3({ ...rule });
   };
 
+    // --- V4 Handlers ---
+  const handleToggleRuleV4 = (id: string) => {
+    const updated = rulesV4.map((r) => (r.id === id ? { ...r, is_enabled: !r.is_enabled } : r));
+    setRulesV4(updated);
+    apiV4.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleToggleSelectRuleV4 = (id: string) => {
+    setSelectedRuleV4Ids((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllV4 = () => {
+    if (selectedRuleV4Ids.size === rulesV4.length) setSelectedRuleV4Ids(new Set());
+    else setSelectedRuleV4Ids(new Set(rulesV4.map((r) => r.id)));
+  };
+
+  const handleToggleNormalizerV4 = (id: string, normType: any) => {
+    const updated = rulesV4.map((r) => {
+      if (r.id === id) {
+        const nextNorms = toggleNormalizerInConfigV4(r.normalizers, normType);
+        return { ...r, normalizers: nextNorms };
+      }
+      return r;
+    });
+    setRulesV4(updated);
+    apiV4.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleSetMatchModeV4 = (id: string, mode: "EXACT" | "TOLERANCE") => {
+    const updated = rulesV4.map((r) => {
+      if (r.id === id) {
+        const isDateRule = r.match_strategy === "DATE_PROXIMITY" || r.id === "R4-04" || r.id === "R4-05";
+        if (mode === "EXACT") {
+          return { ...r, match_strategy: "EXACT", tolerance_value: 0, date_tolerance_value: 0 };
+        } else {
+          return {
+            ...r,
+            match_strategy: isDateRule ? "DATE_PROXIMITY" : "NUMERIC_TOLERANCE",
+            tolerance_value: r.tolerance_value && r.tolerance_value > 0 ? r.tolerance_value : 10.0,
+            date_tolerance_value: r.date_tolerance_value && r.date_tolerance_value > 0 ? r.date_tolerance_value : 30,
+          };
+        }
+      }
+      return r;
+    });
+    setRulesV4(updated);
+    apiV4.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleUpdateNumericTolV4 = (id: string, val: number, mode?: "ABSOLUTE_INR" | "PERCENTAGE") => {
+    const updated = rulesV4.map((r) => (r.id === id ? { ...r, tolerance_value: Math.max(0, val), ...(mode ? { tolerance_mode: mode } : {}) } : r));
+    setRulesV4(updated);
+    apiV4.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleUpdateDateTolV4 = (id: string, val: number, unit?: "DAYS" | "MONTHS" | "YEARS") => {
+    const updated = rulesV4.map((r) => (r.id === id ? { ...r, date_tolerance_value: Math.max(0, val), ...(unit ? { date_tolerance_unit: unit } : {}) } : r));
+    setRulesV4(updated);
+    apiV4.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleUpdateClientParamV4 = (id: string, updates: Partial<Rule4Item>) => {
+    const updated = rulesV4.map((r) => (r.id === id ? { ...r, ...updates } : r));
+    setRulesV4(updated);
+    apiV4.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
   const handleSaveEditV3 = () => {
     if (!editFormV3 || !editingRuleV3) return;
     const updatedRule: Rule3Item = {
@@ -709,6 +808,22 @@ export const RulesWikiV2: React.FC = () => {
                   }}
                 >
                   Two-Table Rules (Recon 2.0)
+                </button>
+                                <button
+                  type="button"
+                  onClick={() => setReconMode("v4")}
+                  style={{
+                    background: reconMode === "v4" ? "#d97706" : "rgba(30, 41, 59, 0.7)",
+                    color: reconMode === "v4" ? "#ffffff" : "#94a3b8",
+                    border: reconMode === "v4" ? "1px solid #f59e0b" : "1px solid rgba(255, 255, 255, 0.08)",
+                    borderRadius: 8,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Single Ledger Updated (Recon 4.0)
                 </button>
                 <button
                   type="button"
@@ -992,7 +1107,326 @@ export const RulesWikiV2: React.FC = () => {
 
       {/* 3. Rules Catalog List */}
       <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-        {reconMode === "v3" ? (
+                {reconMode === "v4" ? (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#334155" }}>
+                  <input
+                    type="checkbox"
+                    className="v2-card-select-checkbox"
+                    checked={rulesV4.length > 0 && selectedRuleV4Ids.size === rulesV4.length}
+                    onChange={handleToggleSelectAllV4}
+                    title="Select all Recon 4.0 rules"
+                  />
+                  <span>Select All</span>
+                </label>
+                <span style={{ color: "#94a3b8" }}>|</span>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                  Recon 4.0 Rules Catalog ({rulesV4.filter((r) => r.is_enabled).length} of {rulesV4.length} active)
+                </h2>
+              </div>
+
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                Supercharged 5-Tier Waterfall with KPMG Client Ineligible ITC & Multi-Tranche Rules.
+              </span>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {rulesV4.map((rule, idx) => {
+                const isDate = rule.match_strategy === "DATE_PROXIMITY" || rule.id === "R4-04" || rule.id === "R4-05";
+                const isExactMatch = isDate ? (!rule.date_tolerance_value || rule.date_tolerance_value === 0) : (!rule.tolerance_value || rule.tolerance_value === 0);
+                const activeNorms = configToActiveNormalizersV4(rule.normalizers);
+                const isExpanded = expandedRuleV4Ids.has(rule.id);
+                const isSelected = selectedRuleV4Ids.has(rule.id);
+
+                return (
+                  <div
+                    key={rule.id}
+                    id={`v4-rule-card-${rule.id}`}
+                    className={`v2-rule-item-card ${!rule.is_enabled ? "disabled" : ""} ${isExpanded ? "is-expanded" : ""} ${isSelected ? "is-selected" : ""}`}
+                  >
+                    <div
+                      className="v2-rule-compact-row"
+                      onClick={() => toggleRuleExpandV4(rule.id)}
+                      title={isExpanded ? "Click to collapse details" : "Click to expand configuration & audit metadata"}
+                    >
+                      <div className="v2-rule-compact-left">
+                        <input
+                          type="checkbox"
+                          className="v2-card-select-checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectRuleV4(rule.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          title={isSelected ? "Deselect rule" : "Select rule"}
+                        />
+
+                        <label
+                          className="v2-apple-switch"
+                          onClick={(e) => e.stopPropagation()}
+                          title={rule.is_enabled ? "Rule is Active. Click to disable" : "Rule is Disabled. Click to enable"}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={rule.is_enabled}
+                            onChange={() => handleToggleRuleV4(rule.id)}
+                          />
+                          <span className="v2-apple-switch-slider" />
+                        </label>
+
+                        <span className="v2-rule-order-badge">
+                          #{idx + 1}
+                        </span>
+
+                        <span className="v2-rule-category-pill" style={{ background: "#fef3c7", color: "#b45309", borderColor: "#fde68a" }}>
+                          {rule.category.replaceAll("_", " ")}
+                        </span>
+
+                        <h3 className="v2-rule-name-text">
+                          {rule.name}
+                        </h3>
+                      </div>
+
+                      <div className="v2-rule-compact-mid">
+                        <span className="v2-source-pill-compact" title={`Matched columns: ${rule.source_field_concept} ⟷ ${rule.target_field_concept}`}>
+                          <strong className="gov">{rule.source_field_concept}</strong>
+                          <span style={{ color: "#94a3b8" }}>⟷</span>
+                          <strong className="pr">{rule.target_field_concept}</strong>
+                        </span>
+
+                        {isExactMatch ? (
+                          <span className="v2-param-badge" style={{ background: "#ecfdf5", color: "#065f46", borderColor: "#a7f3d0" }}>
+                            Exact Match
+                          </span>
+                        ) : isDate ? (
+                          <span className="v2-param-badge date">
+                            ± {rule.date_tolerance_value || 30} {(rule.date_tolerance_unit || "DAYS").toLowerCase()}
+                          </span>
+                        ) : (
+                          <span className="v2-param-badge numeric">
+                            ± {rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹${rule.tolerance_value || 10}`}
+                          </span>
+                        )}
+                        <span className="v2-param-badge">
+                          {activeNorms.length} normalizer{activeNorms.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+
+                      <div className="v2-rule-compact-right">
+                        <button
+                          type="button"
+                          className="v2-rule-chevron-btn"
+                          aria-label={isExpanded ? "Collapse rule" : "Expand rule"}
+                        >
+                          <ChevronDown size={16} className={`v2-chevron ${isExpanded ? "is-expanded" : ""}`} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {isExpanded && (
+                      <div className="v2-pro-rule-expanded-box" onClick={(e) => e.stopPropagation()}>
+                        <div className="v2-pro-lineage-card">
+                          <div className="v2-pro-card-header">
+                            <Info size={14} />
+                            <span>Audit & Lineage Intelligence</span>
+                          </div>
+
+                          <div className="v2-pro-description-block">
+                            <p style={{ margin: "0 0 8px 0", fontSize: 13, lineHeight: 1.5, color: "#334155" }}>
+                              {rule.description}
+                            </p>
+
+                            <div className="v2-pro-rationale-callout">
+                              <ShieldCheck size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                              <div>
+                                <strong>Statutory Context:</strong> {rule.statutory_rationale || "Section 16(2) compliance anchor."}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="v2-pro-lineage-footer">
+                            <button
+                              type="button"
+                              onClick={() => setExplainingRuleV4(rule)}
+                              className="v2-explain-pill-btn"
+                              title="Explain Rule"
+                            >
+                              <Sparkles size={13} />
+                              <span>Explain Rule with AI</span>
+                            </button>
+
+                            <div className="v2-pro-lineage-meta">
+                              <div className="v2-audit-item">
+                                <User size={11} color="#64748b" />
+                                <span>{rule.created_by || "KPMG Client Rule Engine"}</span>
+                              </div>
+                              <span className="v2-audit-badge system">
+                                v{rule.version || "1.0.0"}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="v2-pro-controls-card">
+                          {/* Section 1: Normalisers */}
+                          <div className="v2-rule-section-block">
+                            <div className="v2-rule-section-header">
+                              <div className="v2-pro-card-header" style={{ color: "#334155" }}>
+                                <Sliders size={13} />
+                                <span>Section 1: Normalisation Pipeline</span>
+                              </div>
+                              <span className="v2-rule-section-count">
+                                {activeNorms.length} active
+                              </span>
+                            </div>
+                            <div className="v2-norm-chips-wrap">
+                              {ALL_NORMALIZERS.map((norm) => {
+                                const isActive = activeNorms.includes(norm.type);
+                                return (
+                                  <button
+                                    key={norm.type}
+                                    type="button"
+                                    className={`v2-norm-chip ${isActive ? "is-active" : ""}`}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleToggleNormalizerV4(rule.id, norm.type);
+                                    }}
+                                  >
+                                    {isActive && <CheckCircle2 size={12} />}
+                                    <span>{norm.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Section 2: Match Policy & Variance */}
+                          <div className="v2-rule-section-block">
+                            <div className="v2-rule-section-header">
+                              <div className="v2-pro-card-header" style={{ color: "#334155" }}>
+                                <CheckCircle2 size={13} />
+                                <span>Section 2: Match Policy & Variance</span>
+                              </div>
+                            </div>
+
+                            <div className="v2-match-mode-selector">
+                              <button
+                                type="button"
+                                className={`v2-mode-pill ${isExactMatch ? "is-active" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSetMatchModeV4(rule.id, "EXACT");
+                                }}
+                              >
+                                <CheckCircle2 size={13} />
+                                <span>Exact Match</span>
+                              </button>
+                              <button
+                                type="button"
+                                className={`v2-mode-pill ${!isExactMatch ? "is-active" : ""}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSetMatchModeV4(rule.id, "TOLERANCE");
+                                }}
+                              >
+                                <Sliders size={13} />
+                                <span>Tolerance Match</span>
+                              </button>
+                            </div>
+
+                            {!isExactMatch && (
+                              <div className="v2-tolerance-control-group" style={{ marginTop: 10 }}>
+                                <span className="v2-tolerance-input-label">Permitted Variance:</span>
+                                <div className="v2-tolerance-inputs-row">
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    className="v2-input-number"
+                                    value={isDate ? (rule.date_tolerance_value || 30) : (rule.tolerance_value || 10)}
+                                    onChange={(e) => {
+                                      e.stopPropagation();
+                                      const val = parseFloat(e.target.value) || 0;
+                                      if (isDate) handleUpdateDateTolV4(rule.id, Math.round(val));
+                                      else handleUpdateNumericTolV4(rule.id, val);
+                                    }}
+                                  />
+                                  <span style={{ fontSize: 12, color: "#64748b" }}>
+                                    {isDate ? "Days" : "₹"}
+                                  </span>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Section 3: Specialized Client Rule Controls */}
+                          {(rule.cross_fy_enabled !== undefined || rule.min_threshold_ineligible !== undefined || rule.custom_date_range_days !== undefined) && (
+                            <div className="v2-rule-section-block" style={{ marginTop: 12 }}>
+                              <div className="v2-rule-section-header">
+                                <div className="v2-pro-card-header" style={{ color: "#334155" }}>
+                                  <ShieldCheck size={13} />
+                                  <span>Section 3: Specialized Client Policy Parameters</span>
+                                </div>
+                              </div>
+
+                              {rule.cross_fy_enabled !== undefined && (
+                                <div style={{ marginTop: 8, padding: 10, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                                  <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 600, color: "#1e293b", cursor: "pointer" }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={!!rule.cross_fy_enabled}
+                                      onChange={(e) => handleUpdateClientParamV4(rule.id, { cross_fy_enabled: e.target.checked })}
+                                    />
+                                    <span>Cross-Financial Year Boundary Allowance (March 31 vs April 2)</span>
+                                  </label>
+                                </div>
+                              )}
+
+                              {rule.min_threshold_ineligible !== undefined && (
+                                <div style={{ marginTop: 8, padding: 10, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "#334155" }}>Minimum Ineligible / Section 17(5) Gap Threshold:</span>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>₹</span>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={10}
+                                      value={rule.min_threshold_ineligible ?? 100}
+                                      onChange={(e) => handleUpdateClientParamV4(rule.id, { min_threshold_ineligible: parseFloat(e.target.value) || 0 })}
+                                      className="v2-input-number"
+                                      style={{ width: 90 }}
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {rule.custom_date_range_days !== undefined && (
+                                <div style={{ marginTop: 8, padding: 10, background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                  <span style={{ fontSize: 12.5, fontWeight: 600, color: "#334155" }}>Custom Multi-Tranche Date Window:</span>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={365}
+                                      value={rule.custom_date_range_days ?? 31}
+                                      onChange={(e) => handleUpdateClientParamV4(rule.id, { custom_date_range_days: parseInt(e.target.value) || 31 })}
+                                      className="v2-input-number"
+                                      style={{ width: 80 }}
+                                    />
+                                    <span style={{ fontSize: 12, color: "#64748b" }}>Days</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : reconMode === "v3" ? (
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2142,6 +2576,78 @@ export const RulesWikiV2: React.FC = () => {
               >
                 <Trash2 size={14} />
                 <span>Yes, Permanently Delete</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+            {/* --- V4 PLAIN ENGLISH EXPLANATION MODAL --- */}
+      {explainingRuleV4 && (
+        <div className="v2-modal-backdrop" onClick={() => setExplainingRuleV4(null)}>
+          <div className="v2-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="v2-modal-header">
+              <div>
+                <span className="v2-rules-eyebrow" style={{ marginBottom: 6 }}>
+                  {explainingRuleV4.category.replaceAll("_", " ")}
+                </span>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                  {explainingRuleV4.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExplainingRuleV4(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="v2-modal-body">
+              <div className="v2-explain-section">
+                <span className="v2-explain-label">Plain-English Rule Explanation</span>
+                <div className="v2-explain-box">
+                  {explainingRuleV4.plain_english_explanation || explainingRuleV4.description}
+                </div>
+              </div>
+
+              <div className="v2-explain-section">
+                <span className="v2-explain-label">Target Concepts</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div style={{ background: "#f1f5f9", padding: "10px 14px", borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>SOURCE CONCEPT</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>
+                      {explainingRuleV4.source_field_concept}
+                    </div>
+                  </div>
+                  <div style={{ background: "#ecfdf5", padding: "10px 14px", borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, color: "#047857", fontWeight: 600 }}>TARGET CONCEPT</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "#065f46", marginTop: 4 }}>
+                      {explainingRuleV4.target_field_concept}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="v2-explain-section">
+                <span className="v2-explain-label">Accounting & Regulatory Rationale</span>
+                <div className="v2-explain-box rationale">
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <ShieldCheck size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div>{explainingRuleV4.statutory_rationale || explainingRuleV4.why_it_matters}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="v2-modal-footer">
+              <button
+                type="button"
+                className="btn-primary-v2"
+                style={{ padding: "8px 18px", fontSize: 13 }}
+                onClick={() => setExplainingRuleV4(null)}
+              >
+                Close Explanation
               </button>
             </div>
           </div>

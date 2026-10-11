@@ -20,6 +20,7 @@ from app.api.reconciliations import (
 )
 from app.api.reconciliations_v2 import router_v2
 from app.api.reconciliations_v3 import router_v3
+from app.api.reconciliations_v4 import router_v4
 from app.config import Settings, get_settings
 from app.domain.models import HealthResponse
 from app.repositories.sqlite import SQLiteReconciliationRepository
@@ -149,6 +150,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(export_router, prefix=resolved.api_prefix)
     app.include_router(router_v2, prefix=resolved.api_prefix)
     app.include_router(router_v3, prefix=resolved.api_prefix)
+    app.include_router(router_v4, prefix=resolved.api_prefix)
 
     @app.get("/health", response_model=HealthResponse, tags=["health"])
     def health() -> HealthResponse:

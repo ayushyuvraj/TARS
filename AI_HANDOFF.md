@@ -1,5 +1,28 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 4.0 • Single Ledger Updated & KPMG Client Rules (12th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 4.0 Single Ledger Updated & KPMG Client Rules`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-12-recon-v4-kpmg-rules-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Complete Architecture Isolation*:
+     - Reconciliation 2.0 (`reconciliations_v2.py`, `ReconciliationV2Workspace.tsx`) and Reconciliation 3.0 (`reconciliations_v3.py`, `ReconciliationV3Workspace.tsx`) left 100% untouched.
+     - All 15 existing unit and regression tests pass with 100% accuracy (`test_reconciliation_v2.py`, `test_reconciliation_v3.py`).
+  2. *Reconciliation 4.0 Workspace & Engine*:
+     - Created `backend/app/api/reconciliations_v4.py` and `backend/app/services/matching_engine_v4.py`.
+     - Implemented Option B 5-tier waterfall engine with 8 rules incorporating all 6 KPMG client rules (Banking multi-tranche consolidation, Section 17(5) Ineligible ITC with threshold, Document date variations within ±30 days, Cross-Financial Year boundaries March 31 vs April 2, Document number prefix stripping, compound variations).
+     - Full 6/6 test pass rate in `backend/tests/test_reconciliation_v4.py`.
+  3. *Stage 4 Reconcile Button & Tab Sampling Fixes*:
+     - Stage 4 pre-execution state preserved: does NOT auto-run on initial visit; requires clicking the "Reconcile" button.
+     - Stratified record sampling across all buckets ensures every tab ("Tolerance Matched", "Near Matches", "Ambiguous Collisions", "Exact Matches") displays hundreds of populated records.
+     - Comprehensive statutory and client comments populated on each record in `classification_reason`, `ai_reason`, and previews.
+  4. *Rules Wiki 4.0*:
+     - Added 3rd hero button `Single Ledger Updated (Recon 4.0)` on `/rules-v2` with interactive controls for Section 17(5) minimum threshold, Cross-FY timing toggle, and multi-tranche date window.
+
+---
+
 ## High-Throughput Ingestion & Reconciliation 3.0 Performance Optimization (11th October 2026)
 
 - **Checkpoint Name**: `High-Throughput Ingestion & Reconciliation 3.0 Performance Optimization`

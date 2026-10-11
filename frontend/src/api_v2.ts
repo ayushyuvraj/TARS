@@ -562,17 +562,20 @@ export const apiV2 = {
 
   // --- Stage 4 Results Endpoints ---
   async executeStage4Results(sessionId: string): Promise<Stage4ExecutionResponse> {
-    return request<Stage4ExecutionResponse>(`${API_BASE}/${sessionId}/results/execute`, {
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
+    return request<Stage4ExecutionResponse>(`${base}/${sessionId}/results/execute`, {
       method: "POST"
     });
   },
 
   async getStage4Results(sessionId: string): Promise<Stage4ExecutionResponse> {
-    return request<Stage4ExecutionResponse>(`${API_BASE}/${sessionId}/results`);
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
+    return request<Stage4ExecutionResponse>(`${base}/${sessionId}/results`);
   },
 
   async getStage5Summary(sessionId: string): Promise<Stage5SummaryResponse> {
-    return request<Stage5SummaryResponse>(`${API_BASE}/${sessionId}/summary`);
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
+    return request<Stage5SummaryResponse>(`${base}/${sessionId}/summary`);
   },
 
   async resolveAmbiguity(
@@ -581,7 +584,8 @@ export const apiV2 = {
     chosenCandidateId?: string,
     action: "CHOOSE" | "REJECT" = "CHOOSE"
   ): Promise<Stage4ExecutionResponse> {
-    return request<Stage4ExecutionResponse>(`${API_BASE}/${sessionId}/results/resolve-ambiguity`, {
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
+    return request<Stage4ExecutionResponse>(`${base}/${sessionId}/results/resolve-ambiguity`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -597,8 +601,9 @@ export const apiV2 = {
     recordId: string,
     record?: any
   ): Promise<AmbiguityRecommendation> {
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
     return request<AmbiguityRecommendation>(
-      `${API_BASE}/${sessionId}/records/${recordId}/recommend`,
+      `${base}/${sessionId}/records/${recordId}/recommend`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -612,8 +617,9 @@ export const apiV2 = {
     recordId: string,
     payload: ReclassifyRecordRequest
   ): Promise<Stage4ExecutionResponse> {
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
     return request<Stage4ExecutionResponse>(
-      `${API_BASE}/${sessionId}/records/${recordId}/reclassify`,
+      `${base}/${sessionId}/records/${recordId}/reclassify`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -658,11 +664,13 @@ export const apiV2 = {
 
   // --- Stage 6 Export Endpoints ---
   async getExportPreview(sessionId: string, limit: number = 50): Promise<ExportPreviewResponse> {
-    return request<ExportPreviewResponse>(`${API_BASE}/${sessionId}/export/preview?limit=${limit}`);
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
+    return request<ExportPreviewResponse>(`${base}/${sessionId}/export/preview?limit=${limit}`);
   },
 
   async getExportColumns(sessionId: string): Promise<AvailableColumnsResponse> {
-    return request<AvailableColumnsResponse>(`${API_BASE}/${sessionId}/export/columns`);
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
+    return request<AvailableColumnsResponse>(`${base}/${sessionId}/export/columns`);
   },
 
   async listExportPresets(): Promise<ExportPreset[]> {
@@ -684,7 +692,8 @@ export const apiV2 = {
   },
 
   async downloadCustomExport(sessionId: string, req: CustomExportRequest): Promise<Blob> {
-    const res = await fetch(`${API_BASE}/${sessionId}/export/custom`, {
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
+    const res = await fetch(`${base}/${sessionId}/export/custom`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(req),
@@ -702,11 +711,13 @@ export const apiV2 = {
     colorCoded: boolean = true,
     includeAuxiliary: boolean = true
   ): string {
-    return `${API_BASE}/${sessionId}/export/download?format=${format}&color_coded=${colorCoded}&include_auxiliary=${includeAuxiliary}`;
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
+    return `${base}/${sessionId}/export/download?format=${format}&color_coded=${colorCoded}&include_auxiliary=${includeAuxiliary}`;
   },
 
   completeSession: async (sessionId: string): Promise<ReconciliationV2Session> => {
-    const res = await fetch(`${API_BASE}/${sessionId}/complete`, {
+    const base = sessionId.startsWith("V4-") ? "/api/reconciliations-v4" : API_BASE;
+    const res = await fetch(`${base}/${sessionId}/complete`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });
@@ -715,7 +726,7 @@ export const apiV2 = {
       throw new Error(err.detail || "Failed to mark session complete.");
     }
     return res.json();
-  }
+  },
 };
 
 export interface ExportColumnDescriptor {
