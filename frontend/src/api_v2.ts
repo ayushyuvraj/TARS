@@ -239,6 +239,8 @@ export interface ReconciliationRecordItem {
   ai_reason?: string;
   reclassified_from?: string | null;
   reclassification_note?: string | null;
+  sub_classification?: string;
+  tars_verdict?: string;
 }
 
 export interface WaterfallPassYield {
@@ -268,6 +270,9 @@ export interface Stage4ResultsSummary {
   total_reconciled_itc: number;
   overall_reconciliation_rate: number;
   waterfall_passes: WaterfallPassYield[];
+  rule_breakdown?: Record<string, number>;
+  ineligible_itc_matches?: number;
+  consolidated_matches?: number;
 }
 
 export interface ComparedColumnInfo {

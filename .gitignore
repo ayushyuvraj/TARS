@@ -59,3 +59,7 @@ temp/
 .DS_Store
 Thumbs.db
 scratch/
+
+# Deployment packages and offline distribution bundles
+*.zip
+tars_kpmg_*/

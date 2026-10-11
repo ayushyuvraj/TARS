@@ -219,6 +219,7 @@ export interface Stage4ResultsSummaryV4 {
     matched_itc: number;
     retention_percentage: number;
   }>;
+  rule_breakdown?: Record<string, number>;
 }
 
 export interface Stage4ExecutionResponseV4 {

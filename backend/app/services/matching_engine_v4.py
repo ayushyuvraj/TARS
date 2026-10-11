@@ -153,6 +153,7 @@ class Stage4ResultsSummaryV4(BaseModel):
     total_reconciled_itc: float = 0.0
     overall_reconciliation_rate: float = 0.0
     waterfall_passes: list[dict[str, Any]] = Field(default_factory=list)
+    rule_breakdown: dict[str, int] = Field(default_factory=dict)
 
 
 class Stage4ExecutionResponseV4(BaseModel):
@@ -673,6 +674,29 @@ class WaterfallMatchingEngineV4:
         concurrence_rate = round((concurrence_count / n_rows * 100.0), 1) if n_rows > 0 else 0.0
 
         tot_reconciled = exact_count + tol_count + near_count + ineligible_count + consolidated_count
+
+        cross_fy_count = int(np.sum(sub_classes == "CROSS_FY_TIMING"))
+        date_shift_count = int(np.sum(sub_classes == "DATE_OPERATIONAL_SHIFT"))
+        ineligible_itc_count = int(np.sum(sub_classes == "INELIGIBLE_ITC_17_5"))
+        banking_count = int(np.sum(sub_classes == "BANKING_MULTI_TRANCHE"))
+        prefix_count = int(np.sum(sub_classes == "DOC_PREFIX_NORMALIZED"))
+        compound_count = int(np.sum(sub_classes == "COMPOUND_DOC_DATE_VARIATION"))
+        comm_tol_count = int(np.sum(sub_classes == "COMMERCIAL_TOLERANCE"))
+
+        rule_breakdown = {
+            "CROSS_FY_TIMING": cross_fy_count,
+            "DATE_OPERATIONAL_SHIFT": date_shift_count,
+            "INELIGIBLE_ITC_17_5": ineligible_itc_count,
+            "BANKING_MULTI_TRANCHE": banking_count,
+            "DOC_PREFIX_NORMALIZED": prefix_count,
+            "COMPOUND_DOC_DATE_VARIATION": compound_count,
+            "COMMERCIAL_TOLERANCE": comm_tol_count,
+            "EXACT_ZERO_VARIANCE": exact_count,
+            "AMBIGUOUS_COLLISION": amb_count,
+            "GST_ONLY": gst_count,
+            "PR_ONLY": pr_count,
+        }
+
         summary = Stage4ResultsSummaryV4(
             total_records=n_rows,
             exact_matches=exact_count,
@@ -716,31 +740,33 @@ class WaterfallMatchingEngineV4:
                 {"tier": 4, "name": "Tier 4: Statutory Discrepancies & Batches", "matched_count": ineligible_count + consolidated_count, "matched_itc": round(float(cp_taxable[np.isin(tars_verdicts, ["Ineligible ITC [Sec 17(5)]", "Consolidated Match"])].sum()), 2), "retention_percentage": round((ineligible_count + consolidated_count) / n_rows * 100, 1) if n_rows else 0.0},
                 {"tier": 5, "name": "Tier 5: Single-Sided Residuals & Ambiguities", "matched_count": pr_count + gst_count + amb_count, "matched_itc": round(float(cp_taxable[np.isin(tars_verdicts, ["GST Only", "PR Only", "Ambiguous"])].sum()), 2), "retention_percentage": round((pr_count + gst_count + amb_count) / n_rows * 100, 1) if n_rows else 0.0},
             ],
+            rule_breakdown=rule_breakdown,
         )
 
-        # Stratified sampling across all reconciliation categories so every tab is fully populated
-        bucket_indices = []
-        max_per_category = 400
-        for cat in [
-            "Exact Match",
-            "Tolerance Match",
-            "Near Match",
-            "Ineligible ITC [Sec 17(5)]",
-            "Consolidated Match",
-            "Ambiguous",
-            "GST Only",
-            "PR Only",
-        ]:
-            c_idxs = np.where(tars_verdicts == cat)[0]
-            if len(c_idxs) > 0:
-                bucket_indices.extend(c_idxs[:max_per_category].tolist())
+        # Convert Series/Arrays to native Python lists for ultra-fast vectorized iteration across all records
+        cp_gstin_lst = cp_gstin.astype(str).tolist()
+        pr_gstin_lst = pr_gstin.astype(str).tolist()
+        cp_doc_lst = cp_doc.astype(str).tolist()
+        pr_doc_lst = pr_doc.astype(str).tolist()
+        cp_date_lst = cp_date_str.astype(str).tolist()
+        pr_date_lst = pr_date_str.astype(str).tolist()
+        cp_taxable_lst = cp_taxable.tolist()
+        pr_taxable_lst = pr_taxable.tolist()
+        cp_igst_lst = cp_igst.tolist()
+        pr_igst_lst = pr_igst.tolist()
+        taxable_diff_lst = taxable_diff.tolist()
+        igst_diff_lst = igst_diff.tolist()
+        tars_verdicts_lst = [str(x) for x in tars_verdicts]
+        kics_clean_lst = [str(x) for x in kics_clean]
+        concurrence_lst = [str(x) for x in concurrence_arr]
+        sub_classes_lst = [str(x) for x in sub_classes]
+        pass_tiers_lst = [str(x) for x in pass_tiers]
+        date_diff_lst = date_diff_days.tolist() if hasattr(date_diff_days, "tolist") else list(date_diff_days)
 
-        selected_indices = sorted(set(bucket_indices)) if bucket_indices else list(range(min(n_rows, 500)))
-
-        # Build records preview with comprehensive statutory comments
+        # Build records preview with comprehensive statutory comments across ALL records
         records: list[ReconciliationRecordItemV4] = []
-        for i in selected_indices:
-            tv = str(tars_verdicts[i])
+        for i in range(n_rows):
+            tv = tars_verdicts_lst[i]
             bucket_val = (
                 "EXACT_MATCH" if tv == "Exact Match"
                 else "TOLERANCE_MATCH" if tv in ("Tolerance Match", "Ineligible ITC [Sec 17(5)]", "Consolidated Match")
@@ -749,34 +775,34 @@ class WaterfallMatchingEngineV4:
                 else "GSTR_ONLY" if tv == "GST Only"
                 else "AMBIGUOUS"
             )
-            c_gstin = str(cp_gstin.iloc[i]) if str(cp_gstin.iloc[i]) != "" else str(pr_gstin.iloc[i])
-            c_doc = str(cp_doc.iloc[i]) if str(cp_doc.iloc[i]) != "" else str(pr_doc.iloc[i])
-            c_date = str(cp_date_str.iloc[i]) if str(cp_date_str.iloc[i]) != "" else str(pr_date_str.iloc[i])
-            c_taxable = float(cp_taxable.iloc[i]) if float(cp_taxable.iloc[i]) != 0.0 else float(pr_taxable.iloc[i])
-            c_tax = float(cp_igst.iloc[i]) if float(cp_igst.iloc[i]) != 0.0 else float(pr_igst.iloc[i])
+            c_gstin = cp_gstin_lst[i] if cp_gstin_lst[i] != "" else pr_gstin_lst[i]
+            c_doc = cp_doc_lst[i] if cp_doc_lst[i] != "" else pr_doc_lst[i]
+            c_date = cp_date_lst[i] if cp_date_lst[i] != "" else pr_date_lst[i]
+            c_taxable = float(cp_taxable_lst[i]) if float(cp_taxable_lst[i]) != 0.0 else float(pr_taxable_lst[i])
+            c_tax = float(cp_igst_lst[i]) if float(cp_igst_lst[i]) != 0.0 else float(pr_igst_lst[i])
             c_total = round(c_taxable + c_tax, 2)
 
-            sub_c = str(sub_classes[i])
+            sub_c = sub_classes_lst[i]
             if sub_c == "BANKING_MULTI_TRANCHE":
                 client_comment = "Consolidated Multi-Tranche Entry: Multiple supplier invoices consolidated into single PR voucher within rolling window (e.g. Bank charges / vendor tranche)"
                 ai_audit_reason = "Rule 1 Match: Client books consolidate multiple monthly supplier/bank debits into a single accounting JV. Symmetrical GSTIN and temporal window validated."
             elif sub_c == "INELIGIBLE_ITC_17_5":
-                diff_ineligible = round(float(cp_taxable.iloc[i]) - float(pr_taxable.iloc[i]), 2)
+                diff_ineligible = round(float(cp_taxable_lst[i]) - float(pr_taxable_lst[i]), 2)
                 client_comment = f"Section 17(5) Ineligible ITC / Rejected Goods: Full invoice reported in GSTR-2B; only eligible portion booked in PR (₹{diff_ineligible:,.2f} ineligible/blocked credit u/s 17(5) not booked in books)"
                 ai_audit_reason = f"Rule 2 Statutory Discrepancy: Statutory blocked credit under Section 17(5) (e.g., motor vehicle / food / rent-a-cab). Value variance of ₹{diff_ineligible:,.2f} verified."
             elif sub_c == "CROSS_FY_TIMING":
                 client_comment = "Cross-Financial Year Boundary Timing Difference: Invoice dated in previous FY (March 31) and booked/received in subsequent FY (April 2)"
                 ai_audit_reason = "Rule 4 Timing Match: Symmetrical GSTIN, invoice number, and values confirmed across March-April financial year rollover."
             elif sub_c == "DATE_OPERATIONAL_SHIFT":
-                drift_days = int(date_diff_days[i]) if hasattr(date_diff_days, '__getitem__') else 5
+                drift_days = int(date_diff_lst[i]) if i < len(date_diff_lst) else 5
                 client_comment = f"Document Date Proximity: Document booked {drift_days} days later due to operational dispatch delay (within allowable ±30-day window)"
                 ai_audit_reason = f"Rule 3 Operational Shift: Legitimate supplier transit delay ({drift_days} days drift). Invoice numbers and financial values match exactly."
             elif sub_c == "DOC_PREFIX_NORMALIZED":
-                client_comment = f"Document Number Normalization: Invoice prefix/formatting dropped during manual booking ('{cp_doc.iloc[i]}' in Portal vs '{pr_doc.iloc[i]}' in Books)"
+                client_comment = f"Document Number Normalization: Invoice prefix/formatting dropped during manual booking ('{cp_doc_lst[i]}' in Portal vs '{pr_doc_lst[i]}' in Books)"
                 ai_audit_reason = "Rule 5 Text Normalization: Punctuation/prefix stripping resolved typographical difference without altering financial invoice identity."
             elif sub_c == "COMPOUND_DOC_DATE_VARIATION":
-                drift_days = int(date_diff_days[i]) if hasattr(date_diff_days, '__getitem__') else 5
-                client_comment = f"Compound Variation Match: Simultaneous prefix formatting variation ('{cp_doc.iloc[i]}' vs '{pr_doc.iloc[i]}') and {drift_days}-day document date delay"
+                drift_days = int(date_diff_lst[i]) if i < len(date_diff_lst) else 5
+                client_comment = f"Compound Variation Match: Simultaneous prefix formatting variation ('{cp_doc_lst[i]}' vs '{pr_doc_lst[i]}') and {drift_days}-day document date delay"
                 ai_audit_reason = "Rule 6 Compound Variation: Multi-parameter operational discrepancy resolved via joint fuzzy normalization and rolling date tolerance."
             elif sub_c == "EXACT_ZERO_VARIANCE":
                 client_comment = "Exact Statutory Identity: Zero variance across GSTIN, Invoice Number, Date, and ITC Financials"
@@ -791,28 +817,34 @@ class WaterfallMatchingEngineV4:
                 client_comment = f"Ambiguity / Tolerance Collision: Quarantined for review ({tv})"
                 ai_audit_reason = "Multi-candidate collision or tolerance boundary case requiring accountant verification."
 
+            conc = concurrence_lst[i]
+            disp_reason = None if conc == "AGREEMENT" else f"TARS classified '{tv}' vs KICS '{kics_clean_lst[i]}'"
+            t_diff = float(taxable_diff_lst[i])
+            tx_diff = float(igst_diff_lst[i])
+            p_tier = pass_tiers_lst[i]
+
             records.append(
                 ReconciliationRecordItemV4(
                     id=f"REC-V4-{i+1:06d}",
                     index=i,
                     tars_verdict=tv,
-                    kics_verdict=str(kics_clean[i]),
-                    concurrence=str(concurrence_arr[i]),
-                    disparity_reason=None if concurrence_arr[i] == "AGREEMENT" else f"TARS classified '{tv}' vs KICS '{kics_clean[i]}'",
-                    source_gstin=str(cp_gstin.iloc[i]),
-                    target_gstin=str(pr_gstin.iloc[i]),
-                    source_doc_num=str(cp_doc.iloc[i]),
-                    target_doc_num=str(pr_doc.iloc[i]),
-                    source_date=str(cp_date_str.iloc[i]),
-                    target_date=str(pr_date_str.iloc[i]),
-                    source_taxable=float(cp_taxable.iloc[i]),
-                    target_taxable=float(pr_taxable.iloc[i]),
-                    source_tax=float(cp_igst.iloc[i]),
-                    target_tax=float(pr_igst.iloc[i]),
-                    taxable_diff=float(taxable_diff.iloc[i]),
-                    tax_diff=float(igst_diff.iloc[i]),
-                    pass_tier=str(pass_tiers[i]),
-                    sub_classification=str(sub_classes[i]),
+                    kics_verdict=kics_clean_lst[i],
+                    concurrence=conc,
+                    disparity_reason=disp_reason,
+                    source_gstin=cp_gstin_lst[i],
+                    target_gstin=pr_gstin_lst[i],
+                    source_doc_num=cp_doc_lst[i],
+                    target_doc_num=pr_doc_lst[i],
+                    source_date=cp_date_lst[i],
+                    target_date=pr_date_lst[i],
+                    source_taxable=float(cp_taxable_lst[i]),
+                    target_taxable=float(pr_taxable_lst[i]),
+                    source_tax=float(cp_igst_lst[i]),
+                    target_tax=float(pr_igst_lst[i]),
+                    taxable_diff=t_diff,
+                    tax_diff=tx_diff,
+                    pass_tier=p_tier,
+                    sub_classification=sub_c,
                     bucket=bucket_val,
                     classification_reason=client_comment,
                     ai_reason=ai_audit_reason,
@@ -826,44 +858,44 @@ class WaterfallMatchingEngineV4:
                     tax_amount=c_tax,
                     total_value=c_total,
                     gstr_preview={
-                        "gstin": str(cp_gstin.iloc[i]),
-                        "document_number": str(cp_doc.iloc[i]),
-                        "invoice_number": str(cp_doc.iloc[i]),
-                        "document_date": str(cp_date_str.iloc[i]),
-                        "invoice_date": str(cp_date_str.iloc[i]),
-                        "taxable_value": float(cp_taxable.iloc[i]),
-                        "tax_amount": float(cp_igst.iloc[i]),
-                        "igst": float(cp_igst.iloc[i]),
-                        "total_value": round(float(cp_taxable.iloc[i]) + float(cp_igst.iloc[i]), 2),
-                        "GSTIN": str(cp_gstin.iloc[i]),
-                        "Invoice": str(cp_doc.iloc[i]),
-                        "Date": str(cp_date_str.iloc[i]),
-                        "Taxable": float(cp_taxable.iloc[i]),
-                        "Tax": float(cp_igst.iloc[i]),
+                        "gstin": cp_gstin_lst[i],
+                        "document_number": cp_doc_lst[i],
+                        "invoice_number": cp_doc_lst[i],
+                        "document_date": cp_date_lst[i],
+                        "invoice_date": cp_date_lst[i],
+                        "taxable_value": float(cp_taxable_lst[i]),
+                        "tax_amount": float(cp_igst_lst[i]),
+                        "igst": float(cp_igst_lst[i]),
+                        "total_value": round(float(cp_taxable_lst[i]) + float(cp_igst_lst[i]), 2),
+                        "GSTIN": cp_gstin_lst[i],
+                        "Invoice": cp_doc_lst[i],
+                        "Date": cp_date_lst[i],
+                        "Taxable": float(cp_taxable_lst[i]),
+                        "Tax": float(cp_igst_lst[i]),
                         "Remarks": client_comment,
                     },
                     pr_preview={
-                        "gstin": str(pr_gstin.iloc[i]),
-                        "document_number": str(pr_doc.iloc[i]),
-                        "invoice_number": str(pr_doc.iloc[i]),
-                        "document_date": str(pr_date_str.iloc[i]),
-                        "invoice_date": str(pr_date_str.iloc[i]),
-                        "taxable_value": float(pr_taxable.iloc[i]),
-                        "tax_amount": float(pr_igst.iloc[i]),
-                        "igst": float(pr_igst.iloc[i]),
-                        "total_value": round(float(pr_taxable.iloc[i]) + float(pr_igst.iloc[i]), 2),
-                        "GSTIN": str(pr_gstin.iloc[i]),
-                        "Invoice": str(pr_doc.iloc[i]),
-                        "Date": str(pr_date_str.iloc[i]),
-                        "Taxable": float(pr_taxable.iloc[i]),
-                        "Tax": float(pr_igst.iloc[i]),
+                        "gstin": pr_gstin_lst[i],
+                        "document_number": pr_doc_lst[i],
+                        "invoice_number": pr_doc_lst[i],
+                        "document_date": pr_date_lst[i],
+                        "invoice_date": pr_date_lst[i],
+                        "taxable_value": float(pr_taxable_lst[i]),
+                        "tax_amount": float(pr_igst_lst[i]),
+                        "igst": float(pr_igst_lst[i]),
+                        "total_value": round(float(pr_taxable_lst[i]) + float(pr_igst_lst[i]), 2),
+                        "GSTIN": pr_gstin_lst[i],
+                        "Invoice": pr_doc_lst[i],
+                        "Date": pr_date_lst[i],
+                        "Taxable": float(pr_taxable_lst[i]),
+                        "Tax": float(pr_igst_lst[i]),
                         "Remarks": client_comment,
                     },
                     variances={
-                        "taxable_diff": float(taxable_diff.iloc[i]),
-                        "tax_diff": float(igst_diff.iloc[i]),
+                        "taxable_diff": t_diff,
+                        "tax_diff": tx_diff,
                     },
-                    matched_by_pass=str(pass_tiers[i]),
+                    matched_by_pass=p_tier,
                 )
             )
 

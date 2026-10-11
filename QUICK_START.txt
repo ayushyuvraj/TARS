@@ -1,0 +1,28 @@
+========================================================================
+             TARS GST RECONCILIATION WORKBENCH — KPMG EDITION
+========================================================================
+
+QUICK START CHEAT SHEET (3 SIMPLE STEPS):
+
+1. CHECK PREREQUISITES:
+   Double-click:  verify_environment.bat
+   Confirm Python 3.11+ (64-bit) and Node.js 20+ LTS are installed.
+
+2. RUN SETUP (ONE TIME):
+   Double-click:  setup.bat
+   This automatically creates your .venv and installs all dependencies.
+
+3. LAUNCH TARS:
+   Double-click:  run.bat  (or START_TARS.bat)
+   The app will automatically start and open in your browser at:
+   http://127.0.0.1:5173
+
+------------------------------------------------------------------------
+OPENAI KEY SETUP:
+Open ".env" in Notepad and paste your key:
+OPENAI_API_KEY=sk-...
+
+FULL DOCUMENTATION:
+See KPMG_DEPLOYMENT_GUIDE.md for detailed instructions, corporate
+proxy configurations, and sample data walk-throughs.
+========================================================================

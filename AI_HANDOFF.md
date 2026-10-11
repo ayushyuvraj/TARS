@@ -20,6 +20,27 @@
      - Comprehensive statutory and client comments populated on each record in `classification_reason`, `ai_reason`, and previews.
   4. *Rules Wiki 4.0*:
      - Added 3rd hero button `Single Ledger Updated (Recon 4.0)` on `/rules-v2` with interactive controls for Section 17(5) minimum threshold, Cross-FY timing toggle, and multi-tranche date window.
+  5. *On-Demand Synthetic Dataset Generator (`scripts/generate_synthetic_recon_dataset.py`)*:
+     - Standalone high-performance vectorized dataset synthesis engine (NumPy/Pandas) capable of generating 1 to 500,000 rows.
+     - Controls exact counts or randomized proportions across all 11 error & match scenarios (including the 6 KPMG client rules).
+     - Emits `.xlsx` (sheet `KIGS GSTR 2B Reco`) and `.csv` in `data/synthetic_datasets/`, accompanied by Ground Truth JSON and Markdown summary tally tables.
+     - Full documentation and usage guide maintained in `docs/SYNTHETIC_DATASET_GENERATOR.md`.
+  6. *Dedicated Recon 4.0 Dynamic Filters, Retention Strip & 50k Pagination*:
+     - Created isolated `frontend/src/ReconciliationV4ResultsStage.tsx` and `frontend/src/results_v4.css` (leaving Recon 2.0 and Recon 3.0 results 100% untouched).
+     - Renamed section to **"Filters"** with dynamic status badge (`ALL PASSES`, `PASS 1 ACTIVE`, `PASS 2 ACTIVE`, etc.).
+     - Context-Aware Dynamic Pass Scoping:
+       - Pass 1 (Exact Match): isolated to Exact Match only (`8,384 (16.8%)`).
+       - Pass 2 (Tolerance Match): displays all 5 Pass 2 rules (Commercial Tolerance, Sec 17(5) Ineligible ITC, Cross-FY, Date Proximity, Banking Tranches).
+       - Pass 3 (Near Match): displays Prefix Normalization and Compound Variation.
+       - Pass 4 (Ambiguous): displays Multi-Candidate Ambiguity.
+       - Pass 5 (Residuals): displays GSTR 2B Only and PR Only.
+       - View All: displays all filters.
+     - Dual Percentage Display:
+       - Formatted count and percentage on each chip with micro progress rails (e.g. `8,384 (16.8%)`).
+       - Progressive Elimination Retention Breakdown strip below the chips with multi-segment stacked rail and interactive retention tags (Pass 1: 16.8%, Pass 2: 39.5%, Pass 3: 27.0%, Pass 4: 3.0%, Pass 5: 13.7%).
+     - Removed redundant progressive elimination waterfall flow collapsible accordion card.
+     - Full 50,000-row pagination streaming: fast <0.25s payload delivery across 1,000 pages with restored Recon 3.0 pagination bar toolbar controls.
+     - End-to-end verified with live 50,000-row synthetic reconciliation dataset (`V4-6A8637C8`).
 
 ---
 

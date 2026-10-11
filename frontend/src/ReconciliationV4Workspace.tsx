@@ -8,7 +8,7 @@ import {
 import { apiV4 } from "./api_v4";
 import { DynamicMappingGridV3 } from "./DynamicMappingGridV3";
 import { ReconciliationV4RulesStage } from "./ReconciliationV4RulesStage";
-import { ReconciliationV2ResultsStage } from "./ReconciliationV2ResultsStage";
+import { ReconciliationV4ResultsStage } from "./ReconciliationV4ResultsStage";
 import { ReconciliationV2SummaryStage } from "./ReconciliationV2SummaryStage";
 import { ReconciliationV2ExportStage } from "./ReconciliationV2ExportStage";
 import "./reconciliation_v2.css";
@@ -1116,7 +1116,7 @@ export const ReconciliationV4Workspace: React.FC = () => {
         {currentStage === "results" && (
           <div className={isSessionCompleted ? "v2-read-only-wrapper" : ""}>
             {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
-            <ReconciliationV2ResultsStage
+            <ReconciliationV4ResultsStage
               sessionId={sessionId || ""}
               isReadOnly={isSessionCompleted}
               onBackToRules={() => {

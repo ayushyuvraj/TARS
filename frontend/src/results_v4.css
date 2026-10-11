@@ -1,0 +1,642 @@
+/* ==========================================================================
+   RECONCILIATION 4.0 — CLIENT RULE BREAKDOWN STRIP & AUDIT ENHANCEMENTS
+   ========================================================================== */
+
+.v4-rule-strip-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 18px 22px;
+  box-shadow: 0 4px 16px -4px rgba(15, 23, 42, 0.06);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: -4px;
+  transition: all 0.2s ease;
+}
+
+.v4-rule-strip-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 20px -4px rgba(15, 23, 42, 0.09);
+}
+
+.v4-rule-strip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.v4-rule-strip-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.v4-rule-strip-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #00338d 0%, #0d274c 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 51, 141, 0.25);
+}
+
+.v4-rule-strip-heading {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v4-rule-strip-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.v4-rule-strip-desc {
+  font-size: 12px;
+  color: #64748b;
+  margin: 2px 0 0 0;
+}
+
+.v4-rule-strip-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.v4-rule-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.v4-rule-clear-btn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
+/* --- Chips Grid --- */
+.v4-rule-chips-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.v4-rule-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  text-align: left;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.v4-rule-chip:hover {
+  background: #ffffff;
+  border-color: #94a3b8;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+}
+
+.v4-rule-chip-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.v4-chip-icon-box {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.v4-chip-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.v4-chip-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v4-chip-sub {
+  font-size: 10.5px;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.v4-chip-count-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #e2e8f0;
+  color: #0f172a;
+  flex-shrink: 0;
+  margin-left: 8px;
+  letter-spacing: -0.01em;
+}
+
+.v4-chip-count-pct {
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.v4-rule-chip.is-active .v4-chip-count-pct {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.v4-chip-progress-rail {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(226, 232, 240, 0.6);
+}
+
+.v4-chip-progress-bar {
+  height: 100%;
+  border-radius: 0 2px 2px 0;
+  transition: width 0.3s ease;
+}
+
+.v4-rule-chip.exact-stat .v4-chip-progress-bar { background: #16a34a; }
+.v4-rule-chip.comm-tol .v4-chip-progress-bar { background: #0d9488; }
+.v4-rule-chip.cross-fy .v4-chip-progress-bar { background: #0284c7; }
+.v4-rule-chip.date-prox .v4-chip-progress-bar { background: #7c3aed; }
+.v4-rule-chip.sec-17-5 .v4-chip-progress-bar { background: #d97706; }
+.v4-rule-chip.banking .v4-chip-progress-bar { background: #059669; }
+.v4-rule-chip.prefix .v4-chip-progress-bar { background: #4f46e5; }
+.v4-rule-chip.compound .v4-chip-progress-bar { background: #c026d3; }
+.v4-rule-chip.amb-col .v4-chip-progress-bar { background: #ea580c; }
+.v4-rule-chip.gstr-only .v4-chip-progress-bar { background: #0284c7; }
+.v4-rule-chip.pr-only .v4-chip-progress-bar { background: #e11d48; }
+
+/* --- Theme Variants for Chips --- */
+
+/* Rule 2: Sec 17(5) */
+.v4-rule-chip.sec-17-5 .v4-chip-icon-box {
+  background: #fef3c7;
+  color: #d97706;
+}
+.v4-rule-chip.sec-17-5.is-active {
+  background: #fffbeb;
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.25);
+}
+.v4-rule-chip.sec-17-5.is-active .v4-chip-count-pill {
+  background: #d97706;
+  color: #ffffff;
+}
+
+/* Rule 4: Cross-FY */
+.v4-rule-chip.cross-fy .v4-chip-icon-box {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+.v4-rule-chip.cross-fy.is-active {
+  background: #f0f9ff;
+  border-color: #0284c7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+}
+.v4-rule-chip.cross-fy.is-active .v4-chip-count-pill {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+/* Rule 3: Date Proximity */
+.v4-rule-chip.date-prox .v4-chip-icon-box {
+  background: #f3e8ff;
+  color: #7c3aed;
+}
+.v4-rule-chip.date-prox.is-active {
+  background: #faf5ff;
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.25);
+}
+.v4-rule-chip.date-prox.is-active .v4-chip-count-pill {
+  background: #7c3aed;
+  color: #ffffff;
+}
+
+/* Rule 1: Banking Multi-Tranche */
+.v4-rule-chip.banking .v4-chip-icon-box {
+  background: #d1fae5;
+  color: #059669;
+}
+.v4-rule-chip.banking.is-active {
+  background: #ecfdf5;
+  border-color: #059669;
+  box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.25);
+}
+.v4-rule-chip.banking.is-active .v4-chip-count-pill {
+  background: #059669;
+  color: #ffffff;
+}
+
+/* Rule 5: Prefix Dropped */
+.v4-rule-chip.prefix .v4-chip-icon-box {
+  background: #e0e7ff;
+  color: #4f46e5;
+}
+.v4-rule-chip.prefix.is-active {
+  background: #eef2ff;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.25);
+}
+.v4-rule-chip.prefix.is-active .v4-chip-count-pill {
+  background: #4f46e5;
+  color: #ffffff;
+}
+
+/* Rule 6: Compound Variation */
+.v4-rule-chip.compound .v4-chip-icon-box {
+  background: #fae8ff;
+  color: #c026d3;
+}
+.v4-rule-chip.compound.is-active {
+  background: #fdf4ff;
+  border-color: #c026d3;
+  box-shadow: 0 0 0 2px rgba(192, 38, 211, 0.25);
+}
+.v4-rule-chip.compound.is-active .v4-chip-count-pill {
+  background: #c026d3;
+  color: #ffffff;
+}
+
+/* Commercial Tolerance */
+.v4-rule-chip.comm-tol .v4-chip-icon-box {
+  background: #ccfbf1;
+  color: #0d9488;
+}
+.v4-rule-chip.comm-tol.is-active {
+  background: #f0fdfa;
+  border-color: #0d9488;
+  box-shadow: 0 0 0 2px rgba(13, 148, 136, 0.25);
+}
+.v4-rule-chip.comm-tol.is-active .v4-chip-count-pill {
+  background: #0d9488;
+  color: #ffffff;
+}
+
+/* Exact Statutory Match */
+.v4-rule-chip.exact-stat .v4-chip-icon-box {
+  background: #dcfce7;
+  color: #16a34a;
+}
+.v4-rule-chip.exact-stat.is-active {
+  background: #f0fdf4;
+  border-color: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.25);
+}
+.v4-rule-chip.exact-stat.is-active .v4-chip-count-pill {
+  background: #16a34a;
+  color: #ffffff;
+}
+
+/* Ambiguous Collisions */
+.v4-rule-chip.amb-col .v4-chip-icon-box {
+  background: #ffedd5;
+  color: #ea580c;
+}
+.v4-rule-chip.amb-col.is-active {
+  background: #fff7ed;
+  border-color: #ea580c;
+  box-shadow: 0 0 0 2px rgba(234, 88, 12, 0.25);
+}
+.v4-rule-chip.amb-col.is-active .v4-chip-count-pill {
+  background: #ea580c;
+  color: #ffffff;
+}
+
+/* Pass 5: GSTR Only */
+.v4-rule-chip.gstr-only .v4-chip-icon-box {
+  background: #e0f2fe;
+  color: #0284c7;
+}
+.v4-rule-chip.gstr-only.is-active {
+  background: #f0f9ff;
+  border-color: #0284c7;
+  box-shadow: 0 0 0 2px rgba(2, 132, 199, 0.25);
+}
+.v4-rule-chip.gstr-only.is-active .v4-chip-count-pill {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+/* Pass 5: PR Only */
+.v4-rule-chip.pr-only .v4-chip-icon-box {
+  background: #ffe4e6;
+  color: #e11d48;
+}
+.v4-rule-chip.pr-only.is-active {
+  background: #fff1f2;
+  border-color: #e11d48;
+  box-shadow: 0 0 0 2px rgba(225, 29, 72, 0.25);
+}
+.v4-rule-chip.pr-only.is-active .v4-chip-count-pill {
+  background: #e11d48;
+  color: #ffffff;
+}
+
+/* --- Waterfall Retention & Percentage Breakdown Strip --- */
+.v4-waterfall-retention-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-top: 4px;
+}
+
+.v4-retention-strip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.v4-retention-strip-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0f172a;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.v4-retention-strip-sub {
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.v4-multi-segment-rail {
+  display: flex;
+  height: 8px;
+  width: 100%;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #e2e8f0;
+}
+
+.v4-rail-segment {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.v4-rail-segment.exact { background: #16a34a; }
+.v4-rail-segment.tolerance { background: #0284c7; }
+.v4-rail-segment.near { background: #8b5cf6; }
+.v4-rail-segment.ambiguous { background: #ea580c; }
+.v4-rail-segment.residuals { background: #e11d48; }
+
+.v4-retention-tags-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 2px;
+}
+
+.v4-retention-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #334155;
+  padding: 4px 10px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.v4-retention-tag:hover {
+  border-color: #94a3b8;
+  background: #f1f5f9;
+}
+
+.v4-retention-tag.is-selected {
+  font-weight: 700;
+  border-color: #00338d;
+  background: #eff6ff;
+  color: #00338d;
+}
+
+.v4-retention-tag .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+}
+
+.v4-retention-tag.exact .dot { background: #16a34a; }
+.v4-retention-tag.tolerance .dot { background: #0284c7; }
+.v4-retention-tag.near .dot { background: #8b5cf6; }
+.v4-retention-tag.ambiguous .dot { background: #ea580c; }
+.v4-retention-tag.residuals .dot { background: #e11d48; }
+
+.v4-retention-tag strong {
+  color: #0f172a;
+}
+
+.v4-retention-tag .tag-pct {
+  font-size: 11px;
+  color: #64748b;
+  font-weight: 700;
+}
+
+/* --- Active Filter Banner --- */
+.v4-active-filter-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  font-size: 12.5px;
+  color: #1e293b;
+  gap: 12px;
+}
+
+.v4-active-filter-banner.is-sec-17-5 {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.v4-active-filter-banner.is-cross-fy {
+  background: #f0f9ff;
+  border-color: #bae6fd;
+  color: #075985;
+}
+
+.v4-active-filter-banner.is-date-prox {
+  background: #faf5ff;
+  border-color: #e9d5ff;
+  color: #6b21a8;
+}
+
+.v4-active-filter-banner.is-banking {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.v4-active-filter-banner.is-prefix {
+  background: #eef2ff;
+  border-color: #c7d2fe;
+  color: #3730a3;
+}
+
+.v4-active-filter-banner.is-compound {
+  background: #fdf4ff;
+  border-color: #f5d0fe;
+  color: #86198f;
+}
+
+.v4-filter-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.v4-filter-banner-count {
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.v4-filter-banner-clear {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+/* --- Inline Rule Badges in Table --- */
+.v4-rule-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.v4-rule-pill.rule-sec-17-5 {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.v4-rule-pill.rule-cross-fy {
+  background: #e0f2fe;
+  color: #075985;
+  border: 1px solid #bae6fd;
+}
+
+.v4-rule-pill.rule-date {
+  background: #f3e8ff;
+  color: #6b21a8;
+  border: 1px solid #e9d5ff;
+}
+
+.v4-rule-pill.rule-banking {
+  background: #d1fae5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.v4-rule-pill.rule-prefix {
+  background: #e0e7ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
+}
+
+.v4-rule-pill.rule-compound {
+  background: #fae8ff;
+  color: #86198f;
+  border: 1px solid #f5d0fe;
+}
+
+.v4-rule-pill.rule-tolerance {
+  background: #ccfbf1;
+  color: #115e59;
+  border: 1px solid #99f6e4;
+}
+
+.v4-rule-pill.rule-exact {
+  background: #dcfce7;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
