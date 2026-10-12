@@ -1,5 +1,30 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 4.0 • Rules Wiki Visual Parity Alignment with Recon 3.0 (12th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 4.0 Rules Wiki Visual Parity Alignment with Recon 3.0`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-12-recon-v4-rules-wiki-parity-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Rules Wiki Tab & Header Alignment (`frontend/src/RulesWikiV2.tsx`)*:
+     - Replaced the orange active tab styling on `Single Ledger Updated (Recon 4.0)` with sovereign KPMG navy blue (`#00338D` / `#3b82f6`), visually identical to Recon 3.0.
+     - Updated catalog header to standard `Master Catalog Rules ({active} of {total} active)` and subtitle to `"Click rule card to view/configure comparison parameters & audit metadata."`.
+  2. *Card Header & Action Buttons*:
+     - Replaced amber category badges with standard `.v2-rule-category-pill` in navy blue (`CORE IDENTITY`, `DOCUMENT REFERENCE`, etc.).
+     - Added standard `Edit`, `Delete`, and chevron action controls directly on the compact row.
+     - Integrated modal state handlers and dialogs for editing and deleting V4 rules.
+  3. *2-Column Mac Studio Bento Grid (`.v2-pro-grid-layout`)*:
+     - Replaced vertically stacked expanded containers with authentic 2-column bento architecture:
+       - **Left Column** (`.v2-pro-intelligence-card`): Rule Specification & Rationale, Accounting Context callout box (`Section 16(2)(aa)`), canonical concept badge, `✦ Explain Rule with AI` button, and audit lineage metadata footer.
+       - **Right Column** (`.v2-pro-controls-card`): Section 1 Normalisation Pipeline chips with count badge, Section 2 Match Policy & Variance segmented control pills with variance tolerance inputs, unit selects, dynamic formula hint (`|CP - PR| <= ₹10`), and Section 3 Specialized Client Policy Parameters.
+  4. *Zero Functional Change & Verification*:
+     - Zero alterations to underlying rule evaluation, tolerance math, or reconciliation engine logic.
+     - `tsc -b && vite build` passed cleanly with 0 errors.
+     - Live browser verified at `http://127.0.0.1:5173/rules-v2`.
+
+---
+
 ## Reconciliation 4.0 • Audit Hub Round-Trip, Refined Inspector & Frozen Panes (12th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 4.0 Audit Hub Round-Trip, Refined Inspector & Frozen Panes`
