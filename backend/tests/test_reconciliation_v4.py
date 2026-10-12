@@ -203,14 +203,16 @@ def test_rule1_true_n_to_1_repeated_voucher():
     ])
     engine = WaterfallMatchingEngineV4()
     res = engine.execute_waterfall(df, session_id="test-r1-n1")
-    assert res.summary.consolidated_matches == 3
-    for r in res.records:
-        assert r.tars_verdict == "Consolidated Match"
-        assert r.sub_classification == "BANKING_MULTI_TRANCHE"
-        assert r.taxable_diff == 0.0
-        assert "N:1" in r.classification_reason
-        assert r.variances.get("batch_type") == "N:1"
-        assert r.variances.get("batch_sum") == 1800.0
+    assert res.summary.consolidated_matches == 1
+    assert len(res.records) == 1
+    r = res.records[0]
+    assert r.tars_verdict == "Consolidated Match"
+    assert r.sub_classification == "BANKING_MULTI_TRANCHE"
+    assert r.taxable_diff == 0.0
+    assert "N:1" in r.classification_reason
+    assert r.variances.get("batch_type") == "N:1"
+    assert r.variances.get("batch_sum") == 1800.0
+    assert len(r.batch_components) == 3
 
 
 def test_rule1_true_1_to_n_repeated_invoice():
@@ -255,14 +257,16 @@ def test_rule1_true_1_to_n_repeated_invoice():
     ])
     engine = WaterfallMatchingEngineV4()
     res = engine.execute_waterfall(df, session_id="test-r1-1n")
-    assert res.summary.consolidated_matches == 3
-    for r in res.records:
-        assert r.tars_verdict == "Consolidated Match"
-        assert r.sub_classification == "BANKING_MULTI_TRANCHE"
-        assert r.taxable_diff == 0.0
-        assert "1:N" in r.classification_reason
-        assert r.variances.get("batch_type") == "1:N"
-        assert r.variances.get("batch_sum") == 10000.0
+    assert res.summary.consolidated_matches == 1
+    assert len(res.records) == 1
+    r = res.records[0]
+    assert r.tars_verdict == "Consolidated Match"
+    assert r.sub_classification == "BANKING_MULTI_TRANCHE"
+    assert r.taxable_diff == 0.0
+    assert "1:N" in r.classification_reason
+    assert r.variances.get("batch_type") == "1:N"
+    assert r.variances.get("batch_sum") == 10000.0
+    assert len(r.batch_components) == 3
 
 
 def test_rule1_true_n_to_1_disjoint_unrolled():
@@ -319,11 +323,13 @@ def test_rule1_true_n_to_1_disjoint_unrolled():
     ])
     engine = WaterfallMatchingEngineV4()
     res = engine.execute_waterfall(df, session_id="test-r1-n1-disjoint")
-    assert res.summary.consolidated_matches == 4
-    for r in res.records:
-        assert r.tars_verdict == "Consolidated Match"
-        assert r.sub_classification == "BANKING_MULTI_TRANCHE"
-        assert r.taxable_diff == 0.0
+    assert res.summary.consolidated_matches == 1
+    assert len(res.records) == 1
+    r = res.records[0]
+    assert r.tars_verdict == "Consolidated Match"
+    assert r.sub_classification == "BANKING_MULTI_TRANCHE"
+    assert r.taxable_diff == 0.0
+    assert len(r.batch_components) == 3
 
 
 def test_rule1_true_1_to_n_disjoint_unrolled():
@@ -380,9 +386,11 @@ def test_rule1_true_1_to_n_disjoint_unrolled():
     ])
     engine = WaterfallMatchingEngineV4()
     res = engine.execute_waterfall(df, session_id="test-r1-1n-disjoint")
-    assert res.summary.consolidated_matches == 4
-    for r in res.records:
-        assert r.tars_verdict == "Consolidated Match"
-        assert r.sub_classification == "BANKING_MULTI_TRANCHE"
-        assert r.taxable_diff == 0.0
+    assert res.summary.consolidated_matches == 1
+    assert len(res.records) == 1
+    r = res.records[0]
+    assert r.tars_verdict == "Consolidated Match"
+    assert r.sub_classification == "BANKING_MULTI_TRANCHE"
+    assert r.taxable_diff == 0.0
+    assert len(r.batch_components) == 3
 

@@ -217,6 +217,19 @@ export interface AmbiguityCluster {
   resolved_at?: string | null;
 }
 
+export interface BatchComponentItem {
+  row_index: number;
+  row_number: number;
+  doc_type: "PR" | "GSTR";
+  document_number: string;
+  document_date: string;
+  taxable_value: number;
+  tax_amount: number;
+  total_value: number;
+  gstin: string;
+  share_percentage: number;
+}
+
 export interface ReconciliationRecordItem {
   id: string;
   bucket: "EXACT_MATCH" | "TOLERANCE_MATCH" | "NEAR_MATCH" | "AMBIGUOUS" | "GSTR_ONLY" | "PR_ONLY";
@@ -241,6 +254,7 @@ export interface ReconciliationRecordItem {
   reclassification_note?: string | null;
   sub_classification?: string;
   tars_verdict?: string;
+  batch_components?: BatchComponentItem[];
 }
 
 export interface WaterfallPassYield {

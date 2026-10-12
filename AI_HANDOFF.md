@@ -1,5 +1,29 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 4.0 • Single Master Batch Row Emission & Constituent Multi-Tranche Breakdown Inspector (12th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 4.0 Single Master Batch Row Emission & Constituent Multi-Tranche Breakdown Inspector`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-12-recon-v4-master-batch-constituent-inspector-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Deduplicated Master Batch Row Emission (`backend/app/services/matching_engine_v4.py`)*:
+     - Consolidated multiple split rows in 1:N and N:1 batch scenarios into a single canonical master record instead of emitting duplicate rows.
+     - Absorbed/constituent rows are stored inside the master record's `batch_components` list with native Python primitives (`int`, `float`) for clean JSON serialization.
+     - Filtered absorbed indices during record emission, bringing emitted records from 60,000 to 56,575 deduplicated records (1,327 master batch records).
+     - Recalculated summary metrics and concurrence rates strictly based on the emitted deduplicated records.
+  2. *Constituent Multi-Tranche Breakdown UI (`frontend/src/ReconciliationV4ResultsStage.tsx`, `results_v4.css`, `api_v2.ts`)*:
+     - Added the `BatchComponentItem` contract to `api_v2.ts`.
+     - Built the `.v4-inspector-batch-card` breakdown table beneath the comparative matrix in the expanded drawer.
+     - Displays workbook row tag, voucher/document #, date, taxable value, statutory tax, total value, and proportional share % bar for every constituent transaction.
+     - Dynamically labels batches as "Books Vouchers" (1:N) or "Portal Invoices" (N:1), showing batch sum, target amount, and net batch variance.
+  3. *Verification & Tests*:
+     - Pytest integration suite (`backend/tests/test_reconciliation_v4.py`): 10/10 tests passing.
+     - Frontend compilation (`tsc -b && vite build`): 0 errors.
+     - Live browser verified on active session `V4-2882F168` for `INV-UNROLLED/B0001-02` (4 constituent PR vouchers totaling ₹26,684.71 vs target ₹26,685.22, net variance ₹0.51).
+
+---
+
 ## Reconciliation 4.0 • 1:N and N:1 Multi-Tranche Batch Consolidation Engine & 60k Scenarios Benchmark (12th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 4.0 1:N and N:1 Multi-Tranche Batch Consolidation Engine & 60k Scenarios Benchmark`

@@ -1339,3 +1339,224 @@
   overflow: auto;
 }
 
+/* =========================================================================
+   Constituent Multi-Tranche Batch Components Card & Table
+   ========================================================================= */
+.v4-inspector-batch-card {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.v4-batch-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #e2e8f0;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.v4-batch-header-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.v4-batch-header-title .batch-layers-icon {
+  color: #2563eb;
+}
+
+.v4-batch-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.v4-batch-meta-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #475569;
+  background: #ffffff;
+  padding: 3px 8px;
+  border-radius: 5px;
+  border: 1px solid #e2e8f0;
+}
+
+.v4-batch-meta-pill strong {
+  color: #0f172a;
+}
+
+.v4-batch-meta-pill.highlight {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e40af;
+}
+
+.v4-batch-meta-pill.highlight strong {
+  color: #1e3a8a;
+}
+
+.v4-batch-meta-pill.variance {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.v4-batch-meta-pill.variance strong {
+  color: #14532d;
+}
+
+.v4-batch-table-container {
+  overflow-x: auto;
+  max-height: 280px;
+}
+
+.v4-batch-components-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.v4-batch-components-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 700;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 7px 10px;
+  border-bottom: 1px solid #cbd5e1;
+  text-align: left;
+  z-index: 1;
+}
+
+.v4-batch-comp-row {
+  border-bottom: 1px solid #f1f5f9;
+  transition: background 0.12s ease;
+}
+
+.v4-batch-comp-row:hover {
+  background: #f8fafc;
+}
+
+.v4-batch-comp-row td {
+  padding: 7px 10px;
+  vertical-align: middle;
+}
+
+.v4-batch-comp-idx {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  width: 30px;
+}
+
+.v4-comp-source-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.v4-comp-source-tag.books {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #dbeafe;
+}
+
+.v4-comp-source-tag.portal {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #dcfce7;
+}
+
+.v4-batch-comp-doc {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  color: #0f172a;
+}
+
+.v4-batch-comp-date {
+  color: #64748b;
+  font-size: 11.5px;
+}
+
+.v4-batch-comp-num {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11.5px;
+  text-align: right;
+  color: #0f172a;
+}
+
+.v4-batch-comp-num.itc {
+  color: #00338d;
+  font-weight: 600;
+}
+
+.v4-batch-comp-share {
+  vertical-align: middle;
+}
+
+.v4-share-cell {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.v4-share-pct {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #334155;
+  min-width: 42px;
+  text-align: right;
+}
+
+.v4-share-pct.total {
+  color: #00338d;
+}
+
+.v4-share-bar-track {
+  width: 50px;
+  height: 6px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.v4-share-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%);
+  border-radius: 999px;
+}
+
+.v4-batch-comp-total-row {
+  background: #f8fafc;
+  border-top: 2px solid #cbd5e1;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.v4-batch-comp-total-row td {
+  padding: 8px 10px;
+  font-size: 11.5px;
+}
+
+

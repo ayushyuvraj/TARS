@@ -838,7 +838,14 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                   key={item.id}
                   className={`v4-rule-chip ${item.className} ${isActive ? "is-active" : ""}`}
                   onClick={() => {
-                    setActiveRuleFilter(isActive ? null : item.id);
+                    if (isActive) {
+                      setActiveRuleFilter(null);
+                    } else {
+                      setActiveRuleFilter(item.id);
+                      if (activeTab !== "ALL" && activeTab !== item.passKey) {
+                        setActiveTab("ALL");
+                      }
+                    }
                   }}
                   title={`Click to filter table by ${item.name}`}
                 >
@@ -1234,7 +1241,13 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                                           {prDoc || <span className="v4-val-empty">Missing in Books</span>}
                                         </td>
                                         <td className="v4-ledger-delta">
-                                          {getTextDeltaBadge(gstrDoc, prDoc, true)}
+                                          {rec.batch_components && rec.batch_components.length > 0 ? (
+                                            <span className="v4-diff-badge delta-tol">
+                                              <Layers size={11} /> {rec.batch_components.length} {rec.variances?.batch_type === "N:1" ? "Invoices" : "Vouchers"}
+                                            </span>
+                                          ) : (
+                                            getTextDeltaBadge(gstrDoc, prDoc, true)
+                                          )}
                                         </td>
                                       </tr>
 
@@ -1308,6 +1321,107 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                                     </tbody>
                                   </table>
                                 </div>
+
+                                {/* 2.5 Constituent Multi-Tranche Batch Components Breakdown */}
+                                {rec.batch_components && rec.batch_components.length > 0 && (
+                                  <div className="v4-inspector-batch-card" style={{ marginTop: 12 }}>
+                                    <div className="v4-batch-card-header">
+                                      <div className="v4-batch-header-title">
+                                        <Layers size={14} className="batch-layers-icon" />
+                                        <span>
+                                          Consolidated Constituent Breakdown ({rec.batch_components.length}{" "}
+                                          {rec.variances?.batch_type === "N:1" ? "Portal Invoices" : "Books Vouchers"})
+                                        </span>
+                                      </div>
+                                      <div className="v4-batch-header-badges">
+                                        <span className="v4-batch-meta-pill">
+                                          Batch Sum: <strong>{formatINR(rec.variances?.batch_sum)}</strong>
+                                        </span>
+                                        <span className="v4-batch-meta-pill highlight">
+                                          Target ({rec.variances?.batch_type === "N:1" ? "PR" : "2B"}): <strong>{formatINR(rec.variances?.target_amount)}</strong>
+                                        </span>
+                                        <span className="v4-batch-meta-pill variance">
+                                          Net Variance: <strong>{rec.variances?.net_batch_variance || "₹0.00"}</strong>
+                                        </span>
+                                      </div>
+                                    </div>
+                                    
+                                    <div className="v4-batch-table-container">
+                                      <table className="v4-batch-components-table">
+                                        <thead>
+                                          <tr>
+                                            <th style={{ width: "5%" }}>#</th>
+                                            <th style={{ width: "14%" }}>Workbook Row</th>
+                                            <th style={{ width: "23%" }}>Document / Voucher #</th>
+                                            <th style={{ width: "13%" }}>Date</th>
+                                            <th style={{ width: "14%", textAlign: "right" }}>Taxable Value</th>
+                                            <th style={{ width: "13%", textAlign: "right" }}>Statutory Tax (ITC)</th>
+                                            <th style={{ width: "14%", textAlign: "right" }}>Total Value</th>
+                                            <th style={{ width: "14%", textAlign: "right" }}>Share %</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {rec.batch_components.map((comp, cIdx) => (
+                                            <tr key={`${comp.row_index}-${cIdx}`} className="v4-batch-comp-row">
+                                              <td className="v4-batch-comp-idx">{cIdx + 1}</td>
+                                              <td className="v4-batch-comp-source">
+                                                <span className={`v4-comp-source-tag ${comp.doc_type === "PR" ? "books" : "portal"}`}>
+                                                  {comp.doc_type === "PR" ? <FileText size={10} /> : <Landmark size={10} />}
+                                                  <span>Row #{comp.row_number}</span>
+                                                </span>
+                                              </td>
+                                              <td className="v4-batch-comp-doc mono bold">
+                                                {comp.document_number || "—"}
+                                              </td>
+                                              <td className="v4-batch-comp-date">
+                                                {comp.document_date || "—"}
+                                              </td>
+                                              <td className="v4-batch-comp-num num">
+                                                {formatINR(comp.taxable_value)}
+                                              </td>
+                                              <td className="v4-batch-comp-num num itc">
+                                                {formatINR(comp.tax_amount)}
+                                              </td>
+                                              <td className="v4-batch-comp-num num bold">
+                                                {formatINR(comp.total_value)}
+                                              </td>
+                                              <td className="v4-batch-comp-share">
+                                                <div className="v4-share-cell">
+                                                  <span className="v4-share-pct">{comp.share_percentage}%</span>
+                                                  <div className="v4-share-bar-track">
+                                                    <div 
+                                                      className="v4-share-bar-fill" 
+                                                      style={{ width: `${Math.min(100, Math.max(0, comp.share_percentage))}%` }} 
+                                                    />
+                                                  </div>
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                        <tfoot>
+                                          <tr className="v4-batch-comp-total-row">
+                                            <td colSpan={4} style={{ textAlign: "right", fontWeight: 700 }}>
+                                              Consolidated Aggregate ({rec.batch_components.length} constituent items):
+                                            </td>
+                                            <td className="num bold" style={{ textAlign: "right" }}>
+                                              {formatINR(rec.batch_components.reduce((sum, c) => sum + (c.taxable_value || 0), 0))}
+                                            </td>
+                                            <td className="num bold itc" style={{ textAlign: "right" }}>
+                                              {formatINR(rec.batch_components.reduce((sum, c) => sum + (c.tax_amount || 0), 0))}
+                                            </td>
+                                            <td className="num bold" style={{ textAlign: "right" }}>
+                                              {formatINR(rec.batch_components.reduce((sum, c) => sum + (c.total_value || 0), 0))}
+                                            </td>
+                                            <td style={{ textAlign: "right" }}>
+                                              <span className="v4-share-pct total">100.0%</span>
+                                            </td>
+                                          </tr>
+                                        </tfoot>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
 
                                 {/* 3. Statutory Audit Provenance & Findings */}
                                 <div className="v4-inspector-provenance-card">
