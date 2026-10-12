@@ -46,7 +46,9 @@ router_v4 = APIRouter(prefix="/reconciliations-v4", tags=["reconciliations-v4"])
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CACHE_DIR_V4 = PROJECT_ROOT / "data" / "cache_v4"
 CACHE_DIR_V4.mkdir(parents=True, exist_ok=True)
-SAMPLE_RECON_FILE = PROJECT_ROOT / "sample_data" / "TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx"
+SAMPLE_RECON_MULTI_FILE = PROJECT_ROOT / "sample_data" / "TARS_KIGS_RECON_60000_Rows_Multi_Tranche_Scenarios.xlsx"
+SAMPLE_RECON_LEGACY_FILE = PROJECT_ROOT / "sample_data" / "TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx"
+SAMPLE_RECON_FILE = SAMPLE_RECON_MULTI_FILE if SAMPLE_RECON_MULTI_FILE.exists() else SAMPLE_RECON_LEGACY_FILE
 MASTER_RULES_V4_FILE = PROJECT_ROOT / "data" / "audit_v2" / "rules_v4_catalog.json"
 
 _V4_SESSIONS: dict[str, dict[str, Any]] = {}
@@ -303,8 +305,9 @@ def _ensure_session_v4(session_id: str) -> dict[str, Any]:
 
     # Create new session
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
-    default_filename = SAMPLE_RECON_FILE.name if SAMPLE_RECON_FILE.exists() else "TARS_RECON_20000_Rows_All_Scenarios.xlsx"
+    default_filename = SAMPLE_RECON_FILE.name if SAMPLE_RECON_FILE.exists() else "TARS_KIGS_RECON_60000_Rows_Multi_Tranche_Scenarios.xlsx"
     default_path = str(SAMPLE_RECON_FILE) if SAMPLE_RECON_FILE.exists() else None
+    tot_rows = 60000 if "60000" in default_filename else 20000
 
     session_data: dict[str, Any] = {
         "id": session_id,
@@ -317,7 +320,7 @@ def _ensure_session_v4(session_id: str) -> dict[str, Any]:
         "recon_filename": default_filename,
         "recon_path": default_path,
         "sheet_name": "KIGS GSTR 2B Reco",
-        "total_rows": 20000,
+        "total_rows": tot_rows,
         "total_columns": 165,
         "correlation": None,
         "selected_rule_ids": [r.id for r in build_default_rules_v4() if r.is_enabled],

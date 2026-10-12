@@ -159,3 +159,230 @@ def test_rule6_compound_doc_number_and_date_variation():
     rec = res.records[0]
     assert rec.tars_verdict == "Near Match"
     assert rec.sub_classification in ("COMPOUND_DOC_DATE_VARIATION", "DOC_PREFIX_NORMALIZED")
+
+
+def test_rule1_true_n_to_1_repeated_voucher():
+    """Client Rule 1 True N:1: 3 GSTR supplier invoices totaling ₹1,800 matching 1 consolidated PR journal voucher."""
+    df = pd.DataFrame([
+        {
+            "CPGstin": "27AAACB1234M1Z1",
+            "PRGstin": "27AAACB1234M1Z1",
+            "CPDocumentNumber": "INV/06/2026/001",
+            "PRDocumentNumber": "Voucher BANK-CHG/JUN-26",
+            "CPDocumentDate": "05-Jun-2026",
+            "PRDocumentDate": "30-Jun-2026",
+            "CPTaxableValue": 1000.0,
+            "PRTaxableValue": 1800.0,
+            "CPIgstAmount": 90.0,
+            "PRIgstAmount": 162.0,
+        },
+        {
+            "CPGstin": "27AAACB1234M1Z1",
+            "PRGstin": "27AAACB1234M1Z1",
+            "CPDocumentNumber": "INV/06/2026/002",
+            "PRDocumentNumber": "Voucher BANK-CHG/JUN-26",
+            "CPDocumentDate": "15-Jun-2026",
+            "PRDocumentDate": "30-Jun-2026",
+            "CPTaxableValue": 500.0,
+            "PRTaxableValue": 1800.0,
+            "CPIgstAmount": 45.0,
+            "PRIgstAmount": 162.0,
+        },
+        {
+            "CPGstin": "27AAACB1234M1Z1",
+            "PRGstin": "27AAACB1234M1Z1",
+            "CPDocumentNumber": "INV/06/2026/003",
+            "PRDocumentNumber": "Voucher BANK-CHG/JUN-26",
+            "CPDocumentDate": "25-Jun-2026",
+            "PRDocumentDate": "30-Jun-2026",
+            "CPTaxableValue": 300.0,
+            "PRTaxableValue": 1800.0,
+            "CPIgstAmount": 27.0,
+            "PRIgstAmount": 162.0,
+        },
+    ])
+    engine = WaterfallMatchingEngineV4()
+    res = engine.execute_waterfall(df, session_id="test-r1-n1")
+    assert res.summary.consolidated_matches == 3
+    for r in res.records:
+        assert r.tars_verdict == "Consolidated Match"
+        assert r.sub_classification == "BANKING_MULTI_TRANCHE"
+        assert r.taxable_diff == 0.0
+        assert "N:1" in r.classification_reason
+        assert r.variances.get("batch_type") == "N:1"
+        assert r.variances.get("batch_sum") == 1800.0
+
+
+def test_rule1_true_1_to_n_repeated_invoice():
+    """Client Rule 1 True 1:N: 1 GSTR supplier invoice (₹10,000) matching 3 partial PR vouchers (₹3,000 + ₹3,000 + ₹4,000)."""
+    df = pd.DataFrame([
+        {
+            "CPGstin": "27BBBCB5678M1Z2",
+            "PRGstin": "27BBBCB5678M1Z2",
+            "CPDocumentNumber": "MASTER-INV-100",
+            "PRDocumentNumber": "GRN-01-PARTIAL",
+            "CPDocumentDate": "10-Jul-2026",
+            "PRDocumentDate": "12-Jul-2026",
+            "CPTaxableValue": 10000.0,
+            "PRTaxableValue": 3000.0,
+            "CPIgstAmount": 1800.0,
+            "PRIgstAmount": 540.0,
+        },
+        {
+            "CPGstin": "27BBBCB5678M1Z2",
+            "PRGstin": "27BBBCB5678M1Z2",
+            "CPDocumentNumber": "MASTER-INV-100",
+            "PRDocumentNumber": "GRN-02-PARTIAL",
+            "CPDocumentDate": "10-Jul-2026",
+            "PRDocumentDate": "18-Jul-2026",
+            "CPTaxableValue": 10000.0,
+            "PRTaxableValue": 3000.0,
+            "CPIgstAmount": 1800.0,
+            "PRIgstAmount": 540.0,
+        },
+        {
+            "CPGstin": "27BBBCB5678M1Z2",
+            "PRGstin": "27BBBCB5678M1Z2",
+            "CPDocumentNumber": "MASTER-INV-100",
+            "PRDocumentNumber": "GRN-03-FINAL",
+            "CPDocumentDate": "10-Jul-2026",
+            "PRDocumentDate": "25-Jul-2026",
+            "CPTaxableValue": 10000.0,
+            "PRTaxableValue": 4000.0,
+            "CPIgstAmount": 1800.0,
+            "PRIgstAmount": 720.0,
+        },
+    ])
+    engine = WaterfallMatchingEngineV4()
+    res = engine.execute_waterfall(df, session_id="test-r1-1n")
+    assert res.summary.consolidated_matches == 3
+    for r in res.records:
+        assert r.tars_verdict == "Consolidated Match"
+        assert r.sub_classification == "BANKING_MULTI_TRANCHE"
+        assert r.taxable_diff == 0.0
+        assert "1:N" in r.classification_reason
+        assert r.variances.get("batch_type") == "1:N"
+        assert r.variances.get("batch_sum") == 10000.0
+
+
+def test_rule1_true_n_to_1_disjoint_unrolled():
+    """Client Rule 1 Disjoint N:1: 3 single-sided GSTR lines aggregating to 1 single-sided PR journal voucher."""
+    df = pd.DataFrame([
+        {
+            "CPGstin": "27CCCCB9999M1Z9",
+            "PRGstin": "",
+            "CPDocumentNumber": "INV-A",
+            "PRDocumentNumber": "",
+            "CPDocumentDate": "01-Aug-2026",
+            "PRDocumentDate": "",
+            "CPTaxableValue": 1000.0,
+            "PRTaxableValue": 0.0,
+            "CPIgstAmount": 180.0,
+            "PRIgstAmount": 0.0,
+        },
+        {
+            "CPGstin": "27CCCCB9999M1Z9",
+            "PRGstin": "",
+            "CPDocumentNumber": "INV-B",
+            "PRDocumentNumber": "",
+            "CPDocumentDate": "05-Aug-2026",
+            "PRDocumentDate": "",
+            "CPTaxableValue": 500.0,
+            "PRTaxableValue": 0.0,
+            "CPIgstAmount": 90.0,
+            "PRIgstAmount": 0.0,
+        },
+        {
+            "CPGstin": "27CCCCB9999M1Z9",
+            "PRGstin": "",
+            "CPDocumentNumber": "INV-C",
+            "PRDocumentNumber": "",
+            "CPDocumentDate": "12-Aug-2026",
+            "PRDocumentDate": "",
+            "CPTaxableValue": 300.0,
+            "PRTaxableValue": 0.0,
+            "CPIgstAmount": 54.0,
+            "PRIgstAmount": 0.0,
+        },
+        {
+            "CPGstin": "",
+            "PRGstin": "27CCCCB9999M1Z9",
+            "CPDocumentNumber": "",
+            "PRDocumentNumber": "JV-CONSOL-AUG",
+            "CPDocumentDate": "",
+            "PRDocumentDate": "31-Aug-2026",
+            "CPTaxableValue": 0.0,
+            "PRTaxableValue": 1800.0,
+            "CPIgstAmount": 0.0,
+            "PRIgstAmount": 324.0,
+        },
+    ])
+    engine = WaterfallMatchingEngineV4()
+    res = engine.execute_waterfall(df, session_id="test-r1-n1-disjoint")
+    assert res.summary.consolidated_matches == 4
+    for r in res.records:
+        assert r.tars_verdict == "Consolidated Match"
+        assert r.sub_classification == "BANKING_MULTI_TRANCHE"
+        assert r.taxable_diff == 0.0
+
+
+def test_rule1_true_1_to_n_disjoint_unrolled():
+    """Client Rule 1 Disjoint 1:N: 1 single-sided GSTR line aggregating from 3 single-sided PR lines."""
+    df = pd.DataFrame([
+        {
+            "CPGstin": "27DDDCB8888M1Z8",
+            "PRGstin": "",
+            "CPDocumentNumber": "INV-MASTER",
+            "PRDocumentNumber": "",
+            "CPDocumentDate": "01-Sep-2026",
+            "PRDocumentDate": "",
+            "CPTaxableValue": 6000.0,
+            "PRTaxableValue": 0.0,
+            "CPIgstAmount": 1080.0,
+            "PRIgstAmount": 0.0,
+        },
+        {
+            "CPGstin": "",
+            "PRGstin": "27DDDCB8888M1Z8",
+            "CPDocumentNumber": "",
+            "PRDocumentNumber": "PR-TRANCHE-1",
+            "CPDocumentDate": "",
+            "PRDocumentDate": "05-Sep-2026",
+            "CPTaxableValue": 0.0,
+            "PRTaxableValue": 2000.0,
+            "CPIgstAmount": 0.0,
+            "PRIgstAmount": 360.0,
+        },
+        {
+            "CPGstin": "",
+            "PRGstin": "27DDDCB8888M1Z8",
+            "CPDocumentNumber": "",
+            "PRDocumentNumber": "PR-TRANCHE-2",
+            "CPDocumentDate": "",
+            "PRDocumentDate": "12-Sep-2026",
+            "CPTaxableValue": 0.0,
+            "PRTaxableValue": 2000.0,
+            "CPIgstAmount": 0.0,
+            "PRIgstAmount": 360.0,
+        },
+        {
+            "CPGstin": "",
+            "PRGstin": "27DDDCB8888M1Z8",
+            "CPDocumentNumber": "",
+            "PRDocumentNumber": "PR-TRANCHE-3",
+            "CPDocumentDate": "",
+            "PRDocumentDate": "20-Sep-2026",
+            "CPTaxableValue": 0.0,
+            "PRTaxableValue": 2000.0,
+            "CPIgstAmount": 0.0,
+            "PRIgstAmount": 360.0,
+        },
+    ])
+    engine = WaterfallMatchingEngineV4()
+    res = engine.execute_waterfall(df, session_id="test-r1-1n-disjoint")
+    assert res.summary.consolidated_matches == 4
+    for r in res.records:
+        assert r.tars_verdict == "Consolidated Match"
+        assert r.sub_classification == "BANKING_MULTI_TRANCHE"
+        assert r.taxable_diff == 0.0
+

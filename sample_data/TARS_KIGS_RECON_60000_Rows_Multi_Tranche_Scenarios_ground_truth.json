@@ -1,0 +1,95 @@
+{
+  "total_records": 60000,
+  "generated_at": "2026-10-12T08:49:57.593631+00:00",
+  "scenarios": {
+    "exact_match": {
+      "name": "Exact Statutory Identity",
+      "section": "Exact Match",
+      "tier": "Tier 1: Exact Match (Zero Variance)",
+      "count": 20198,
+      "percentage": 33.66,
+      "comment": "Exact Statutory Identity: Zero variance across GSTIN, Invoice Number, Date, and ITC Financials"
+    },
+    "commercial_tolerance": {
+      "name": "Commercial Value Tolerance (\u00b1\u20b910)",
+      "section": "Tolerance Match",
+      "tier": "Tier 2: Commercial Tolerances & Cross-FY",
+      "count": 8653,
+      "percentage": 14.42,
+      "comment": "Commercial Tolerance Match: Financial variance within allowable policy tolerance"
+    },
+    "date_proximity": {
+      "name": "Document Date Proximity (\u00b130 Days)",
+      "section": "Tolerance Match",
+      "tier": "Tier 2: Commercial Tolerances & Cross-FY",
+      "count": 5769,
+      "percentage": 9.62,
+      "comment": "Document Date Proximity: Document booked late due to operational dispatch delay (within allowable \u00b130-day window)"
+    },
+    "cross_fy": {
+      "name": "Cross-Financial Year Boundary (March 31 vs April 2)",
+      "section": "Tolerance Match",
+      "tier": "Tier 2: Commercial Tolerances & Cross-FY",
+      "count": 2884,
+      "percentage": 4.81,
+      "comment": "Cross-Financial Year Boundary Timing Difference: Invoice dated in previous FY (March 31) and booked/received in subsequent FY (April 2)"
+    },
+    "prefix_normalization": {
+      "name": "Document Number Prefix Normalization",
+      "section": "Near Match",
+      "tier": "Tier 3: Normalized & Compound Matches",
+      "count": 3461,
+      "percentage": 5.77,
+      "comment": "Document Number Normalization: Invoice prefix/formatting dropped during manual booking ('INV/2026/' stripped to match internal reference)"
+    },
+    "compound_variation": {
+      "name": "Compound Multi-Parameter Variation",
+      "section": "Near Match",
+      "tier": "Tier 3: Normalized & Compound Matches",
+      "count": 2884,
+      "percentage": 4.81,
+      "comment": "Compound Variation Match: Simultaneous prefix formatting variation and document date delay"
+    },
+    "ineligible_itc_17_5": {
+      "name": "Section 17(5) Ineligible ITC / Blocked Credit",
+      "section": "Ineligible ITC [Sec 17(5)]",
+      "tier": "Tier 4: Statutory Discrepancies & Batches",
+      "count": 2884,
+      "percentage": 4.81,
+      "comment": "Section 17(5) Ineligible ITC / Rejected Goods: Full invoice reported in GSTR-2B; only eligible portion booked in PR (ineligible/blocked credit u/s 17(5) not booked in books)"
+    },
+    "multi_tranche_banking": {
+      "name": "Banking & Multi-Tranche Batch (N:1 & 1:N) Consolidation",
+      "section": "Consolidated Match",
+      "tier": "Tier 4: Statutory Discrepancies & Batches",
+      "count": 3461,
+      "percentage": 5.77,
+      "comment": "Consolidated Multi-Tranche Entry: Multiple supplier invoices consolidated into single PR voucher within rolling window (e.g. Bank charges / vendor tranche)"
+    },
+    "ambiguous_collisions": {
+      "name": "Ambiguous Duplicate Collisions",
+      "section": "Ambiguous",
+      "tier": "Tier 5: Single-Sided Residuals & Ambiguities",
+      "count": 4038,
+      "percentage": 6.73,
+      "comment": "Ambiguity / Tolerance Collision: Quarantined for review"
+    },
+    "gst_only": {
+      "name": "GSTR-2B Only (Unclaimed Portal Credit)",
+      "section": "GST Only",
+      "tier": "Tier 5: Single-Sided Residuals & Ambiguities",
+      "count": 2884,
+      "percentage": 4.81,
+      "comment": "Portal Credit Available (Unrecorded in Books): Supplier filed in GSTR-1/2B but voucher missing or not entered in Purchase Register"
+    },
+    "pr_only": {
+      "name": "Purchase Register (Books) Only (Missing in 2B)",
+      "section": "PR Only",
+      "tier": "Tier 5: Single-Sided Residuals & Ambiguities",
+      "count": 2884,
+      "percentage": 4.81,
+      "comment": "Internal Books Voucher Only (Unmatched in Portal): Missing in GSTR-2B; DRC-01C compliance notice risk if claimed without vendor filing"
+    }
+  },
+  "generation_time_seconds": 2.3
+}

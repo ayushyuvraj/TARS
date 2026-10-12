@@ -405,6 +405,348 @@ class WaterfallMatchingEngineV4:
                     return orig
         return None
 
+    @staticmethod
+    def _find_subset_sum_indices(
+        items: list[tuple[int, float]],
+        target: float,
+        tolerance: float,
+        min_k: int = 2,
+        max_k: int = 10,
+    ) -> tuple[list[int], float] | None:
+        """
+        Finds a subset of items (between min_k and max_k items) whose sum is within tolerance of target.
+        Returns (list_of_indices, sum_amount) or None if no valid subset exists.
+        Uses branch-and-bound pruning with early stopping.
+        """
+        if not items or target <= 0.0:
+            return None
+
+        candidates = [(idx, round(amt, 2)) for idx, amt in items if 0.0 < amt <= target + tolerance + 1e-4]
+        if len(candidates) < min_k:
+            return None
+
+        total_avail = round(sum(amt for _, amt in candidates), 2)
+        if total_avail < target - tolerance - 1e-4:
+            return None
+
+        # Check if entire group matches
+        if abs(total_avail - target) <= tolerance and len(candidates) <= max_k:
+            return [idx for idx, _ in candidates], total_avail
+
+        # Sort descending for aggressive branch pruning
+        candidates.sort(key=lambda x: x[1], reverse=True)
+        # Cap candidate pool to top 60 relevant entries to ensure high throughput on 50k+ datasets
+        candidates = candidates[:60]
+
+        best_subset: list[int] | None = None
+        best_sum: float = 0.0
+        min_diff: float = float("inf")
+        iterations = 0
+        max_iterations = 500
+
+        def backtrack(start_idx: int, current_sum: float, chosen: list[int]):
+            nonlocal best_subset, best_sum, min_diff, iterations
+            iterations += 1
+            if iterations > max_iterations:
+                return False
+
+            diff = abs(current_sum - target)
+            if len(chosen) >= min_k:
+                if diff <= tolerance + 1e-4:
+                    if diff < min_diff:
+                        min_diff = diff
+                        best_subset = list(chosen)
+                        best_sum = round(current_sum, 2)
+                    if diff < 0.01:  # Exact penny match
+                        return True
+
+            if len(chosen) >= max_k or start_idx >= len(candidates):
+                return False
+
+            for i in range(start_idx, len(candidates)):
+                idx, amt = candidates[i]
+                if current_sum + amt > target + tolerance + 1e-4:
+                    continue
+
+                chosen.append(idx)
+                if backtrack(i + 1, current_sum + amt, chosen):
+                    return True
+                chosen.pop()
+
+            return False
+
+        backtrack(0, 0.0, [])
+        if best_subset is not None:
+            return best_subset, best_sum
+        return None
+
+    def _detect_batch_consolidations(
+        self,
+        n_rows: int,
+        unmatched_mask: pd.Series,
+        cp_gstin: pd.Series,
+        pr_gstin: pd.Series,
+        cp_doc: pd.Series,
+        pr_doc: pd.Series,
+        cp_doc_clean: pd.Series,
+        pr_doc_clean: pd.Series,
+        cp_dates: pd.Series,
+        pr_dates: pd.Series,
+        cp_taxable: pd.Series,
+        pr_taxable: pd.Series,
+        cp_igst: pd.Series,
+        pr_igst: pd.Series,
+        is_bank_voucher: pd.Series,
+        gstin_match: pd.Series,
+        date_proximate: pd.Series,
+        tolerance: float = 5.0,
+        window_days: int = 31,
+    ) -> tuple[pd.Series, dict[int, dict[str, Any]]]:
+        """
+        Executes N:1 and 1:N batch consolidation detection:
+        1. Repeated target voucher/invoice grouping (same vendor, same target doc, sum matches target)
+        2. Disjoint subset-sum aggregation across unrolled/residual items (same vendor, date window)
+        3. Legacy bank voucher keyword heuristic fallback.
+        """
+        consolidation_mask = pd.Series(False, index=range(n_rows))
+        consolidation_meta: dict[int, dict[str, Any]] = {}
+
+        unmatched_indices = set(np.where(unmatched_mask.values)[0])
+        if not unmatched_indices:
+            return consolidation_mask, consolidation_meta
+
+        # Effective GSTIN series
+        eff_gstin = cp_gstin.copy()
+        mask_empty_cp = eff_gstin.isin(["", "NAN", "NONE"])
+        eff_gstin[mask_empty_cp] = pr_gstin[mask_empty_cp]
+
+        cp_dates_lst = cp_dates.tolist()
+        pr_dates_lst = pr_dates.tolist()
+        cp_taxable_arr = cp_taxable.values
+        pr_taxable_arr = pr_taxable.values
+        cp_igst_arr = cp_igst.values
+        pr_igst_arr = pr_igst.values
+        cp_doc_lst = cp_doc.tolist()
+        pr_doc_lst = pr_doc.tolist()
+        eff_gstin_lst = eff_gstin.tolist()
+        cp_clean_lst = cp_doc_clean.tolist()
+        pr_clean_lst = pr_doc_clean.tolist()
+
+        def _dates_within_window(idx1: int, idx2: int) -> bool:
+            d1 = cp_dates_lst[idx1] if cp_dates_lst[idx1] is not None and not pd.isna(cp_dates_lst[idx1]) else pr_dates_lst[idx1]
+            d2 = pr_dates_lst[idx2] if pr_dates_lst[idx2] is not None and not pd.isna(pr_dates_lst[idx2]) else cp_dates_lst[idx2]
+            if d1 is None or pd.isna(d1) or d2 is None or pd.isna(d2):
+                return True
+            try:
+                return abs((d1 - d2).days) <= window_days
+            except Exception:
+                return True
+
+        def _try_match_group(grp: list[int]) -> bool:
+            nonlocal unmatched_indices
+            if len(grp) < 2 or not all(k in unmatched_indices for k in grp):
+                return False
+
+            base_idx = grp[0]
+            if not all(_dates_within_window(k, base_idx) for k in grp):
+                return False
+
+            cp_vals = [float(cp_taxable_arr[k]) for k in grp]
+            pr_vals = [float(pr_taxable_arr[k]) for k in grp]
+            pos_cp = [v for v in cp_vals if v > 0.0]
+            pos_pr = [v for v in pr_vals if v > 0.0]
+
+            # 1. Check 1:N (1 CP master target, N PR components)
+            if len(pos_pr) >= 2 and len(pos_cp) >= 1:
+                unique_cp = set(round(v, 2) for v in pos_cp)
+                if len(unique_cp) == 1:
+                    cp_target = next(iter(unique_cp))
+                    pr_sum = round(sum(pos_pr), 2)
+                    var = round(abs(pr_sum - cp_target), 2)
+                    if var <= tolerance:
+                        cp_tax_vals = [float(cp_igst_arr[k]) for k in grp if float(cp_taxable_arr[k]) > 0.0]
+                        cp_tax_val = cp_tax_vals[0] if cp_tax_vals else 0.0
+                        pr_tax_sum = round(sum(float(pr_igst_arr[k]) for k in grp), 2)
+                        t_doc = next((str(cp_doc_lst[k]) for k in grp if str(cp_doc_lst[k]) not in ("", "NAN", "NONE")), str(pr_doc_lst[base_idx]))
+                        for k in grp:
+                            consolidation_mask.iloc[k] = True
+                            if k in unmatched_indices:
+                                unmatched_indices.remove(k)
+                            consolidation_meta[k] = {
+                                "mode": "1:N",
+                                "batch_count": len(pos_pr),
+                                "batch_sum": pr_sum,
+                                "target_amount": cp_target,
+                                "target_doc": t_doc,
+                                "variance": var,
+                                "tax_variance": round(abs(pr_tax_sum - cp_tax_val), 2),
+                                "component_docs": [str(pr_doc_lst[x]) for x in grp if float(pr_taxable_arr[x]) > 0.0],
+                            }
+                        return True
+
+            # 2. Check N:1 (N CP components, 1 PR target)
+            if len(pos_cp) >= 2 and len(pos_pr) >= 1:
+                unique_pr = set(round(v, 2) for v in pos_pr)
+                if len(unique_pr) == 1:
+                    pr_target = next(iter(unique_pr))
+                    cp_sum = round(sum(pos_cp), 2)
+                    var = round(abs(cp_sum - pr_target), 2)
+                    if var <= tolerance:
+                        pr_tax_vals = [float(pr_igst_arr[k]) for k in grp if float(pr_taxable_arr[k]) > 0.0]
+                        pr_tax_val = pr_tax_vals[0] if pr_tax_vals else 0.0
+                        cp_tax_sum = round(sum(float(cp_igst_arr[k]) for k in grp), 2)
+                        t_doc = next((str(pr_doc_lst[k]) for k in grp if str(pr_doc_lst[k]) not in ("", "NAN", "NONE")), str(cp_doc_lst[base_idx]))
+                        for k in grp:
+                            consolidation_mask.iloc[k] = True
+                            if k in unmatched_indices:
+                                unmatched_indices.remove(k)
+                            consolidation_meta[k] = {
+                                "mode": "N:1",
+                                "batch_count": len(pos_cp),
+                                "batch_sum": cp_sum,
+                                "target_amount": pr_target,
+                                "target_doc": t_doc,
+                                "variance": var,
+                                "tax_variance": round(abs(cp_tax_sum - pr_tax_val), 2),
+                                "component_docs": [str(cp_doc_lst[x]) for x in grp if float(cp_taxable_arr[x]) > 0.0],
+                            }
+                        return True
+
+            return False
+
+        # PHASE 1A: Group by shared PR document number
+        pr_groups: dict[tuple[str, str], list[int]] = {}
+        for idx in list(unmatched_indices):
+            g = eff_gstin_lst[idx]
+            p_d = pr_doc_lst[idx]
+            if g and g not in ("NAN", "NONE") and p_d and p_d not in ("NAN", "NONE"):
+                pr_groups.setdefault((g, p_d), []).append(idx)
+        for grp in pr_groups.values():
+            _try_match_group(grp)
+
+        # PHASE 1B: Group by shared CP document number
+        cp_groups: dict[tuple[str, str], list[int]] = {}
+        for idx in list(unmatched_indices):
+            g = eff_gstin_lst[idx]
+            c_d = cp_doc_lst[idx]
+            if g and g not in ("NAN", "NONE") and c_d and c_d not in ("NAN", "NONE"):
+                cp_groups.setdefault((g, c_d), []).append(idx)
+        for grp in cp_groups.values():
+            _try_match_group(grp)
+
+        # PHASE 1C: Group by normalized clean doc numbers
+        clean_groups: dict[tuple[str, str], list[int]] = {}
+        for idx in list(unmatched_indices):
+            g = eff_gstin_lst[idx]
+            c_doc = cp_clean_lst[idx] if cp_clean_lst[idx] not in ("", "NAN", "NONE") else pr_clean_lst[idx]
+            if g and g not in ("NAN", "NONE") and c_doc and c_doc not in ("NAN", "NONE"):
+                clean_groups.setdefault((g, c_doc), []).append(idx)
+        for grp in clean_groups.values():
+            _try_match_group(grp)
+
+        # PHASE 2: General Disjoint Subset-Sum across Vendor Partitions
+        gstin_partitions: dict[str, list[int]] = {}
+        for idx in list(unmatched_indices):
+            g = eff_gstin_lst[idx]
+            if g and g not in ("NAN", "NONE"):
+                gstin_partitions.setdefault(g, []).append(idx)
+
+        for g, rows_in_gstin in gstin_partitions.items():
+            if len(rows_in_gstin) < 2:
+                continue
+            active_rows = [k for k in rows_in_gstin if k in unmatched_indices]
+            if len(active_rows) < 2:
+                continue
+
+            # 2A: Check N:1
+            pr_targets = [k for k in active_rows if float(pr_taxable_arr[k]) > 0.0 and float(cp_taxable_arr[k]) == 0.0]
+            cp_candidates = [k for k in active_rows if float(cp_taxable_arr[k]) > 0.0 and float(pr_taxable_arr[k]) == 0.0]
+            for pr_idx in pr_targets:
+                if pr_idx not in unmatched_indices:
+                    continue
+                t_val = float(pr_taxable_arr[pr_idx])
+                valid_cps = [
+                    (c_idx, float(cp_taxable_arr[c_idx]))
+                    for c_idx in cp_candidates
+                    if c_idx in unmatched_indices and c_idx != pr_idx and _dates_within_window(c_idx, pr_idx)
+                ]
+                res = self._find_subset_sum_indices(valid_cps, t_val, tolerance)
+                if res is not None:
+                    matched_cp_indices, batch_sum = res
+                    var = round(abs(batch_sum - t_val), 2)
+                    all_batch = [pr_idx] + matched_cp_indices
+                    target_doc = str(pr_doc_lst[pr_idx]) or f"Voucher-{pr_idx+1}"
+                    cp_tax_sum = round(sum(float(cp_igst_arr[x]) for x in matched_cp_indices), 2)
+                    pr_tax_val = float(pr_igst_arr[pr_idx])
+                    for k in all_batch:
+                        consolidation_mask.iloc[k] = True
+                        if k in unmatched_indices:
+                            unmatched_indices.remove(k)
+                        consolidation_meta[k] = {
+                            "mode": "N:1",
+                            "batch_count": len(matched_cp_indices),
+                            "batch_sum": batch_sum,
+                            "target_amount": t_val,
+                            "target_doc": target_doc,
+                            "variance": var,
+                            "tax_variance": round(abs(cp_tax_sum - pr_tax_val), 2),
+                            "component_docs": [str(cp_doc_lst[x]) for x in matched_cp_indices],
+                        }
+
+            # 2B: Check 1:N
+            active_rows = [k for k in rows_in_gstin if k in unmatched_indices]
+            cp_targets = [k for k in active_rows if float(cp_taxable_arr[k]) > 0.0 and float(pr_taxable_arr[k]) == 0.0]
+            pr_candidates = [k for k in active_rows if float(pr_taxable_arr[k]) > 0.0 and float(cp_taxable_arr[k]) == 0.0]
+            for cp_idx in cp_targets:
+                if cp_idx not in unmatched_indices:
+                    continue
+                t_val = float(cp_taxable_arr[cp_idx])
+                valid_prs = [
+                    (p_idx, float(pr_taxable_arr[p_idx]))
+                    for p_idx in pr_candidates
+                    if p_idx in unmatched_indices and p_idx != cp_idx and _dates_within_window(p_idx, cp_idx)
+                ]
+                res = self._find_subset_sum_indices(valid_prs, t_val, tolerance)
+                if res is not None:
+                    matched_pr_indices, batch_sum = res
+                    var = round(abs(batch_sum - t_val), 2)
+                    all_batch = [cp_idx] + matched_pr_indices
+                    target_doc = str(cp_doc_lst[cp_idx]) or f"Invoice-{cp_idx+1}"
+                    pr_tax_sum = round(sum(float(pr_igst_arr[x]) for x in matched_pr_indices), 2)
+                    cp_tax_val = float(cp_igst_arr[cp_idx])
+                    for k in all_batch:
+                        consolidation_mask.iloc[k] = True
+                        if k in unmatched_indices:
+                            unmatched_indices.remove(k)
+                        consolidation_meta[k] = {
+                            "mode": "1:N",
+                            "batch_count": len(matched_pr_indices),
+                            "batch_sum": batch_sum,
+                            "target_amount": t_val,
+                            "target_doc": target_doc,
+                            "variance": var,
+                            "tax_variance": round(abs(pr_tax_sum - cp_tax_val), 2),
+                            "component_docs": [str(pr_doc_lst[x]) for x in matched_pr_indices],
+                        }
+
+        # PHASE 3: Keyword Heuristic Fallback (Preserving Existing Rule 1 Test Heuristic)
+        for idx in list(unmatched_indices):
+            if is_bank_voucher.iloc[idx] and gstin_match.iloc[idx] and date_proximate.iloc[idx]:
+                consolidation_mask.iloc[idx] = True
+                unmatched_indices.remove(idx)
+                consolidation_meta[idx] = {
+                    "mode": "BANKING_HEURISTIC",
+                    "batch_count": 1,
+                    "batch_sum": float(cp_taxable_arr[idx]),
+                    "target_amount": float(pr_taxable_arr[idx]),
+                    "target_doc": str(pr_doc_lst[idx]),
+                    "variance": round(abs(float(cp_taxable_arr[idx]) - float(pr_taxable_arr[idx])), 2),
+                    "tax_variance": round(abs(float(cp_igst_arr[idx]) - float(pr_igst_arr[idx])), 2),
+                    "component_docs": [str(cp_doc_lst[idx])],
+                }
+
+        return consolidation_mask, consolidation_meta
+
     def execute_waterfall(
         self,
         df: pd.DataFrame,
@@ -555,93 +897,125 @@ class WaterfallMatchingEngineV4:
             (gstin_match & doc_clean_match & (taxable_diff <= 50.0))
         )
 
-        # TIER 4: Statutory & Consolidated Discrepancies (Client Rule 2 Ineligible ITC & Client Rule 1 Banking)
-        # Rule 2: Ineligible ITC u/s 17(5) (GSTIN, Doc No, Date match; Books Taxable < Portal Taxable by >= ₹100 threshold)
+        # TIER 4: Statutory & Consolidated Discrepancies (Client Rule 1 Banking & Client Rule 2 Ineligible ITC)
+        # Rule 1: Multi-tranche / Banking batch consolidation (N:1 and 1:N subset aggregation)
+        rule1_obj = next((r for r in self.rules if r.id == "R4-08" or r.match_strategy == "MULTI_TRANCHE" or "banking" in r.name.lower()), None)
+        rule1_tolerance = float(rule1_obj.tolerance_value) if (rule1_obj and rule1_obj.tolerance_value is not None) else 5.0
+        rule1_window_days = int(rule1_obj.custom_date_range_days) if (rule1_obj and rule1_obj.custom_date_range_days is not None) else 31
+
+        is_bank_voucher = pr_doc.str.contains(r"BANK|CHG|CONSOL|VOUCHER|JV", regex=True, na=False) | pr_doc_clean.str.contains(r"BANK", regex=True, na=False)
+        unmatched_mask_for_batch = (~tier1_exact) & (~tier2_tolerance) & (~tier3_near)
+        rule1_banking, consolidation_meta = self._detect_batch_consolidations(
+            n_rows=n_rows,
+            unmatched_mask=unmatched_mask_for_batch,
+            cp_gstin=cp_gstin,
+            pr_gstin=pr_gstin,
+            cp_doc=cp_doc,
+            pr_doc=pr_doc,
+            cp_doc_clean=cp_doc_clean,
+            pr_doc_clean=pr_doc_clean,
+            cp_dates=cp_dates,
+            pr_dates=pr_dates,
+            cp_taxable=cp_taxable,
+            pr_taxable=pr_taxable,
+            cp_igst=cp_igst,
+            pr_igst=pr_igst,
+            is_bank_voucher=is_bank_voucher,
+            gstin_match=gstin_match,
+            date_proximate=date_proximate,
+            tolerance=rule1_tolerance,
+            window_days=rule1_window_days,
+        )
+
+        # Rule 2: Ineligible ITC u/s 17(5) (GSTIN, Doc No, Date match; Books Taxable < Portal Taxable by >= ₹100 threshold; not part of multi-tranche batch)
         rule2_ineligible_itc = (
-            (~tier1_exact) & (~tier2_tolerance) & (~tier3_near) &
+            (~tier1_exact) & (~tier2_tolerance) & (~tier3_near) & (~rule1_banking) &
             gstin_match & (doc_exact_match | doc_clean_match) &
             (date_exact | (date_diff_days <= 15.0)) &
             (pr_taxable < cp_taxable) & ((cp_taxable - pr_taxable) >= 100.0)
         )
 
-        # Rule 1: Multi-tranche / Banking batch consolidation
-        # If document number suggests bank charges / consolidation or duplicate PR voucher matches
-        is_bank_voucher = pr_doc.str.contains(r"BANK|CHG|CONSOL|VOUCHER|JV", regex=True, na=False) | pr_doc_clean.str.contains(r"BANK", regex=True, na=False)
-        rule1_banking = (
-            (~tier1_exact) & (~tier2_tolerance) & (~tier3_near) & (~rule2_ineligible_itc) &
-            gstin_match & is_bank_voucher & date_proximate
-        )
+        # Update taxable_diff and igst_diff for consolidated batch records to net batch variance
+        if consolidation_meta:
+            taxable_diff = taxable_diff.copy()
+            igst_diff = igst_diff.copy()
+            for b_idx, b_m in consolidation_meta.items():
+                taxable_diff.iloc[b_idx] = float(b_m.get("variance", 0.0))
+                igst_diff.iloc[b_idx] = float(b_m.get("tax_variance", 0.0))
 
         # TIER 5: Residuals & Ambiguities
-        tier5_ambiguous = both_present & (~tier1_exact) & (~tier2_tolerance) & (~tier3_near) & (~rule2_ineligible_itc) & (~rule1_banking)
+        # Ensure batch consolidations take precedence over single-sided residual classification
+        is_pr_only_final = is_pr_only & (~rule1_banking)
+        is_gst_only_final = is_gst_only & (~rule1_banking)
+        tier5_ambiguous = both_present & (~tier1_exact) & (~tier2_tolerance) & (~tier3_near) & (~rule1_banking) & (~rule2_ineligible_itc)
 
         # Form TARS verdicts
         conditions = [
-            is_pr_only,
-            is_gst_only,
             tier1_exact,
-            rule2_ineligible_itc,
             rule1_banking,
+            rule2_ineligible_itc,
             tier2_tolerance,
             tier3_near,
+            is_pr_only_final,
+            is_gst_only_final,
             tier5_ambiguous,
         ]
         choices = [
-            "PR Only",
-            "GST Only",
             "Exact Match",
-            "Ineligible ITC [Sec 17(5)]",
             "Consolidated Match",
+            "Ineligible ITC [Sec 17(5)]",
             "Tolerance Match",
             "Near Match",
+            "PR Only",
+            "GST Only",
             "Ambiguous",
         ]
         tars_verdicts = np.select(conditions, choices, default="Ambiguous")
 
         sub_classes = np.select(
             [
-                is_pr_only,
-                is_gst_only,
                 tier1_exact,
-                rule2_ineligible_itc,
                 rule1_banking,
+                rule2_ineligible_itc,
                 rule4_cross_fy,
                 rule3_date_drift,
                 rule5_prefix,
                 rule6_compound,
                 tier2_tolerance,
                 tier3_near,
+                is_pr_only_final,
+                is_gst_only_final,
             ],
             [
-                "PR_ONLY",
-                "GST_ONLY",
                 "EXACT_ZERO_VARIANCE",
-                "INELIGIBLE_ITC_17_5",
                 "BANKING_MULTI_TRANCHE",
+                "INELIGIBLE_ITC_17_5",
                 "CROSS_FY_TIMING",
                 "DATE_OPERATIONAL_SHIFT",
                 "DOC_PREFIX_NORMALIZED",
                 "COMPOUND_DOC_DATE_VARIATION",
                 "COMMERCIAL_TOLERANCE",
                 "NEAR_MATCH",
+                "PR_ONLY",
+                "GST_ONLY",
             ],
             default="AMBIGUOUS_COLLISION",
         )
 
         pass_tiers = np.select(
             [
-                is_pr_only | is_gst_only,
                 tier1_exact,
                 tier2_tolerance,
                 tier3_near,
                 rule2_ineligible_itc | rule1_banking,
+                is_pr_only_final | is_gst_only_final,
             ],
             [
-                "Tier 5: Single-Sided Residuals",
                 "Tier 1: Exact Match (Zero Variance)",
                 "Tier 2: Commercial Tolerance & Cross-FY",
                 "Tier 3: Normalized & Compound Matches",
                 "Tier 4: Statutory Discrepancies & Batches",
+                "Tier 5: Single-Sided Residuals",
             ],
             default="Tier 5: Ambiguity Quarantines",
         )
@@ -784,8 +1158,31 @@ class WaterfallMatchingEngineV4:
 
             sub_c = sub_classes_lst[i]
             if sub_c == "BANKING_MULTI_TRANCHE":
-                client_comment = "Consolidated Multi-Tranche Entry: Multiple supplier invoices consolidated into single PR voucher within rolling window (e.g. Bank charges / vendor tranche)"
-                ai_audit_reason = "Rule 1 Match: Client books consolidate multiple monthly supplier/bank debits into a single accounting JV. Symmetrical GSTIN and temporal window validated."
+                if i in consolidation_meta and consolidation_meta[i].get("mode") == "N:1":
+                    b_meta = consolidation_meta[i]
+                    client_comment = (
+                        f"Consolidated Batch Match (N:1): {b_meta['batch_count']} Portal invoices totaling "
+                        f"₹{b_meta['batch_sum']:,.2f} aggregate to Books Voucher '{b_meta['target_doc']}' "
+                        f"(₹{b_meta['target_amount']:,.2f}) with net variance ₹{b_meta['variance']:.2f}."
+                    )
+                    ai_audit_reason = (
+                        f"Rule 1 Batch Consolidation: Symmetrical GSTIN and temporal window validated. "
+                        f"Verified N:1 subset aggregation across {b_meta['batch_count']} supplier invoices."
+                    )
+                elif i in consolidation_meta and consolidation_meta[i].get("mode") == "1:N":
+                    b_meta = consolidation_meta[i]
+                    client_comment = (
+                        f"Consolidated Batch Match (1:N): {b_meta['batch_count']} Books vouchers totaling "
+                        f"₹{b_meta['batch_sum']:,.2f} aggregate to Portal Invoice '{b_meta['target_doc']}' "
+                        f"(₹{b_meta['target_amount']:,.2f}) with net variance ₹{b_meta['variance']:.2f}."
+                    )
+                    ai_audit_reason = (
+                        f"Rule 1 Batch Consolidation: Symmetrical GSTIN and temporal window validated. "
+                        f"Verified 1:N subset aggregation across {b_meta['batch_count']} ERP vouchers."
+                    )
+                else:
+                    client_comment = "Consolidated Multi-Tranche Entry: Multiple supplier invoices consolidated into single PR voucher within rolling window (e.g. Bank charges / vendor tranche)"
+                    ai_audit_reason = "Rule 1 Match: Client books consolidate multiple monthly supplier/bank debits into a single accounting JV. Symmetrical GSTIN and temporal window validated."
             elif sub_c == "INELIGIBLE_ITC_17_5":
                 diff_ineligible = round(float(cp_taxable_lst[i]) - float(pr_taxable_lst[i]), 2)
                 client_comment = f"Section 17(5) Ineligible ITC / Rejected Goods: Full invoice reported in GSTR-2B; only eligible portion booked in PR (₹{diff_ineligible:,.2f} ineligible/blocked credit u/s 17(5) not booked in books)"
@@ -819,8 +1216,8 @@ class WaterfallMatchingEngineV4:
 
             conc = concurrence_lst[i]
             disp_reason = None if conc == "AGREEMENT" else f"TARS classified '{tv}' vs KICS '{kics_clean_lst[i]}'"
-            t_diff = float(taxable_diff_lst[i])
-            tx_diff = float(igst_diff_lst[i])
+            t_diff = float(consolidation_meta[i].get("variance", taxable_diff_lst[i])) if i in consolidation_meta else float(taxable_diff_lst[i])
+            tx_diff = float(consolidation_meta[i].get("tax_variance", igst_diff_lst[i])) if i in consolidation_meta else float(igst_diff_lst[i])
             p_tier = pass_tiers_lst[i]
 
             records.append(
@@ -873,6 +1270,15 @@ class WaterfallMatchingEngineV4:
                         "Taxable": float(cp_taxable_lst[i]),
                         "Tax": float(cp_igst_lst[i]),
                         "Remarks": client_comment,
+                        **(
+                            {
+                                "batch_consolidation_type": consolidation_meta[i]["mode"],
+                                "batch_sum": consolidation_meta[i]["batch_sum"],
+                                "target_amount": consolidation_meta[i]["target_amount"],
+                            }
+                            if i in consolidation_meta and consolidation_meta[i].get("mode") in ("N:1", "1:N")
+                            else {}
+                        ),
                     },
                     pr_preview={
                         "gstin": pr_gstin_lst[i],
@@ -890,10 +1296,31 @@ class WaterfallMatchingEngineV4:
                         "Taxable": float(pr_taxable_lst[i]),
                         "Tax": float(pr_igst_lst[i]),
                         "Remarks": client_comment,
+                        **(
+                            {
+                                "batch_consolidation_type": consolidation_meta[i]["mode"],
+                                "batch_sum": consolidation_meta[i]["batch_sum"],
+                                "target_amount": consolidation_meta[i]["target_amount"],
+                            }
+                            if i in consolidation_meta and consolidation_meta[i].get("mode") in ("N:1", "1:N")
+                            else {}
+                        ),
                     },
                     variances={
                         "taxable_diff": t_diff,
                         "tax_diff": tx_diff,
+                        **(
+                            {
+                                "batch_type": consolidation_meta[i]["mode"],
+                                "batch_count": consolidation_meta[i]["batch_count"],
+                                "batch_sum": consolidation_meta[i]["batch_sum"],
+                                "target_amount": consolidation_meta[i]["target_amount"],
+                                "target_document": consolidation_meta[i]["target_doc"],
+                                "net_batch_variance": f"₹{consolidation_meta[i]['variance']:.2f}",
+                            }
+                            if i in consolidation_meta and consolidation_meta[i].get("mode") in ("N:1", "1:N")
+                            else {}
+                        ),
                     },
                     matched_by_pass=p_tier,
                 )

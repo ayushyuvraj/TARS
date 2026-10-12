@@ -1,5 +1,32 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 4.0 • 1:N and N:1 Multi-Tranche Batch Consolidation Engine & 60k Scenarios Benchmark (12th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 4.0 1:N and N:1 Multi-Tranche Batch Consolidation Engine & 60k Scenarios Benchmark`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-12-recon-v4-multi-tranche-consolidation-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Bi-Directional Batch Consolidation Engine (`backend/app/services/matching_engine_v4.py`)*:
+     - Implemented bi-directional `_try_match_group` in `_detect_batch_consolidations` to evaluate both:
+       - **1:N Mode**: 1 GSTR portal invoice corresponding to N Books vouchers ($\sum \text{PR} = \text{GSTR}$, e.g. partial GRNs, split tranches, advance adjustments).
+       - **N:1 Mode**: N GSTR portal invoices aggregating to 1 Books voucher ($\sum \text{GSTR} = \text{PR}$, e.g. periodic bank debits, consolidated billing).
+     - Grouping logic scans shared `pr_doc`, shared `cp_doc`, and normalized `clean_doc` within supplier GSTIN partitions and rolling operational date windows.
+     - Reordered execution waterfall so multi-tranche batch consolidation (Rule 1) executes **before** Section 17(5) Ineligible ITC (Rule 2). This prevents partial PR lines from being prematurely flagged as blocked credits under Sec 17(5).
+     - Replaced slow pandas indexing with pre-extracted NumPy arrays/Python lists, reducing 60,000-row processing time to ~16 seconds.
+  2. *Synthetic 60,000-Row Multi-Tranche Benchmark Dataset (`scripts/generate_synthetic_recon_dataset.py`, `sample_data/`)*:
+     - Generated 60,000-row synthetic enterprise dataset (`TARS_KIGS_RECON_60000_Rows_Multi_Tranche_Scenarios.xlsx` and `.csv`).
+     - Includes 4,752 multi-tranche consolidated matches (2,361 rows of 1:N and 2,391 rows of N:1) with accompanying ground truth and summary metrics.
+  3. *Reconciliation 4.0 API & Frontend Priming (`backend/app/api/reconciliations_v4.py`, `frontend/src/ReconciliationV4Workspace.tsx`)*:
+     - Updated `SAMPLE_RECON_FILE` to automatically use the 60,000-row multi-tranche dataset.
+     - Removed the secondary "instantly load" button from the Recon 4.0 upload dropzone card per user request; upload card cleanly presents the primary "Select Recon File" action and native drag & drop.
+  4. *Verification & Tests*:
+     - Pytest unit tests in `backend/tests/test_reconciliation_v4.py`: 10/10 passing (100%).
+     - Frontend compilation (`tsc -b && vite build`): passed with 0 errors.
+     - Live browser verified on active session `V4-CECF1432` showing 4,752 consolidated matches and clean UI alignment on `V4-069914C2`.
+
+---
+
 ## Reconciliation 4.0 • Rules Wiki Visual Parity Alignment with Recon 3.0 (12th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 4.0 Rules Wiki Visual Parity Alignment with Recon 3.0`

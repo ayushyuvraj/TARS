@@ -348,18 +348,17 @@ export const ReconciliationV4Workspace: React.FC = () => {
           }
         })
         .catch((err) => {
-          console.error("Could not hydrate V4 session:", err);
+          console.warn("Could not hydrate V4 session, creating fresh session:", err);
+          apiV4.createSession().then((newSess) => {
+            setSessionId(newSess.id);
+            localStorage.setItem("tars_v4_active_session_id", newSess.id);
+            navigate(`/reconciliations-v4/${newSess.id}/setup`, { replace: true });
+          });
         })
         .finally(() => {
           setIsHydrating(false);
         });
     } else {
-      const savedActiveV4 = localStorage.getItem("tars_v4_active_session_id");
-      if (savedActiveV4) {
-        navigate(`/reconciliations-v4/${savedActiveV4}/results`, { replace: true });
-        return;
-      }
-
       setIsHydrating(true);
       setReconFile(null);
       setCorrelationResult(null);
@@ -369,6 +368,35 @@ export const ReconciliationV4Workspace: React.FC = () => {
       setHasVisitedResults(false);
       setHasVisitedSummary(false);
       setHasExported(false);
+      setCurrentStage("setup");
+      setSessionStatus("initialized");
+      setSessionIsCompletedState(false);
+      setErrorMessage(null);
+      setElapsedSec(0);
+      setTotalMeasuredDurationMs(0);
+      setChainSteps([
+        {
+          id: "step1",
+          num: 1,
+          title: "Fast Header & Sample Ingestion",
+          desc: "Stream-probing file structure and initial 50 sample rows into memory buffer",
+          status: "pending",
+        },
+        {
+          id: "step2",
+          num: 2,
+          title: "Deterministic Statutory Rules",
+          desc: "Validating GSTIN, Invoice Numbers, Tax Rates & exact financial figures",
+          status: "pending",
+        },
+        {
+          id: "step3",
+          num: 3,
+          title: "Multi-Agent Semantic Matching",
+          desc: "Resolving ERP column abbreviations and building cross-ledger linkages",
+          status: "pending",
+        },
+      ]);
       apiV4
         .createSession()
         .then((newSess) => {
@@ -396,7 +424,7 @@ export const ReconciliationV4Workspace: React.FC = () => {
 
     const targetFile = file || reconFile;
     const formatShortName = (name: string) => (name.length > 28 ? name.slice(0, 24) + "..." : name);
-    const displayName = targetFile ? formatShortName(targetFile.name) : "TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx";
+    const displayName = targetFile ? formatShortName(targetFile.name) : "TARS_KIGS_RECON_60000_Rows_Multi_Tranche_Scenarios.xlsx";
 
     setChainSteps([
       {
@@ -542,7 +570,36 @@ export const ReconciliationV4Workspace: React.FC = () => {
     setRulesConfirmed(false);
     setHasVisitedResults(false);
     setHasVisitedSummary(false);
+    setHasExported(false);
+    setSessionIsCompletedState(false);
+    setSessionStatus("initialized");
+    setErrorMessage(null);
+    setElapsedSec(0);
+    setTotalMeasuredDurationMs(0);
     setCurrentStage("setup");
+    setChainSteps([
+      {
+        id: "step1",
+        num: 1,
+        title: "Fast Header & Sample Ingestion",
+        desc: "Stream-probing file structure and initial 50 sample rows into memory buffer",
+        status: "pending",
+      },
+      {
+        id: "step2",
+        num: 2,
+        title: "Deterministic Statutory Rules",
+        desc: "Validating GSTIN, Invoice Numbers, Tax Rates & exact financial figures",
+        status: "pending",
+      },
+      {
+        id: "step3",
+        num: 3,
+        title: "Multi-Agent Semantic Matching",
+        desc: "Resolving ERP column abbreviations and building cross-ledger linkages",
+        status: "pending",
+      },
+    ]);
     try {
       const sess = await apiV4.createSession();
       setSessionId(sess.id);
@@ -589,17 +646,15 @@ export const ReconciliationV4Workspace: React.FC = () => {
               >
                 <span className="v2-session-id">{sessionId}</span>
               </div>
-              {!isSessionCompleted && (
-                <button
-                  type="button"
-                  onClick={resetAll}
-                  className={`v2-btn-reset-icon ${isResetting ? "is-spinning" : ""}`}
-                  title="Reset Reconciliation Session"
-                  disabled={isResetting}
-                >
-                  <RefreshCw size={13} />
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={resetAll}
+                className={`v2-btn-reset-icon ${isResetting ? "is-spinning" : ""}`}
+                title="Start New Reconciliation Session"
+                disabled={isResetting}
+              >
+                <RefreshCw size={13} />
+              </button>
             </div>
           )}
         </div>
@@ -791,7 +846,7 @@ export const ReconciliationV4Workspace: React.FC = () => {
                             <span className="v2-payload-state-chip">RECON WORKBOOK PRIMED</span>
                             <h4 className="v2-payload-title" title={effectiveFileName}>{effectiveFileName}</h4>
                             <div className="v2-payload-specs">
-                              <span>{reconFile ? formatFileSize(reconFile.size) : "20,000 Rows • 165 Columns"}</span>
+                              <span>{reconFile ? formatFileSize(reconFile.size) : (effectiveFileName && effectiveFileName.includes("60000") ? "60,000 Rows • 165 Columns" : "20,000 Rows • 165 Columns")}</span>
                               <span>•</span>
                               <span>Ready to Correlate</span>
                             </div>
@@ -820,7 +875,7 @@ export const ReconciliationV4Workspace: React.FC = () => {
                             Drag & drop official recon file or browse local files
                           </p>
 
-                          <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center", flexWrap: "wrap", marginTop: 8 }}>
+                          <div style={{ display: "flex", gap: 10, alignItems: "center", justifyContent: "center", marginTop: 8 }}>
                             <label className="v2-browse-button blue">
                               <span className="v2-btn-icon-capsule">
                                 <UploadCloud size={13} />
@@ -839,23 +894,6 @@ export const ReconciliationV4Workspace: React.FC = () => {
                                 }}
                               />
                             </label>
-
-                            <button
-                              type="button"
-                              onClick={() => executeFastUploadAndMapping(undefined, true)}
-                              className="v2-browse-button"
-                              style={{
-                                background: "#00338D",
-                                color: "#ffffff",
-                                borderColor: "#002266",
-                                fontWeight: 600,
-                                cursor: "pointer",
-                              }}
-                              title="Instantly load the 20,000-row synthetic benchmark workbook"
-                            >
-                              <Sparkles size={13} />
-                              <span>Load 20k Synthetic Benchmark File</span>
-                            </button>
                           </div>
                         </div>
                       )}

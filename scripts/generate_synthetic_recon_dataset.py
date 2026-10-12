@@ -139,7 +139,7 @@ SCENARIO_META = {
         "section": "Near Match",
         "tier": "Tier 3: Normalized & Compound Matches",
         "comment": "Compound Variation Match: Simultaneous prefix formatting variation and document date delay",
-        "weight": 0.04,
+        "weight": 0.05,
     },
     "ineligible_itc_17_5": {
         "name": "Section 17(5) Ineligible ITC / Blocked Credit",
@@ -149,18 +149,18 @@ SCENARIO_META = {
         "weight": 0.05,
     },
     "multi_tranche_banking": {
-        "name": "Banking & Multi-Tranche Batch N:1 Consolidation",
+        "name": "Banking & Multi-Tranche Batch (N:1 & 1:N) Consolidation",
         "section": "Consolidated Match",
         "tier": "Tier 4: Statutory Discrepancies & Batches",
         "comment": "Consolidated Multi-Tranche Entry: Multiple supplier invoices consolidated into single PR voucher within rolling window (e.g. Bank charges / vendor tranche)",
-        "weight": 0.02,
+        "weight": 0.06,
     },
     "ambiguous_collisions": {
         "name": "Ambiguous Duplicate Collisions",
         "section": "Ambiguous",
         "tier": "Tier 5: Single-Sided Residuals & Ambiguities",
         "comment": "Ambiguity / Tolerance Collision: Quarantined for review",
-        "weight": 0.08,
+        "weight": 0.07,
     },
     "gst_only": {
         "name": "GSTR-2B Only (Unclaimed Portal Credit)",
@@ -387,17 +387,172 @@ class SyntheticReconDatasetGenerator:
                     pr_tot[i] = round(eligible_portion + pr_tax[i], 2)
 
             elif sc_key == "multi_tranche_banking":
-                # Bank voucher multi-tranche
-                bank_gstin = "27AAACB1234M1Z1"
-                for i in range(count):
-                    cp_gst[i] = bank_gstin
-                    pr_gst[i] = bank_gstin
-                    v_legals[i] = "HDFC BANK LIMITED"
-                    v_trades[i] = "HDFC BANK"
-                    cp_doc[i] = f"INV/06/2026/{100 + i:04d}"
-                    pr_doc[i] = "Voucher BANK-CHG/JUN-26"
-                    cp_date[i] = f"{random.randint(1, 25):02d}-Jun-2026"
-                    pr_date[i] = "30-Jun-2026"
+                # Real N:1 and 1:N multi-tranche batch consolidation
+                i_ptr = 0
+                batch_counter = 1
+
+                while i_ptr < count:
+                    rows_left = count - i_ptr
+                    if rows_left <= 2:
+                        k = rows_left
+                        mode = "N:1" if random.random() < 0.5 else "1:N"
+                    else:
+                        r_type = random.random()
+                        if r_type < 0.45:
+                            mode = "N:1"
+                            k = min(rows_left, random.randint(2, 5))
+                        elif r_type < 0.90:
+                            mode = "1:N"
+                            k = min(rows_left, random.randint(2, 5))
+                        else:
+                            if rows_left >= 3:
+                                mode = "DISJOINT_N1" if random.random() < 0.5 else "DISJOINT_1N"
+                                k = min(rows_left, random.randint(3, 5))
+                            else:
+                                mode = "N:1"
+                                k = rows_left
+
+                    v_info = VENDOR_POOL[batch_counter % len(VENDOR_POOL)]
+                    v_g, v_l, v_t = v_info[0], v_info[1], v_info[2]
+
+                    if mode == "N:1":
+                        # k rows: Multiple CP invoices summing to 1 PR voucher
+                        total_target = round(float(np.random.uniform(3000.0, 120000.0)), 2)
+                        splits = np.random.dirichlet(np.ones(k))
+                        parts = [round(float(total_target * s), 2) for s in splits]
+                        parts[-1] = round(total_target - sum(parts[:-1]), 2)
+
+                        pr_voucher_num = f"Voucher BANK-CHG/JUN-26/B{batch_counter:04d}" if "BANK" in v_l else f"Voucher CONSOL-JV/B{batch_counter:04d}"
+                        pr_voucher_date = "30-Jun-2026"
+
+                        for step, part_val in enumerate(parts):
+                            idx = i_ptr + step
+                            cp_gst[idx] = v_g
+                            pr_gst[idx] = v_g
+                            v_legals[idx] = v_l
+                            v_trades[idx] = v_t
+                            cp_doc[idx] = f"INV/06/2026/B{batch_counter:04d}-{step+1:02d}"
+                            pr_doc[idx] = pr_voucher_num
+                            cp_date[idx] = f"{random.randint(1, 25):02d}-Jun-2026"
+                            pr_date[idx] = pr_voucher_date
+                            cp_taxable[idx] = part_val
+                            pr_taxable[idx] = total_target
+                            cp_tax[idx] = round(part_val * 0.18, 2)
+                            pr_tax[idx] = round(total_target * 0.18, 2)
+                            cp_tot[idx] = round(part_val + cp_tax[idx], 2)
+                            pr_tot[idx] = round(total_target + pr_tax[idx], 2)
+
+                    elif mode == "1:N":
+                        # k rows: 1 CP Master invoice summing from multiple PR vouchers
+                        total_target = round(float(np.random.uniform(5000.0, 150000.0)), 2)
+                        splits = np.random.dirichlet(np.ones(k))
+                        parts = [round(float(total_target * s), 2) for s in splits]
+                        parts[-1] = round(total_target - sum(parts[:-1]), 2)
+
+                        cp_invoice_num = f"MASTER-INV/2026/B{batch_counter:04d}"
+                        cp_invoice_date = "10-Jun-2026"
+
+                        for step, part_val in enumerate(parts):
+                            idx = i_ptr + step
+                            cp_gst[idx] = v_g
+                            pr_gst[idx] = v_g
+                            v_legals[idx] = v_l
+                            v_trades[idx] = v_t
+                            cp_doc[idx] = cp_invoice_num
+                            pr_doc[idx] = f"GRN-PARTIAL/2026/B{batch_counter:04d}-{step+1:02d}"
+                            cp_date[idx] = cp_invoice_date
+                            pr_date[idx] = f"{random.randint(11, 28):02d}-Jun-2026"
+                            cp_taxable[idx] = total_target
+                            pr_taxable[idx] = part_val
+                            cp_tax[idx] = round(total_target * 0.18, 2)
+                            pr_tax[idx] = round(part_val * 0.18, 2)
+                            cp_tot[idx] = round(total_target + cp_tax[idx], 2)
+                            pr_tot[idx] = round(part_val + pr_tax[idx], 2)
+
+                    elif mode == "DISJOINT_N1":
+                        # k rows total: (k-1) single-sided CP rows + 1 single-sided PR row
+                        total_target = round(float(np.random.uniform(4000.0, 90000.0)), 2)
+                        n_cp = max(1, k - 1)
+                        splits = np.random.dirichlet(np.ones(n_cp))
+                        parts = [round(float(total_target * s), 2) for s in splits]
+                        parts[-1] = round(total_target - sum(parts[:-1]), 2)
+
+                        for step, part_val in enumerate(parts):
+                            idx = i_ptr + step
+                            cp_gst[idx] = v_g
+                            pr_gst[idx] = None
+                            v_legals[idx] = v_l
+                            v_trades[idx] = v_t
+                            cp_doc[idx] = f"INV-UNROLLED/B{batch_counter:04d}-{step+1:02d}"
+                            pr_doc[idx] = None
+                            cp_date[idx] = f"{random.randint(1, 20):02d}-Jun-2026"
+                            pr_date[idx] = None
+                            cp_taxable[idx] = part_val
+                            pr_taxable[idx] = 0.0
+                            cp_tax[idx] = round(part_val * 0.18, 2)
+                            pr_tax[idx] = 0.0
+                            cp_tot[idx] = round(part_val + cp_tax[idx], 2)
+                            pr_tot[idx] = 0.0
+
+                        target_idx = i_ptr + (k - 1)
+                        cp_gst[target_idx] = None
+                        pr_gst[target_idx] = v_g
+                        v_legals[target_idx] = v_l
+                        v_trades[target_idx] = v_t
+                        cp_doc[target_idx] = None
+                        pr_doc[target_idx] = f"JV-UNROLLED-CONSOL/B{batch_counter:04d}"
+                        cp_date[target_idx] = None
+                        pr_date[target_idx] = "30-Jun-2026"
+                        cp_taxable[target_idx] = 0.0
+                        pr_taxable[target_idx] = total_target
+                        cp_tax[target_idx] = 0.0
+                        pr_tax[target_idx] = round(total_target * 0.18, 2)
+                        cp_tot[target_idx] = 0.0
+                        pr_tot[target_idx] = round(total_target + pr_tax[target_idx], 2)
+
+                    elif mode == "DISJOINT_1N":
+                        # k rows total: 1 single-sided CP row + (k-1) single-sided PR rows
+                        total_target = round(float(np.random.uniform(4000.0, 90000.0)), 2)
+                        n_pr = max(1, k - 1)
+                        splits = np.random.dirichlet(np.ones(n_pr))
+                        parts = [round(float(total_target * s), 2) for s in splits]
+                        parts[-1] = round(total_target - sum(parts[:-1]), 2)
+
+                        master_idx = i_ptr
+                        cp_gst[master_idx] = v_g
+                        pr_gst[master_idx] = None
+                        v_legals[master_idx] = v_l
+                        v_trades[master_idx] = v_t
+                        cp_doc[master_idx] = f"INV-MASTER-UNROLLED/B{batch_counter:04d}"
+                        pr_doc[master_idx] = None
+                        cp_date[master_idx] = "05-Jun-2026"
+                        pr_date[master_idx] = None
+                        cp_taxable[master_idx] = total_target
+                        pr_taxable[master_idx] = 0.0
+                        cp_tax[master_idx] = round(total_target * 0.18, 2)
+                        pr_tax[master_idx] = 0.0
+                        cp_tot[master_idx] = round(total_target + cp_tax[master_idx], 2)
+                        pr_tot[master_idx] = 0.0
+
+                        for step, part_val in enumerate(parts):
+                            idx = i_ptr + 1 + step
+                            cp_gst[idx] = None
+                            pr_gst[idx] = v_g
+                            v_legals[idx] = v_l
+                            v_trades[idx] = v_t
+                            cp_doc[idx] = None
+                            pr_doc[idx] = f"PR-PARTIAL-UNROLLED/B{batch_counter:04d}-{step+1:02d}"
+                            cp_date[idx] = None
+                            pr_date[idx] = f"{random.randint(10, 28):02d}-Jun-2026"
+                            cp_taxable[idx] = 0.0
+                            pr_taxable[idx] = part_val
+                            cp_tax[idx] = 0.0
+                            pr_tax[idx] = round(part_val * 0.18, 2)
+                            cp_tot[idx] = 0.0
+                            pr_tot[idx] = round(part_val + pr_tax[idx], 2)
+
+                    i_ptr += k
+                    batch_counter += 1
 
             elif sc_key == "ambiguous_collisions":
                 # Multiple records sharing same invoice number but different vendor or ambiguous
@@ -489,8 +644,18 @@ class SyntheticReconDatasetGenerator:
         if export_excel:
             xlsx_path = output_dir / f"{base_name}.xlsx"
             t0 = time.time()
-            with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
-                df.to_excel(writer, sheet_name="KIGS GSTR 2B Reco", index=False)
+            try:
+                from openpyxl import Workbook
+                wb = Workbook(write_only=True)
+                ws = wb.create_sheet(title="KIGS GSTR 2B Reco")
+                ws.append(list(df.columns))
+                for row in df.itertuples(index=False, name=None):
+                    ws.append(list(row))
+                wb.save(xlsx_path)
+            except Exception as e_wo:
+                logger.warning(f"Fast write-only failed ({e_wo}), falling back to standard to_excel")
+                with pd.ExcelWriter(xlsx_path, engine="openpyxl") as writer:
+                    df.to_excel(writer, sheet_name="KIGS GSTR 2B Reco", index=False)
             logger.info(f"Saved Excel ({len(df):,} rows) to {xlsx_path.name} in {time.time() - t0:.2f}s")
             paths["xlsx"] = xlsx_path
 
