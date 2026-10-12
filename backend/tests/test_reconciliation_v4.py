@@ -203,8 +203,8 @@ def test_rule1_true_n_to_1_repeated_voucher():
     ])
     engine = WaterfallMatchingEngineV4()
     res = engine.execute_waterfall(df, session_id="test-r1-n1")
-    assert res.summary.consolidated_matches == 1
-    assert len(res.records) == 1
+    assert res.summary.consolidated_matches == len(df)
+    assert len(res.records) == len(df)
     r = res.records[0]
     assert r.tars_verdict == "Consolidated Match"
     assert r.sub_classification == "BANKING_MULTI_TRANCHE"
@@ -257,8 +257,8 @@ def test_rule1_true_1_to_n_repeated_invoice():
     ])
     engine = WaterfallMatchingEngineV4()
     res = engine.execute_waterfall(df, session_id="test-r1-1n")
-    assert res.summary.consolidated_matches == 1
-    assert len(res.records) == 1
+    assert res.summary.consolidated_matches == len(df)
+    assert len(res.records) == len(df)
     r = res.records[0]
     assert r.tars_verdict == "Consolidated Match"
     assert r.sub_classification == "BANKING_MULTI_TRANCHE"
@@ -323,9 +323,11 @@ def test_rule1_true_n_to_1_disjoint_unrolled():
     ])
     engine = WaterfallMatchingEngineV4()
     res = engine.execute_waterfall(df, session_id="test-r1-n1-disjoint")
-    assert res.summary.consolidated_matches == 1
-    assert len(res.records) == 1
-    r = res.records[0]
+    assert res.summary.consolidated_matches == len(df)
+    assert len(res.records) == len(df)
+    master_records = [rec for rec in res.records if len(rec.batch_components) > 0]
+    assert len(master_records) == 1
+    r = master_records[0]
     assert r.tars_verdict == "Consolidated Match"
     assert r.sub_classification == "BANKING_MULTI_TRANCHE"
     assert r.taxable_diff == 0.0
@@ -386,9 +388,11 @@ def test_rule1_true_1_to_n_disjoint_unrolled():
     ])
     engine = WaterfallMatchingEngineV4()
     res = engine.execute_waterfall(df, session_id="test-r1-1n-disjoint")
-    assert res.summary.consolidated_matches == 1
-    assert len(res.records) == 1
-    r = res.records[0]
+    assert res.summary.consolidated_matches == len(df)
+    assert len(res.records) == len(df)
+    master_records = [rec for rec in res.records if len(rec.batch_components) > 0]
+    assert len(master_records) == 1
+    r = master_records[0]
     assert r.tars_verdict == "Consolidated Match"
     assert r.sub_classification == "BANKING_MULTI_TRANCHE"
     assert r.taxable_diff == 0.0

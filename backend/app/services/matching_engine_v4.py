@@ -522,6 +522,10 @@ class WaterfallMatchingEngineV4:
         mask_empty_cp = eff_gstin.isin(["", "NAN", "NONE"])
         eff_gstin[mask_empty_cp] = pr_gstin[mask_empty_cp]
 
+        # Precompute integer epoch days for O(1) date arithmetic
+        cp_days_arr = np.where(cp_dates.notna(), (cp_dates.values.astype("datetime64[D]").astype(np.int64)), -999999)
+        pr_days_arr = np.where(pr_dates.notna(), (pr_dates.values.astype("datetime64[D]").astype(np.int64)), -999999)
+
         cp_dates_lst = cp_dates.tolist()
         pr_dates_lst = pr_dates.tolist()
         cp_taxable_arr = cp_taxable.values
@@ -539,14 +543,11 @@ class WaterfallMatchingEngineV4:
         pr_date_lst = [str(x) if x is not None and not pd.isna(x) else "" for x in pr_dates_lst]
 
         def _dates_within_window(idx1: int, idx2: int) -> bool:
-            d1 = cp_dates_lst[idx1] if cp_dates_lst[idx1] is not None and not pd.isna(cp_dates_lst[idx1]) else pr_dates_lst[idx1]
-            d2 = pr_dates_lst[idx2] if pr_dates_lst[idx2] is not None and not pd.isna(pr_dates_lst[idx2]) else cp_dates_lst[idx2]
-            if d1 is None or pd.isna(d1) or d2 is None or pd.isna(d2):
+            d1 = cp_days_arr[idx1] if cp_days_arr[idx1] != -999999 else pr_days_arr[idx1]
+            d2 = pr_days_arr[idx2] if pr_days_arr[idx2] != -999999 else cp_days_arr[idx2]
+            if d1 == -999999 or d2 == -999999:
                 return True
-            try:
-                return abs((d1 - d2).days) <= window_days
-            except Exception:
-                return True
+            return abs(int(d1 - d2)) <= window_days
 
         def _try_match_group(grp: list[int]) -> bool:
             nonlocal unmatched_indices
@@ -604,6 +605,15 @@ class WaterfallMatchingEngineV4:
                                 unmatched_indices.remove(k)
 
                         consolidation_mask.iloc[master_idx] = True
+                        for c_idx in child_indices:
+                            consolidation_mask.iloc[c_idx] = True
+                            consolidation_meta[c_idx] = {
+                                "is_master": False,
+                                "master_index": master_idx,
+                                "mode": "1:N",
+                                "target_doc": t_doc,
+                                "target_amount": cp_target,
+                            }
                         comp_docs = [str(c["document_number"]) for c in components]
                         doc_summary = f"{len(components)} Vouchers: {', '.join(comp_docs[:2])}{'...' if len(components) > 2 else ''}"
 
@@ -673,6 +683,15 @@ class WaterfallMatchingEngineV4:
                                 unmatched_indices.remove(k)
 
                         consolidation_mask.iloc[master_idx] = True
+                        for c_idx in child_indices:
+                            consolidation_mask.iloc[c_idx] = True
+                            consolidation_meta[c_idx] = {
+                                "is_master": False,
+                                "master_index": master_idx,
+                                "mode": "N:1",
+                                "target_doc": t_doc,
+                                "target_amount": pr_target,
+                            }
                         comp_docs = [str(c["document_number"]) for c in components]
                         doc_summary = f"{len(components)} Invoices: {', '.join(comp_docs[:2])}{'...' if len(components) > 2 else ''}"
 
@@ -793,6 +812,15 @@ class WaterfallMatchingEngineV4:
                             unmatched_indices.remove(k)
 
                     consolidation_mask.iloc[master_idx] = True
+                    for c_idx in matched_cp_indices:
+                        consolidation_mask.iloc[c_idx] = True
+                        consolidation_meta[c_idx] = {
+                            "is_master": False,
+                            "master_index": master_idx,
+                            "mode": "N:1",
+                            "target_doc": target_doc,
+                            "target_amount": t_val,
+                        }
                     comp_docs = [str(c["document_number"]) for c in components]
                     doc_summary = f"{len(components)} Invoices: {', '.join(comp_docs[:2])}{'...' if len(components) > 2 else ''}"
 
@@ -867,6 +895,15 @@ class WaterfallMatchingEngineV4:
                             unmatched_indices.remove(k)
 
                     consolidation_mask.iloc[master_idx] = True
+                    for p_idx in matched_pr_indices:
+                        consolidation_mask.iloc[p_idx] = True
+                        consolidation_meta[p_idx] = {
+                            "is_master": False,
+                            "master_index": master_idx,
+                            "mode": "1:N",
+                            "target_doc": target_doc,
+                            "target_amount": t_val,
+                        }
                     comp_docs = [str(c["document_number"]) for c in components]
                     doc_summary = f"{len(components)} Vouchers: {', '.join(comp_docs[:2])}{'...' if len(components) > 2 else ''}"
 
@@ -1109,6 +1146,9 @@ class WaterfallMatchingEngineV4:
                 if b_m.get("is_master"):
                     taxable_diff.iloc[b_idx] = float(b_m.get("variance", 0.0))
                     igst_diff.iloc[b_idx] = float(b_m.get("tax_variance", 0.0))
+                else:
+                    taxable_diff.iloc[b_idx] = 0.0
+                    igst_diff.iloc[b_idx] = 0.0
 
         # TIER 5: Residuals & Ambiguities
         # Ensure batch consolidations take precedence over single-sided residual classification
@@ -1226,9 +1266,6 @@ class WaterfallMatchingEngineV4:
         # Build records preview with comprehensive statutory comments across ALL records
         records: list[ReconciliationRecordItemV4] = []
         for i in range(n_rows):
-            if i in absorbed_indices:
-                continue
-
             if i in consolidation_meta and consolidation_meta[i].get("is_master") and consolidation_meta[i].get("mode") in ("1:N", "N:1"):
                 b_meta = consolidation_meta[i]
                 mode = b_meta["mode"]
@@ -1278,6 +1315,49 @@ class WaterfallMatchingEngineV4:
                         f"Rule 1 Batch Consolidation: Symmetrical GSTIN and temporal window validated. "
                         f"Verified 1:N subset aggregation across {b_meta['batch_count']} ERP vouchers."
                     )
+                conc = "AGREEMENT"
+                disp_reason = None
+            elif i in absorbed_indices:
+                c_meta = consolidation_meta.get(i, {})
+                mode = c_meta.get("mode", "Batch")
+                master_idx = c_meta.get("master_index", i)
+                t_doc = c_meta.get("target_doc", "")
+                t_amt = c_meta.get("target_amount", 0.0)
+
+                tv = "Consolidated Match"
+                sub_c = "BANKING_MULTI_TRANCHE"
+                bucket_val = "TOLERANCE_MATCH"
+                p_tier = "Tier 4: Statutory Discrepancies & Batches"
+
+                s_taxable = float(cp_taxable_lst[i])
+                tg_taxable = float(pr_taxable_lst[i])
+                s_tax = float(cp_igst_lst[i])
+                tg_tax = float(pr_igst_lst[i])
+                s_doc = cp_doc_lst[i]
+                tg_doc = pr_doc_lst[i]
+                s_date = cp_date_lst[i]
+                tg_date = pr_date_lst[i]
+                s_gstin = cp_gstin_lst[i]
+                tg_gstin = pr_gstin_lst[i]
+                t_diff = 0.0
+                tx_diff = 0.0
+                b_components = []
+
+                c_gstin = cp_gstin_lst[i] if cp_gstin_lst[i] not in ("", "NAN", "NONE") else pr_gstin_lst[i]
+                c_doc = cp_doc_lst[i] if cp_doc_lst[i] not in ("", "NAN", "NONE") else pr_doc_lst[i]
+                c_date = cp_date_lst[i] if cp_date_lst[i] not in ("", "NAN", "NONE") else pr_date_lst[i]
+                c_taxable = float(cp_taxable_lst[i]) if float(cp_taxable_lst[i]) != 0.0 else float(pr_taxable_lst[i])
+                c_tax = float(cp_igst_lst[i]) if float(cp_igst_lst[i]) != 0.0 else float(pr_igst_lst[i])
+                c_total = round(c_taxable + c_tax, 2)
+
+                client_comment = (
+                    f"Consolidated Batch Item ({mode}): Constituent line item linked to master batch voucher "
+                    f"'{t_doc}' (₹{t_amt:,.2f})."
+                )
+                ai_audit_reason = (
+                    f"Rule 1 Batch Constituent: Verified line item belonging to consolidated {mode} tranche "
+                    f"aggregated at master row REC-V4-{master_idx+1:06d}."
+                )
                 conc = "AGREEMENT"
                 disp_reason = None
             else:
@@ -1406,7 +1486,7 @@ class WaterfallMatchingEngineV4:
                                 "batch_sum": consolidation_meta[i]["batch_sum"],
                                 "target_amount": consolidation_meta[i]["target_amount"],
                             }
-                            if i in consolidation_meta and consolidation_meta[i].get("mode") in ("N:1", "1:N")
+                            if i in consolidation_meta and consolidation_meta[i].get("is_master") and consolidation_meta[i].get("mode") in ("N:1", "1:N")
                             else {}
                         ),
                     },
@@ -1432,7 +1512,7 @@ class WaterfallMatchingEngineV4:
                                 "batch_sum": consolidation_meta[i]["batch_sum"],
                                 "target_amount": consolidation_meta[i]["target_amount"],
                             }
-                            if i in consolidation_meta and consolidation_meta[i].get("mode") in ("N:1", "1:N")
+                            if i in consolidation_meta and consolidation_meta[i].get("is_master") and consolidation_meta[i].get("mode") in ("N:1", "1:N")
                             else {}
                         ),
                     },
@@ -1448,7 +1528,14 @@ class WaterfallMatchingEngineV4:
                                 "target_document": consolidation_meta[i]["target_doc"],
                                 "net_batch_variance": f"₹{consolidation_meta[i]['variance']:.2f}",
                             }
-                            if i in consolidation_meta and consolidation_meta[i].get("mode") in ("N:1", "1:N")
+                            if i in consolidation_meta and consolidation_meta[i].get("is_master") and consolidation_meta[i].get("mode") in ("N:1", "1:N")
+                            else {
+                                "is_batch_constituent": True,
+                                "batch_type": consolidation_meta[i]["mode"],
+                                "target_document": consolidation_meta[i].get("target_doc"),
+                                "target_amount": consolidation_meta[i].get("target_amount"),
+                            }
+                            if i in consolidation_meta and not consolidation_meta[i].get("is_master") and consolidation_meta[i].get("mode") in ("N:1", "1:N")
                             else {}
                         ),
                     },
@@ -1457,8 +1544,8 @@ class WaterfallMatchingEngineV4:
                 )
             )
 
-        # Compute accurate summary metrics strictly based on the emitted deduplicated records
-        total_records_count = len(records)
+        # Compute accurate summary metrics strictly based on all emitted records (1:1 with workbook rows)
+        total_records_count = n_rows
         exact_count = sum(1 for r in records if r.tars_verdict == "Exact Match")
         tol_count = sum(1 for r in records if r.tars_verdict == "Tolerance Match")
         near_count = sum(1 for r in records if r.tars_verdict == "Near Match")
@@ -1493,11 +1580,11 @@ class WaterfallMatchingEngineV4:
             "PR_ONLY": pr_count,
         }
 
-        exact_itc = round(sum(r.source_taxable for r in records if r.tars_verdict == "Exact Match"), 2)
-        tol_itc = round(sum(r.source_taxable for r in records if r.tars_verdict == "Tolerance Match"), 2)
-        near_itc = round(sum(r.source_taxable for r in records if r.tars_verdict == "Near Match"), 2)
-        tier4_itc = round(sum(r.source_taxable for r in records if r.tars_verdict in ("Ineligible ITC [Sec 17(5)]", "Consolidated Match")), 2)
-        tier5_itc = round(sum(r.source_taxable for r in records if r.tars_verdict in ("GST Only", "PR Only", "Ambiguous")), 2)
+        exact_itc = round(sum(float(cp_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] == "Exact Match"), 2)
+        tol_itc = round(sum(float(cp_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] == "Tolerance Match"), 2)
+        near_itc = round(sum(float(cp_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] == "Near Match"), 2)
+        tier4_itc = round(sum(float(cp_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] in ("Ineligible ITC [Sec 17(5)]", "Consolidated Match")), 2)
+        tier5_itc = round(sum(float(cp_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] in ("GST Only", "PR Only", "Ambiguous")), 2)
 
         summary = Stage4ResultsSummaryV4(
             total_records=total_records_count,
@@ -1514,8 +1601,8 @@ class WaterfallMatchingEngineV4:
             disparities_caught=total_records_count - concurrence_count,
             net_taxable_variance=round(sum(r.taxable_diff for r in records), 2),
             net_tax_variance=round(sum(r.tax_diff for r in records), 2),
-            total_gov_taxable=round(sum(r.source_taxable for r in records), 2),
-            total_pr_taxable=round(sum(r.target_taxable for r in records), 2),
+            total_gov_taxable=round(float(cp_taxable.sum()), 2),
+            total_pr_taxable=round(float(pr_taxable.sum()), 2),
             accuracy_percentage=round((tot_reconciled / total_records_count * 100.0), 1) if total_records_count > 0 else 0.0,
             # V2 UI Compatibility fields
             total_gstr_rows=total_records_count,
@@ -1523,17 +1610,17 @@ class WaterfallMatchingEngineV4:
             exact_match_count=exact_count,
             exact_match_itc=exact_itc,
             tolerance_match_count=tol_count + ineligible_count + consolidated_count,
-            tolerance_match_itc=round(sum(r.source_taxable for r in records if r.tars_verdict in ("Tolerance Match", "Ineligible ITC [Sec 17(5)]", "Consolidated Match")), 2),
+            tolerance_match_itc=round(sum(float(cp_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] in ("Tolerance Match", "Ineligible ITC [Sec 17(5)]", "Consolidated Match")), 2),
             near_match_count=near_count,
             near_match_itc=near_itc,
             ambiguous_count=amb_count,
-            ambiguous_itc=round(sum(r.source_taxable for r in records if r.tars_verdict == "Ambiguous"), 2),
+            ambiguous_itc=round(sum(float(cp_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] == "Ambiguous"), 2),
             gstr_only_count=gst_count,
-            gstr_only_itc=round(sum(r.source_taxable for r in records if r.tars_verdict == "GST Only"), 2),
+            gstr_only_itc=round(sum(float(cp_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] == "GST Only"), 2),
             pr_only_count=pr_count,
-            pr_only_itc=round(sum(r.target_taxable for r in records if r.tars_verdict == "PR Only"), 2),
+            pr_only_itc=round(sum(float(pr_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] == "PR Only"), 2),
             total_reconciled_count=tot_reconciled,
-            total_reconciled_itc=round(sum(r.source_taxable for r in records), 2),
+            total_reconciled_itc=round(sum(float(cp_taxable_lst[i]) for i in range(n_rows) if tars_verdicts_lst[i] in ("Exact Match", "Tolerance Match", "Near Match", "Ineligible ITC [Sec 17(5)]", "Consolidated Match")), 2),
             overall_reconciliation_rate=concurrence_rate,
             waterfall_passes=[
                 {"tier": 1, "name": "Tier 1: Exact Statutory Identity", "matched_count": exact_count, "matched_itc": exact_itc, "retention_percentage": round(exact_count / total_records_count * 100, 1) if total_records_count else 0.0},

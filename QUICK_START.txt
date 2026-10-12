@@ -13,7 +13,7 @@ QUICK START CHEAT SHEET (3 SIMPLE STEPS):
    This automatically creates your .venv and installs all dependencies.
 
 3. LAUNCH TARS:
-   Double-click:  run.bat  (or START_TARS.bat)
+   Double-click:  open_app.bat  (to stop: double-click stop_app.bat)
    The app will automatically start and open in your browser at:
    http://127.0.0.1:5173
 

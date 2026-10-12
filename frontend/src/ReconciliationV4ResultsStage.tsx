@@ -24,6 +24,7 @@ import {
   Scale,
   Clock,
   FileText,
+  Activity,
 } from "lucide-react";
 import {
   apiV2,
@@ -108,6 +109,56 @@ const getTextDeltaBadge = (val1: any, val2: any, isDocNum: boolean = false) => {
   return <span className="v4-diff-badge mismatch">Variance</span>;
 };
 
+const WATERFALL_STEPS_V4 = [
+  {
+    tier: 1,
+    name: "Exact Statutory Identity",
+    desc: "Zero-tolerance match across Supplier GSTIN, normalized Invoice No, Date & Financials",
+    highlight: "100% Identity",
+  },
+  {
+    tier: 2,
+    name: "Commercial Tolerances & Drift",
+    desc: "Stage 3 configured numerical & date tolerances (± ₹10.00 / 30-day window)",
+    highlight: "± ₹10.00 Window",
+  },
+  {
+    tier: 3,
+    name: "Semantic Near-Matching",
+    desc: "Normalized phonetic string edit distance (≥85%), prefix stripping & date drift",
+    highlight: "≥85% Edit Sim",
+  },
+  {
+    tier: 4,
+    name: "Multi-Tranche Batches & Sec 17(5)",
+    desc: "Combinatorial 1:N / N:1 tranches and statutory blocked credit tagging",
+    highlight: "1:N & N:1 Batches",
+  },
+  {
+    tier: 5,
+    name: "Residuals & Ambiguity Clustering",
+    desc: "Quarantining unresolvable variances, single-sided credits & DRC-01C risks",
+    highlight: "Audit Quarantine",
+  },
+];
+
+const getPassNarrative = (pass: number): string => {
+  switch (pass) {
+    case 1:
+      return "Scanning primary ledger anchors: Matching GSTINs, clean document numbers, and zero-variance financials...";
+    case 2:
+      return "Applying commercial tolerance envelopes: Absorbing minor penny roundoffs (± ₹10) and invoice date windows...";
+    case 3:
+      return "Running semantic similarity analysis: Normalizing alphanumeric invoice prefixes, zeros, and typo variations...";
+    case 4:
+      return "Executing multi-tranche combinatorial matching: Aggregating 1:N / N:1 payment tranches and Section 17(5) blocked credits...";
+    case 5:
+      return "Isolating residual variances: Quarantining single-sided credits into 2B Unmatched and DRC-01C risk clusters...";
+    default:
+      return "Autonomous dual-ledger reconciliation pipeline active...";
+  }
+};
+
 export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
   sessionId,
   isReadOnly = false,
@@ -165,17 +216,22 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
     setExecElapsedMs(0);
     const startTime = Date.now();
     const timer = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      setExecElapsedMs(elapsed);
-      const pass = Math.min(5, Math.floor(elapsed / 800) + 1);
-      setExecPass(pass);
-    }, 100);
+      setExecElapsedMs(Date.now() - startTime);
+    }, 60);
 
     try {
-      const resp = await apiV2.executeStage4Results(sessionId);
+      const backendPromise = apiV2.executeStage4Results(sessionId);
+
+      // Smooth progressive visual pacing across tiers 1 through 4 (~450ms per pass)
+      for (let p = 1; p <= 4; p++) {
+        setExecPass(p);
+        await new Promise((r) => setTimeout(r, 450));
+      }
+
+      const resp = await backendPromise;
       setData(resp);
       setExecPass(5);
-      await new Promise((r) => setTimeout(r, 350));
+      await new Promise((r) => setTimeout(r, 650));
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to run reconciliation waterfall.");
     } finally {
@@ -1548,6 +1604,126 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
           </div>
         )}
       </div>
+
+      {/* DIRECTION 2: SUPERCHARGED AGENTIC TELEMETRY HUD MODAL */}
+      {isRerunning && (
+        <div
+          className="v4-telemetry-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="v4-telemetry-title"
+        >
+          <div className="v4-telemetry-modal-container">
+            <div className="v4-telemetry-glow-ribbon" />
+
+            {/* Header with Title and Live Timer */}
+            <div className="v4-telemetry-header">
+              <div className="v4-telemetry-brand">
+                <div className="v4-telemetry-icon-pulse">
+                  <Activity size={20} />
+                </div>
+                <div>
+                  <div id="v4-telemetry-title" className="v4-telemetry-title">
+                    Autonomous 5-Pass Reconciliation Telemetry Engine
+                  </div>
+                  <div className="v4-telemetry-sub">
+                    Dual-ledger progressive elimination &amp; combinatorial matching in real time
+                  </div>
+                </div>
+              </div>
+
+              <div className="v4-telemetry-meta">
+                <div className="v4-telemetry-timer-badge">
+                  <Clock size={13} />
+                  <span>{(execElapsedMs / 1000).toFixed(1)}s elapsed</span>
+                </div>
+                <div className="v4-telemetry-active-badge">
+                  {execPass < 5 ? `PASS 0${execPass} / 05 ACTIVE` : "FINALIZING AUDIT MATRIX"}
+                </div>
+              </div>
+            </div>
+
+            {/* Dual-Ledger Conduit Strip with Laser Scanline */}
+            <div className="v4-telemetry-conduit">
+              <div className="v4-conduit-ledger portal">
+                <Landmark size={13} />
+                <span>Government GSTR-2B Portal Stream</span>
+              </div>
+              <div className="v4-conduit-stream">
+                <div className="v4-conduit-pulse-line" />
+                <div className="v4-conduit-core-badge">
+                  <Zap size={11} />
+                  <span>5-PASS PIPELINE CONDUIT</span>
+                </div>
+              </div>
+              <div className="v4-conduit-ledger books">
+                <FileText size={13} />
+                <span>Internal Books PR Ledger</span>
+              </div>
+            </div>
+
+            {/* 5-Pass Stepper Grid */}
+            <div className="v4-telemetry-passes-grid">
+              {WATERFALL_STEPS_V4.map((step) => {
+                const isPast = step.tier < execPass;
+                const isCurrent = step.tier === execPass;
+                const status = isPast ? "completed" : isCurrent ? "running" : "pending";
+
+                return (
+                  <div key={step.tier} className={`v4-pass-tile is-${status}`}>
+                    <div className="v4-pass-tile-header">
+                      <span className="v4-pass-num-label">PASS 0{step.tier}</span>
+                      <div className="v4-pass-status-icon">
+                        {isPast ? (
+                          <CheckCircle2 size={16} className="v4-pass-check" />
+                        ) : isCurrent ? (
+                          <RefreshCw size={14} className="v4-spin" />
+                        ) : (
+                          <span className="v4-pass-pending-dot" />
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="v4-pass-tile-body">
+                      <div className="v4-pass-title">{step.name}</div>
+                      <div className="v4-pass-desc">{step.desc}</div>
+                    </div>
+
+                    <div className="v4-pass-tile-footer">
+                      <span className="v4-pass-highlight-pill">{step.highlight}</span>
+                      <span className="v4-pass-state-text">
+                        {isPast ? "COMPLETED" : isCurrent ? "SCANNING..." : "QUEUED"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Bottom Progress Bar & Real-time Narrative */}
+            <div className="v4-telemetry-bottom">
+              <div className="v4-telemetry-progress-track">
+                <div
+                  className="v4-telemetry-progress-fill"
+                  style={{
+                    width: `${Math.min(100, Math.max(12, (execPass / 5) * 100))}%`,
+                  }}
+                />
+              </div>
+
+              <div className="v4-telemetry-narrative-bar">
+                <div className="v4-narrative-left">
+                  <span className="v4-narrative-pulse-dot" />
+                  <span className="v4-narrative-text">{getPassNarrative(execPass)}</span>
+                </div>
+                <div className="v4-narrative-right">
+                  {Math.round((execPass / 5) * 100)}% COMPLETE
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
