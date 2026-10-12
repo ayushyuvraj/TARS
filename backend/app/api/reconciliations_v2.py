@@ -2422,6 +2422,15 @@ def resume_session_from_run(run_id: str):
     if not run:
         raise HTTPException(status_code=404, detail=f"Run '{run_id}' not found.")
     session_id = run.get("session_id")
+    sess = audit_v2_service.get_session(session_id) if session_id else None
+    recon_type = (sess or {}).get("recon_type", "v2")
+    s_id_str = str(session_id or "")
+    if recon_type == "v4" or s_id_str.startswith("V4-"):
+        base_url = "/reconciliations-v4"
+    elif recon_type == "v3" or s_id_str.startswith("V3-"):
+        base_url = "/reconciliations-v3"
+    else:
+        base_url = "/reconciliations-v2"
     target_stage = run.get("current_stage") or "rules"
     # Ensure stage is valid in 6-stage workflow
     if target_stage in ("audit", "near-matches", "exceptions", "policy"):
@@ -2429,7 +2438,7 @@ def resume_session_from_run(run_id: str):
     return {
         "session_id": session_id,
         "target_stage": target_stage,
-        "resume_url": f"/reconciliations-v2/{session_id}/{target_stage}",
+        "resume_url": f"{base_url}/{session_id}/{target_stage}",
     }
 
 

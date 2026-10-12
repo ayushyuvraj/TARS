@@ -668,7 +668,6 @@ class AuditV2Service:
             self._ensure_seed_data()
             sessions = self._read_json(SESSIONS_FILE)
         
-        # Authoritative filter: Exclude phantom sessions where no files were uploaded and no runs were initiated
         meaningful_sessions = [
             s
             for s in sessions.values()
@@ -676,7 +675,8 @@ class AuditV2Service:
             and (
                 s.get("gstr_filename")
                 or s.get("recon_filename")
-                or s.get("recon_type") == "v3"
+                or s.get("recon_type") in ("v3", "v4")
+                or str(s.get("id", "")).startswith(("V3-", "V4-"))
                 or s.get("correlation")
                 or s.get("runs")
                 or s.get("current_stage") != "setup"
@@ -1613,7 +1613,16 @@ class AuditV2Service:
             overall_status = "COMPLETED" if completed_count == 6 else "IN_PROGRESS"
 
             recon_type = sess.get("recon_type", "v2")
-            base_url = "/reconciliations-v3" if recon_type == "v3" else "/reconciliations-v2"
+            s_id_str = str(session_id)
+            if recon_type == "v4" or s_id_str.startswith("V4-"):
+                recon_type = "v4"
+                base_url = "/reconciliations-v4"
+            elif recon_type == "v3" or s_id_str.startswith("V3-"):
+                recon_type = "v3"
+                base_url = "/reconciliations-v3"
+            else:
+                base_url = "/reconciliations-v2"
+
             return {
                 "session_id": session_id,
                 "recon_type": recon_type,
@@ -1697,7 +1706,13 @@ class AuditV2Service:
                 "overall_status": "COMPLETED" if is_exported else "IN_PROGRESS",
                 "is_completed": is_exported,
                 "resume_stage": "export" if is_exported else "setup",
-                "resume_url": f"/reconciliations-v2/{session_id}/export" if is_exported else f"/reconciliations-v2/{session_id}/setup",
+                "resume_url": (
+                    (f"/reconciliations-v4/{session_id}/export" if is_exported else f"/reconciliations-v4/{session_id}/setup")
+                    if sess.get("recon_type") == "v4" or str(session_id).startswith("V4-")
+                    else (f"/reconciliations-v3/{session_id}/export" if is_exported else f"/reconciliations-v3/{session_id}/setup")
+                    if sess.get("recon_type") == "v3" or str(session_id).startswith("V3-")
+                    else (f"/reconciliations-v2/{session_id}/export" if is_exported else f"/reconciliations-v2/{session_id}/setup")
+                ),
                 "statutory_compliance_badge": "GOVERNMENT & STATUTORY AUDIT TRAIL — SECTION 16(2) CGST ACT VERIFIED",
                 "stages": fb_stages_map,
                 "chronological_chapters": fb_chapters,

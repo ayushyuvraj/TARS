@@ -74,7 +74,7 @@ export const ReconciliationV4Workspace: React.FC = () => {
 
   // State
   const [isUploadingAndCorrelating, setIsUploadingAndCorrelating] = useState(false);
-  const [isHydrating, setIsHydrating] = useState(false);
+  const [isHydrating, setIsHydrating] = useState(Boolean(routeSessionId));
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [elapsedSec, setElapsedSec] = useState<number>(0);
   const [totalMeasuredDurationMs, setTotalMeasuredDurationMs] = useState<number>(0);
@@ -127,7 +127,10 @@ export const ReconciliationV4Workspace: React.FC = () => {
       case "mapping":
         return Boolean(
           correlationResult !== null ||
-          (sessionStatus && ["mapped", "mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
+          mappingConfirmed ||
+          rulesConfirmed ||
+          hasVisitedResults ||
+          (sessionStatus && ["mapped", "mapping_confirmed", "rules_confirmed", "reconciled", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "rules":
       case "policy":
@@ -135,24 +138,25 @@ export const ReconciliationV4Workspace: React.FC = () => {
           mappingConfirmed ||
           rulesConfirmed ||
           hasVisitedResults ||
-          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
+          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "reconciled", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "results":
         return Boolean(
           rulesConfirmed ||
           hasVisitedResults ||
-          (sessionStatus && ["rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
+          (sessionStatus && ["rules_confirmed", "reconciled", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "summary":
         return Boolean(
           hasVisitedResults ||
           hasVisitedSummary ||
-          (sessionStatus && ["results", "summary", "export", "exported", "completed"].includes(sessionStatus))
+          (sessionStatus && ["reconciled", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "export":
         return Boolean(
           hasVisitedSummary ||
-          (sessionStatus && ["summary", "export", "exported", "completed"].includes(sessionStatus))
+          hasExported ||
+          (sessionStatus && ["reconciled", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       default:
         return false;
@@ -167,23 +171,23 @@ export const ReconciliationV4Workspace: React.FC = () => {
       case "setup":
         return Boolean(
           correlationResult !== null ||
-          (sessionStatus && ["mapped", "mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
+          (sessionStatus && ["mapped", "mapping_confirmed", "rules_confirmed", "reconciled", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "mapping":
         return Boolean(
           mappingConfirmed ||
-          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
+          (sessionStatus && ["mapping_confirmed", "rules_confirmed", "reconciled", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "rules":
       case "policy":
         return Boolean(
           rulesConfirmed ||
-          (sessionStatus && ["rules_confirmed", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
+          (sessionStatus && ["rules_confirmed", "reconciled", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "results":
         return Boolean(
           hasVisitedResults ||
-          (sessionStatus && ["results", "summary", "export", "exported", "completed"].includes(sessionStatus))
+          (sessionStatus && ["reconciled", "results", "summary", "export", "exported", "completed"].includes(sessionStatus))
         );
       case "summary":
         return Boolean(
@@ -220,7 +224,8 @@ export const ReconciliationV4Workspace: React.FC = () => {
 
   // Sync route stage with internal stage and enforce progressive stage unlocking
   useEffect(() => {
-    if (routeStage && !isHydrating) {
+    if (isHydrating) return;
+    if (routeStage) {
       const normalizedStage = routeStage === "policy" ? "rules" : (routeStage as V4Stage);
       if (isStageUnlocked(normalizedStage)) {
         if (normalizedStage !== currentStage) {
@@ -234,7 +239,7 @@ export const ReconciliationV4Workspace: React.FC = () => {
         }
       }
     }
-  }, [routeStage, routeSessionId, isHydrating]);
+  }, [routeStage, routeSessionId, isHydrating, sessionStatus, correlationResult, mappingConfirmed, rulesConfirmed, hasVisitedResults, hasVisitedSummary]);
 
   // Register session context with Katalyst Copilot
   useEffect(() => {
@@ -310,7 +315,12 @@ export const ReconciliationV4Workspace: React.FC = () => {
         .getSession(routeSessionId)
         .then((sess) => {
           setSessionStatus(sess.status);
-          if (sess.is_completed || sess.completed_stages_count === 6 || ["completed", "exported"].includes(sess.status)) {
+          const isComp = Boolean(
+            sess.is_completed ||
+            sess.completed_stages_count === 6 ||
+            ["completed", "exported"].includes(sess.status)
+          );
+          if (isComp) {
             setSessionIsCompletedState(true);
             setHasExported(true);
           }
@@ -318,27 +328,38 @@ export const ReconciliationV4Workspace: React.FC = () => {
             setCorrelationResult(sess.correlation as any as DirectCorrelationResult);
             setAgentThoughts((sess.correlation.agent_thoughts || []) as any as AgentThought[]);
           }
-          if (["mapping_confirmed", "rules_confirmed", "reconciled", "results", "summary", "export", "completed", "exported"].includes(sess.status)) {
+          if (["mapping_confirmed", "rules_confirmed", "reconciled", "results", "summary", "export", "completed", "exported"].includes(sess.status) || isComp) {
             setMappingConfirmed(true);
           }
-          if (["rules_confirmed", "reconciled", "results", "summary", "export", "completed", "exported"].includes(sess.status)) {
+          if (["rules_confirmed", "reconciled", "results", "summary", "export", "completed", "exported"].includes(sess.status) || isComp) {
             setRulesConfirmed(true);
             setHasVisitedResults(true);
           }
-          if (["reconciled", "results", "summary", "export", "completed", "exported"].includes(sess.status)) {
+          if (["reconciled", "results", "summary", "export", "completed", "exported"].includes(sess.status) || isComp) {
             setHasVisitedSummary(true);
           }
-          if (["completed", "exported"].includes(sess.status)) {
+          if (["completed", "exported"].includes(sess.status) || isComp) {
             setHasExported(true);
+          }
+
+          if (routeStage) {
+            const targetStage = routeStage === "policy" ? "rules" : (routeStage as V4Stage);
+            setCurrentStage(targetStage);
           }
         })
         .catch((err) => {
-          console.error("Could not hydrate V3 session:", err);
+          console.error("Could not hydrate V4 session:", err);
         })
         .finally(() => {
           setIsHydrating(false);
         });
     } else {
+      const savedActiveV4 = localStorage.getItem("tars_v4_active_session_id");
+      if (savedActiveV4) {
+        navigate(`/reconciliations-v4/${savedActiveV4}/results`, { replace: true });
+        return;
+      }
+
       setIsHydrating(true);
       setReconFile(null);
       setCorrelationResult(null);
@@ -356,7 +377,7 @@ export const ReconciliationV4Workspace: React.FC = () => {
           navigate(`/reconciliations-v4/${newSess.id}/setup`, { replace: true });
         })
         .catch((err) => {
-          console.error("Could not create new V3 session:", err);
+          console.error("Could not create new V4 session:", err);
         })
         .finally(() => {
           setIsHydrating(false);

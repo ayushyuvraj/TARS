@@ -54,7 +54,7 @@ export const Audit2Workspace: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [reconFilter, setReconFilter] = useState<"all" | "v2" | "v3">("all");
+  const [reconFilter, setReconFilter] = useState<"all" | "v4" | "v3" | "v2">("all");
   const [isResuming, setIsResuming] = useState(false);
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const [chapterTabState, setChapterTabState] = useState<Record<number, "findings" | "evidence" | "trace">>({});
@@ -163,17 +163,42 @@ export const Audit2Workspace: React.FC = () => {
 
   const handleResumeSession = async (sess: V2SessionAuditLifecycle) => {
     setIsResuming(true);
+    const isV4 = sess.recon_type === "v4" || sess.session_id.startsWith("V4-");
+    const isV3 = sess.recon_type === "v3" || sess.session_id.startsWith("V3-");
+    const stage = sess.current_stage || sess.resume_stage || "results";
+
     try {
       const res = await apiV2.resumeAuditSession(sess.session_id);
-      localStorage.setItem("tars_v2_active_session_id", res.session_id);
-      navigate(res.resume_url);
-    } catch (err: any) {
-      if (sess.resume_url) {
-        localStorage.setItem("tars_v2_active_session_id", sess.session_id);
-        navigate(sess.resume_url);
+      if (isV4) {
+        localStorage.setItem("tars_v4_active_session_id", res.session_id);
+      } else if (isV3) {
+        localStorage.setItem("tars_v3_active_session_id", res.session_id);
       } else {
-        alert(`Could not resume session: ${err?.message || "Unknown error"}`);
+        localStorage.setItem("tars_v2_active_session_id", res.session_id);
       }
+
+      let targetUrl = res.resume_url;
+      if (isV4 && !targetUrl.startsWith("/reconciliations-v4")) {
+        targetUrl = `/reconciliations-v4/${sess.session_id}/${stage}`;
+      } else if (isV3 && !targetUrl.startsWith("/reconciliations-v3")) {
+        targetUrl = `/reconciliations-v3/${sess.session_id}/${stage}`;
+      }
+      navigate(targetUrl);
+    } catch (err: any) {
+      const fallbackUrl = isV4
+        ? `/reconciliations-v4/${sess.session_id}/${stage}`
+        : isV3
+        ? `/reconciliations-v3/${sess.session_id}/${stage}`
+        : sess.resume_url || `/reconciliations-v2/${sess.session_id}/${stage}`;
+
+      if (isV4) {
+        localStorage.setItem("tars_v4_active_session_id", sess.session_id);
+      } else if (isV3) {
+        localStorage.setItem("tars_v3_active_session_id", sess.session_id);
+      } else {
+        localStorage.setItem("tars_v2_active_session_id", sess.session_id);
+      }
+      navigate(fallbackUrl);
     } finally {
       setIsResuming(false);
     }
@@ -267,8 +292,11 @@ export const Audit2Workspace: React.FC = () => {
   };
 
   const filteredSessions = sessions.filter((s) => {
-    if (reconFilter === "v2" && s.recon_type === "v3") return false;
-    if (reconFilter === "v3" && s.recon_type !== "v3") return false;
+    const isV4 = s.recon_type === "v4" || s.session_id.startsWith("V4-");
+    const isV3 = s.recon_type === "v3" || s.session_id.startsWith("V3-");
+    if (reconFilter === "v4" && !isV4) return false;
+    if (reconFilter === "v3" && !isV3) return false;
+    if (reconFilter === "v2" && (isV3 || isV4)) return false;
     const q = searchTerm.toLowerCase();
     return (
       s.session_id.toLowerCase().includes(q) ||
@@ -810,16 +838,16 @@ export const Audit2Workspace: React.FC = () => {
               />
             </div>
             <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
-              {(["all", "v3", "v2"] as const).map((filterVal) => (
+              {(["all", "v4", "v3", "v2"] as const).map((filterVal) => (
                 <button
                   key={filterVal}
                   type="button"
                   onClick={() => setReconFilter(filterVal)}
                   style={{
                     flex: 1,
-                    padding: "6px 6px",
+                    padding: "6px 4px",
                     borderRadius: 6,
-                    fontSize: 10.5,
+                    fontSize: 10,
                     fontWeight: 600,
                     border: reconFilter === filterVal ? "1px solid #00338D" : "1px solid #cbd5e1",
                     background: reconFilter === filterVal ? "#00338D" : "#f1f5f9",
@@ -827,9 +855,10 @@ export const Audit2Workspace: React.FC = () => {
                     cursor: "pointer",
                     transition: "all 0.15s ease",
                     boxShadow: reconFilter === filterVal ? "0 1px 3px rgba(0, 51, 141, 0.2)" : "none",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  {filterVal === "all" ? "All" : filterVal === "v3" ? "Single Ledger" : "Double Ledger"}
+                  {filterVal === "all" ? "All" : filterVal === "v4" ? "Recon 4.0" : filterVal === "v3" ? "Single" : "Double"}
                 </button>
               ))}
             </div>
@@ -869,12 +898,31 @@ export const Audit2Workspace: React.FC = () => {
                         fontWeight: 700,
                         padding: "1px 6px",
                         borderRadius: 4,
-                        background: sess.recon_type === "v3" ? "rgba(6, 182, 212, 0.15)" : "rgba(59, 130, 246, 0.15)",
-                        color: sess.recon_type === "v3" ? "#06b6d4" : "#60a5fa",
-                        border: sess.recon_type === "v3" ? "1px solid rgba(6, 182, 212, 0.3)" : "1px solid rgba(59, 130, 246, 0.3)",
+                        background:
+                          sess.recon_type === "v4" || sess.session_id.startsWith("V4-")
+                            ? "rgba(16, 185, 129, 0.15)"
+                            : sess.recon_type === "v3"
+                            ? "rgba(6, 182, 212, 0.15)"
+                            : "rgba(59, 130, 246, 0.15)",
+                        color:
+                          sess.recon_type === "v4" || sess.session_id.startsWith("V4-")
+                            ? "#10b981"
+                            : sess.recon_type === "v3"
+                            ? "#06b6d4"
+                            : "#60a5fa",
+                        border:
+                          sess.recon_type === "v4" || sess.session_id.startsWith("V4-")
+                            ? "1px solid rgba(16, 185, 129, 0.3)"
+                            : sess.recon_type === "v3"
+                            ? "1px solid rgba(6, 182, 212, 0.3)"
+                            : "1px solid rgba(59, 130, 246, 0.3)",
                       }}
                     >
-                      {sess.recon_type === "v3" ? "Recon 3.0 • Single Recon" : "Recon 2.0 • Dual Ledger"}
+                      {sess.recon_type === "v4" || sess.session_id.startsWith("V4-")
+                        ? "Recon 4.0 • Waterfall"
+                        : sess.recon_type === "v3"
+                        ? "Recon 3.0 • Single Recon"
+                        : "Recon 2.0 • Dual Ledger"}
                     </span>
                   </div>
 
@@ -1003,12 +1051,31 @@ export const Audit2Workspace: React.FC = () => {
                         fontWeight: 700,
                         padding: "3px 8px",
                         borderRadius: 6,
-                        background: selectedSession.recon_type === "v3" ? "rgba(6, 182, 212, 0.15)" : "rgba(59, 130, 246, 0.15)",
-                        color: selectedSession.recon_type === "v3" ? "#06b6d4" : "#3b82f6",
-                        border: selectedSession.recon_type === "v3" ? "1px solid rgba(6, 182, 212, 0.3)" : "1px solid rgba(59, 130, 246, 0.3)",
+                        background:
+                          selectedSession.recon_type === "v4" || selectedSession.session_id.startsWith("V4-")
+                            ? "rgba(16, 185, 129, 0.15)"
+                            : selectedSession.recon_type === "v3"
+                            ? "rgba(6, 182, 212, 0.15)"
+                            : "rgba(59, 130, 246, 0.15)",
+                        color:
+                          selectedSession.recon_type === "v4" || selectedSession.session_id.startsWith("V4-")
+                            ? "#10b981"
+                            : selectedSession.recon_type === "v3"
+                            ? "#06b6d4"
+                            : "#3b82f6",
+                        border:
+                          selectedSession.recon_type === "v4" || selectedSession.session_id.startsWith("V4-")
+                            ? "1px solid rgba(16, 185, 129, 0.3)"
+                            : selectedSession.recon_type === "v3"
+                            ? "1px solid rgba(6, 182, 212, 0.3)"
+                            : "1px solid rgba(59, 130, 246, 0.3)",
                       }}
                     >
-                      {selectedSession.recon_type === "v3" ? "Recon 3.0 • Single Recon File" : "Recon 2.0 • Dual Ledger"}
+                      {selectedSession.recon_type === "v4" || selectedSession.session_id.startsWith("V4-")
+                        ? "Recon 4.0 • Multi-Pass Waterfall"
+                        : selectedSession.recon_type === "v3"
+                        ? "Recon 3.0 • Single Recon File"
+                        : "Recon 2.0 • Dual Ledger"}
                     </span>
                   </div>
                 </div>
@@ -1029,7 +1096,13 @@ export const Audit2Workspace: React.FC = () => {
                     disabled={isResuming}
                     title={
                       selectedSession.completed_stages_count === 6
-                        ? "Open completed session in Reconciliation 2.0 Workspace"
+                        ? `Open completed session in Reconciliation ${
+                            selectedSession.recon_type === "v4" || selectedSession.session_id.startsWith("V4-")
+                              ? "4.0"
+                              : selectedSession.recon_type === "v3"
+                              ? "3.0"
+                              : "2.0"
+                          } Workspace`
                         : `Resume session where you left off at Stage ${selectedSession.current_stage_number}`
                     }
                   >

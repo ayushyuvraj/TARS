@@ -59,6 +59,8 @@ temp/
 .DS_Store
 Thumbs.db
 scratch/
+test_probe.py
+test_run_crlf.bat
 
 # Deployment packages and offline distribution bundles
 *.zip

@@ -776,3 +776,566 @@
   color: #475569;
 }
 
+/* --- Ledger Matrix Toolbar Polish --- */
+.v2-ledger-card .v2-ledger-toolbar {
+  padding: 12px 18px;
+  gap: 0;
+}
+
+/* ==========================================================================
+   FROZEN TABLE PANES (STICKY COLUMN HEADERS & STICKY LEADING COLUMNS)
+   Freezes the table header row on vertical scroll and leading column on horizontal scroll
+   ========================================================================== */
+
+.v2-results-container .v2-table-wrapper {
+  width: 100%;
+  max-width: 100%;
+  max-height: calc(100vh - 260px);
+  min-height: 440px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 #f1f5f9;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.v2-results-container .v2-ledger-table {
+  border-collapse: separate !important;
+  border-spacing: 0 !important;
+  width: 100%;
+  min-width: 1380px;
+}
+
+/* 1. Freeze Header Row (Vertical Scroll) */
+.v2-results-container .v2-ledger-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: #f8fafc !important;
+  box-shadow: inset 0 -1px 0 #cbd5e1;
+}
+
+/* 2. Freeze First Column: Chevron Toggle (Horizontal Scroll) */
+.v2-results-container .v2-ledger-table thead th:nth-child(1) {
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 25;
+  background: #f8fafc !important;
+  box-shadow: inset 0 -1px 0 #cbd5e1;
+}
+
+.v2-results-container .v2-ledger-table .v2-ledger-row > td:nth-child(1) {
+  position: sticky;
+  left: 0;
+  z-index: 8;
+  background: #ffffff;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.v2-results-container .v2-ledger-table .v2-ledger-row:hover > td:nth-child(1) {
+  background: #f8fafc;
+}
+
+.v2-results-container .v2-ledger-table .v2-ledger-row.is-expanded > td:nth-child(1) {
+  background: #f0f9ff;
+}
+
+.v2-results-container .v2-ledger-table .v2-ledger-row.is-expanded:hover > td:nth-child(1) {
+  background: #e0f2fe;
+}
+
+/* 3. Freeze Second Column: Classification & Client Rule (Horizontal Scroll) */
+.v2-results-container .v2-ledger-table thead th:nth-child(2) {
+  position: sticky;
+  top: 0;
+  left: 36px;
+  z-index: 25;
+  background: #f8fafc !important;
+  box-shadow: inset 0 -1px 0 #cbd5e1, inset -1px 0 0 #e2e8f0;
+}
+
+.v2-results-container .v2-ledger-table .v2-ledger-row > td:nth-child(2) {
+  position: sticky;
+  left: 36px;
+  z-index: 8;
+  background: #ffffff;
+  box-shadow: inset -1px 0 0 #e2e8f0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.v2-results-container .v2-ledger-table .v2-ledger-row:hover > td:nth-child(2) {
+  background: #f8fafc;
+}
+
+.v2-results-container .v2-ledger-table .v2-ledger-row.is-expanded > td:nth-child(2) {
+  background: #f0f9ff;
+}
+
+.v2-results-container .v2-ledger-table .v2-ledger-row.is-expanded:hover > td:nth-child(2) {
+  background: #e0f2fe;
+}
+
+/* ==========================================================================
+   UI/UX PRO MAX: DUAL-LEDGER AUDIT INSPECTOR (EXPANDED ROW)
+   Chic, executive-grade, minimalistic comparison matrix eliminating cognitive overload
+   ========================================================================== */
+
+.v4-expanded-details-row {
+  background: #f8fafc !important;
+}
+
+.v4-expanded-details-cell {
+  padding: 12px 18px 20px 18px !important;
+  border-bottom: 2px solid #e2e8f0 !important;
+  background: #f8fafc !important;
+}
+
+.v4-inspector-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 4px 16px -2px rgba(15, 23, 42, 0.05), 0 2px 6px -2px rgba(15, 23, 42, 0.03);
+  padding: 16px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 980px;
+  position: sticky;
+  left: 16px;
+}
+
+/* 1. Header Bar */
+.v4-inspector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.v4-inspector-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.v4-inspector-badge-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.v4-inspector-pass-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 3px 9px;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.v4-inspector-pass-badge.exact-match {
+  background: #dcfce7;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.v4-inspector-pass-badge.tolerance-match {
+  background: #ccfbf1;
+  color: #0f766e;
+  border: 1px solid #99f6e4;
+}
+
+.v4-inspector-pass-badge.near-match {
+  background: #e0e7ff;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+}
+
+.v4-inspector-pass-badge.ambiguous {
+  background: #ffedd5;
+  color: #c2410c;
+  border: 1px solid #fed7aa;
+}
+
+.v4-inspector-pass-badge.gstr-only,
+.v4-inspector-pass-badge.pr-only {
+  background: #fee2e2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.v4-inspector-rule-badge {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #475569;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.02em;
+}
+
+.v4-inspector-provenance-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.v4-row-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 550;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 2.5px 8px;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.v4-row-tag.portal {
+  color: #0369a1;
+  border-color: #bae6fd;
+  background: #f0f9ff;
+}
+
+.v4-row-tag.books {
+  color: #00338d;
+  border-color: #c7d2fe;
+  background: #f8fafc;
+}
+
+.v4-inspector-status-right {
+  display: flex;
+  align-items: center;
+}
+
+.v4-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 650;
+  padding: 4px 11px;
+  border-radius: 9999px;
+  letter-spacing: 0.01em;
+}
+
+.v4-status-pill.exact {
+  background: #f0fdf4;
+  color: #166534;
+  border: 1px solid #bbf7d0;
+}
+
+.v4-status-pill.tolerance {
+  background: #f0fdfa;
+  color: #115e59;
+  border: 1px solid #99f6e4;
+}
+
+.v4-status-pill.near {
+  background: #eef2ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
+}
+
+.v4-status-pill.ambiguous {
+  background: #fff7ed;
+  color: #9a3412;
+  border: 1px solid #fed7aa;
+}
+
+.v4-status-pill.residual {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.v4-status-pill.residual-books {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* 2. Side-by-Side Dual-Ledger Comparative Matrix Table */
+.v4-inspector-matrix-box {
+  overflow-x: auto;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.v4-inspector-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.v4-inspector-table th {
+  background: #f8fafc;
+  padding: 8px 14px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+}
+
+.v4-table-header-ledger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.v4-table-header-ledger.portal {
+  color: #0369a1;
+}
+
+.v4-table-header-ledger.books {
+  color: #00338d;
+}
+
+.v4-inspector-table td {
+  padding: 9px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: middle;
+}
+
+.v4-inspector-table tr:last-child td {
+  border-bottom: none;
+}
+
+.v4-inspector-table tr:hover td {
+  background: #f8fafc;
+}
+
+.v4-anchor-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.v4-anchor-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.v4-anchor-icon.highlight {
+  background: #e0e7ff;
+  color: #00338d;
+}
+
+.v4-ledger-val {
+  color: #0f172a;
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+.v4-ledger-val.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 12px;
+  letter-spacing: -0.01em;
+}
+
+.v4-ledger-val.bold {
+  font-weight: 650;
+  color: #0284c7;
+}
+
+.v4-ledger-val.num {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.v4-ledger-val.itc {
+  color: #00338d;
+  font-weight: 700;
+}
+
+.v4-val-empty {
+  font-style: italic;
+  color: #94a3b8;
+  font-size: 11.5px;
+}
+
+.v4-ledger-delta {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.v4-diff-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 650;
+  padding: 2.5px 8px;
+  border-radius: 9999px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+.v4-diff-badge.diff-zero {
+  background: #f0fdf4;
+  color: #15803d;
+  border: 1px solid #bbf7d0;
+}
+
+.v4-diff-badge.diff-warn {
+  background: #fefce8;
+  color: #a16207;
+  border: 1px solid #fef08a;
+}
+
+.v4-diff-badge.diff-mismatch {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.v4-diff-badge.diff-none {
+  background: #f8fafc;
+  color: #94a3b8;
+  border: 1px solid #e2e8f0;
+}
+
+/* 3. Statutory Audit Provenance Card */
+.v4-inspector-provenance-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 3.5px solid #00338d;
+  border-radius: 6px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.v4-provenance-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #00338d;
+}
+
+.v4-provenance-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.v4-provenance-reason {
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: #0f172a;
+  line-height: 1.4;
+}
+
+.v4-provenance-ai-note {
+  margin: 0;
+  font-size: 11.5px;
+  color: #475569;
+  line-height: 1.35;
+}
+
+.v4-provenance-ai-note strong {
+  color: #334155;
+}
+
+/* 4. Technical JSON Drawer */
+.v4-inspector-json-drawer {
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fafafa;
+  overflow: hidden;
+}
+
+.v4-json-summary {
+  padding: 7px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+  user-select: none;
+  background: #f8fafc;
+  transition: background 0.15s ease, color 0.15s ease;
+  outline: none;
+}
+
+.v4-json-summary:hover {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+
+.v4-json-panes-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 12px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+}
+
+@media (max-width: 900px) {
+  .v4-json-panes-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.v4-json-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.v4-json-pane-title {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #475569;
+}
+
+.v4-json-pane pre {
+  margin: 0;
+  padding: 10px 12px;
+  background: #0f172a;
+  color: #f1f5f9;
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  max-height: 180px;
+  overflow: auto;
+}
+

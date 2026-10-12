@@ -23,6 +23,7 @@ import {
   Filter,
   Scale,
   Clock,
+  FileText,
 } from "lucide-react";
 import {
   apiV2,
@@ -43,6 +44,69 @@ interface ResultsStageProps {
   onBackToRules: () => void;
   onProceedToSummary: () => void;
 }
+
+const extractField = (preview: Record<string, any> | undefined, keys: string[]): any => {
+  if (!preview) return null;
+  for (const k of keys) {
+    if (preview[k] !== undefined && preview[k] !== null && preview[k] !== "") {
+      return preview[k];
+    }
+  }
+  return null;
+};
+
+const formatINR = (val: any): string => {
+  if (val === null || val === undefined || isNaN(Number(val))) return "—";
+  return `₹${Number(val).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+};
+
+const getNumericDeltaBadge = (val1: any, val2: any) => {
+  if (val1 === null || val2 === null || val1 === undefined || val2 === undefined) {
+    return <span className="v4-diff-badge missing">—</span>;
+  }
+  const n1 = Number(val1);
+  const n2 = Number(val2);
+  if (isNaN(n1) || isNaN(n2)) return <span className="v4-diff-badge missing">—</span>;
+  const diff = n1 - n2;
+  if (Math.abs(diff) < 0.005) {
+    return (
+      <span className="v4-diff-badge match">
+        <CheckCircle2 size={11} /> ₹0.00
+      </span>
+    );
+  }
+  const formatted = Math.abs(diff).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (
+    <span className={`v4-diff-badge ${Math.abs(diff) <= 10 ? "delta-tol" : "delta-warn"}`}>
+      {diff > 0 ? `+₹${formatted}` : `-₹${formatted}`}
+    </span>
+  );
+};
+
+const getTextDeltaBadge = (val1: any, val2: any, isDocNum: boolean = false) => {
+  if (!val1 || !val2) return <span className="v4-diff-badge missing">—</span>;
+  const s1 = String(val1).trim();
+  const s2 = String(val2).trim();
+  if (s1.toLowerCase() === s2.toLowerCase()) {
+    return (
+      <span className="v4-diff-badge match">
+        <CheckCircle2 size={11} /> Match
+      </span>
+    );
+  }
+  if (isDocNum) {
+    const stripped1 = s1.replace(/^(INV|BILL|REC|#|\/|-|_)+/i, "").replace(/^0+/, "");
+    const stripped2 = s2.replace(/^(INV|BILL|REC|#|\/|-|_)+/i, "").replace(/^0+/, "");
+    if (stripped1 && stripped2 && stripped1.toLowerCase() === stripped2.toLowerCase()) {
+      return (
+        <span className="v4-diff-badge norm">
+          <Sparkles size={10} /> Normalized
+        </span>
+      );
+    }
+  }
+  return <span className="v4-diff-badge mismatch">Variance</span>;
+};
 
 export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
   sessionId,
@@ -499,41 +563,6 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
     return filteredRecords.slice(start, start + pageSize);
   }, [filteredRecords, currentPage, pageSize]);
 
-  // Tab counts
-  const tabCounts = useMemo(() => {
-    if (summary && summary.total_gstr_rows) {
-      return {
-        ALL: summary.total_gstr_rows,
-        EXACT_MATCH: summary.exact_match_count || 0,
-        TOLERANCE_MATCH: summary.tolerance_match_count || 0,
-        NEAR_MATCH: summary.near_match_count || 0,
-        AMBIGUOUS: summary.ambiguous_count || 0,
-        RESIDUALS: (summary.gstr_only_count || 0) + (summary.pr_only_count || 0),
-        GSTR_ONLY: summary.gstr_only_count || 0,
-        PR_ONLY: summary.pr_only_count || 0,
-      };
-    }
-    const counts = {
-      ALL: records.length,
-      EXACT_MATCH: 0,
-      TOLERANCE_MATCH: 0,
-      NEAR_MATCH: 0,
-      AMBIGUOUS: 0,
-      RESIDUALS: 0,
-      GSTR_ONLY: 0,
-      PR_ONLY: 0,
-    };
-    for (const r of records) {
-      if (r.bucket in counts) {
-        counts[r.bucket as keyof typeof counts]++;
-      }
-      if (r.bucket === "GSTR_ONLY" || r.bucket === "PR_ONLY") {
-        counts.RESIDUALS++;
-      }
-    }
-    return counts;
-  }, [records, summary]);
-
   return (
     <div className="v2-results-container">
       {/* 1. HERO BANNER */}
@@ -831,93 +860,6 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {/* 6. RECONCILED LEDGER MATRIX TABLE */}
       <div className="v2-ledger-card">
         <div className="v2-ledger-toolbar">
-          {/* Tabs Row */}
-          <div className="v2-ledger-tabs-row">
-            <button
-              type="button"
-              className={`v2-ledger-tab-btn ${activeTab === "ALL" && !activeRuleFilter ? "is-active" : ""}`}
-              onClick={() => {
-                setActiveTab("ALL");
-                setActiveRuleFilter(null);
-              }}
-            >
-              <span>All Ledger Records</span>
-              <span className="v2-tab-count-pill">{tabCounts.ALL}</span>
-            </button>
-            <button
-              type="button"
-              className={`v2-ledger-tab-btn ${activeTab === "EXACT_MATCH" ? "is-active" : ""}`}
-              onClick={() => {
-                setActiveTab("EXACT_MATCH");
-                setActiveRuleFilter(null);
-              }}
-            >
-              <CheckCircle2 size={13} color={activeTab === "EXACT_MATCH" ? "#fff" : "#10b981"} />
-              <span>Exact Matches</span>
-              <span className="v2-tab-count-pill">{tabCounts.EXACT_MATCH}</span>
-            </button>
-            <button
-              type="button"
-              className={`v2-ledger-tab-btn ${activeTab === "TOLERANCE_MATCH" ? "is-active" : ""}`}
-              onClick={() => {
-                setActiveTab("TOLERANCE_MATCH");
-                setActiveRuleFilter(null);
-              }}
-            >
-              <Zap size={13} color={activeTab === "TOLERANCE_MATCH" ? "#fff" : "#3b82f6"} />
-              <span>Tolerance Matched</span>
-              <span className="v2-tab-count-pill">{tabCounts.TOLERANCE_MATCH}</span>
-            </button>
-            <button
-              type="button"
-              className={`v2-ledger-tab-btn ${activeTab === "NEAR_MATCH" ? "is-active" : ""}`}
-              onClick={() => {
-                setActiveTab("NEAR_MATCH");
-                setActiveRuleFilter(null);
-              }}
-            >
-              <Layers size={13} color={activeTab === "NEAR_MATCH" ? "#fff" : "#8b5cf6"} />
-              <span>Near Matches</span>
-              <span className="v2-tab-count-pill">{tabCounts.NEAR_MATCH}</span>
-            </button>
-            <button
-              type="button"
-              className={`v2-ledger-tab-btn ${activeTab === "AMBIGUOUS" ? "is-active" : ""}`}
-              onClick={() => {
-                setActiveTab("AMBIGUOUS");
-                setActiveRuleFilter(null);
-              }}
-            >
-              <Split size={13} color={activeTab === "AMBIGUOUS" ? "#fff" : "#f59e0b"} />
-              <span>Ambiguous Collisions</span>
-              <span className="v2-tab-count-pill">{tabCounts.AMBIGUOUS}</span>
-            </button>
-            <button
-              type="button"
-              className={`v2-ledger-tab-btn ${activeTab === "GSTR_ONLY" ? "is-active" : ""}`}
-              onClick={() => {
-                setActiveTab("GSTR_ONLY");
-                setActiveRuleFilter(null);
-              }}
-            >
-              <AlertTriangle size={13} color={activeTab === "GSTR_ONLY" ? "#fff" : "#ef4444"} />
-              <span>GSTR Only (Unclaimed)</span>
-              <span className="v2-tab-count-pill">{tabCounts.GSTR_ONLY}</span>
-            </button>
-            <button
-              type="button"
-              className={`v2-ledger-tab-btn ${activeTab === "PR_ONLY" ? "is-active" : ""}`}
-              onClick={() => {
-                setActiveTab("PR_ONLY");
-                setActiveRuleFilter(null);
-              }}
-            >
-              <AlertTriangle size={13} color={activeTab === "PR_ONLY" ? "#fff" : "#be123c"} />
-              <span>PR Only (DRC-01C)</span>
-              <span className="v2-tab-count-pill">{tabCounts.PR_ONLY}</span>
-            </button>
-          </div>
-
           {/* Search & Control Row */}
           <div className="v2-ledger-controls-row">
             <div className="v2-ledger-search-box">
@@ -1157,31 +1099,255 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                         </td>
                       </tr>
 
-                      {/* Expanded Record View */}
-                      {isExpanded && (
-                        <tr className="v2-expanded-details-row">
-                          <td colSpan={10}>
-                            <div className="v2-expanded-details-panel">
-                              <div className="v2-expanded-grid">
-                                <div className="v2-preview-box">
-                                  <h5>Government Portal GSTR-2B Snapshot</h5>
-                                  <pre>{JSON.stringify(rec.gstr_preview, null, 2)}</pre>
+                      {/* Expanded Record View — UI/UX Pro Max Dual-Ledger Audit Inspector */}
+                      {isExpanded && (() => {
+                        const isGstrOnly = rec.bucket === "GSTR_ONLY";
+                        const isPrOnly = rec.bucket === "PR_ONLY";
+
+                        const gstrGstin = extractField(rec.gstr_preview, ["gstin", "GSTIN", "supplier_gstin", "ctin"]) || (!isPrOnly ? rec.gstin : null);
+                        const prGstin = extractField(rec.pr_preview, ["gstin", "GSTIN", "supplier_gstin", "ctin"]) || (!isGstrOnly ? rec.gstin : null);
+
+                        const gstrDoc = extractField(rec.gstr_preview, ["document_number", "invoice_number", "Invoice", "inv_no", "inum"]) || (!isPrOnly ? rec.document_number : null);
+                        const prDoc = extractField(rec.pr_preview, ["document_number", "invoice_number", "Invoice", "inv_no", "inum"]) || (!isGstrOnly ? rec.document_number : null);
+
+                        const gstrDate = extractField(rec.gstr_preview, ["document_date", "invoice_date", "Date", "inv_date", "dt"]) || (!isPrOnly ? rec.document_date : null);
+                        const prDate = extractField(rec.pr_preview, ["document_date", "invoice_date", "Date", "inv_date", "dt"]) || (!isGstrOnly ? rec.document_date : null);
+
+                        const gstrTaxable = extractField(rec.gstr_preview, ["taxable_value", "Taxable", "txval"]) ?? (!isPrOnly ? rec.taxable_value : null);
+                        const prTaxable = extractField(rec.pr_preview, ["taxable_value", "Taxable", "txval"]) ?? (!isGstrOnly ? rec.taxable_value : null);
+
+                        const gstrTax = extractField(rec.gstr_preview, ["tax_amount", "Tax", "itc", "iamt", "igst"]) ?? (!isPrOnly ? rec.tax_amount : null);
+                        const prTax = extractField(rec.pr_preview, ["tax_amount", "Tax", "itc", "iamt", "igst"]) ?? (!isGstrOnly ? rec.tax_amount : null);
+
+                        const gstrTotal = extractField(rec.gstr_preview, ["total_value", "Total", "val"]) ?? (!isPrOnly ? rec.total_value : null);
+                        const prTotal = extractField(rec.pr_preview, ["total_value", "Total", "val"]) ?? (!isGstrOnly ? rec.total_value : null);
+
+                        return (
+                          <tr className="v4-expanded-details-row">
+                            <td colSpan={10} className="v4-expanded-details-cell">
+                              <div className="v4-inspector-card">
+                                {/* 1. Inspector Header: Metadata & Audit Status */}
+                                <div className="v4-inspector-header">
+                                  <div className="v4-inspector-meta-left">
+                                    <div className="v4-inspector-badge-group">
+                                      <span className={`v4-inspector-pass-badge ${rec.bucket.toLowerCase().replace(/_/g, "-")}`}>
+                                        {rec.bucket.replace(/_/g, " ")}
+                                      </span>
+                                      {rec.sub_classification && (
+                                        <span className="v4-inspector-rule-badge">
+                                          {rec.sub_classification.replace(/_/g, " ")}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="v4-inspector-provenance-tags">
+                                      {rec.gstr_row_index !== undefined && rec.gstr_row_index !== null && (
+                                        <span className="v4-row-tag portal">
+                                          <Landmark size={11} /> 2B Row #{rec.gstr_row_index + 1}
+                                        </span>
+                                      )}
+                                      {rec.pr_row_index !== undefined && rec.pr_row_index !== null && (
+                                        <span className="v4-row-tag books">
+                                          <FileText size={11} /> PR Row #{rec.pr_row_index + 1}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  <div className="v4-inspector-status-right">
+                                    {rec.bucket === "EXACT_MATCH" ? (
+                                      <span className="v4-status-pill exact">
+                                        <CheckCircle2 size={13} /> Strict Statutory Identity • 0.00 Variance
+                                      </span>
+                                    ) : rec.bucket === "TOLERANCE_MATCH" ? (
+                                      <span className="v4-status-pill tolerance">
+                                        <Zap size={13} /> Tolerances Satisfied
+                                      </span>
+                                    ) : rec.bucket === "NEAR_MATCH" ? (
+                                      <span className="v4-status-pill near">
+                                        <Layers size={13} /> Normalized Reference Match
+                                      </span>
+                                    ) : rec.bucket === "AMBIGUOUS" ? (
+                                      <span className="v4-status-pill ambiguous">
+                                        <Split size={13} /> Multi-Candidate Ambiguity
+                                      </span>
+                                    ) : isGstrOnly ? (
+                                      <span className="v4-status-pill residual">
+                                        <AlertTriangle size={13} /> Unclaimed Credit (In 2B Only)
+                                      </span>
+                                    ) : (
+                                      <span className="v4-status-pill residual-books">
+                                        <AlertCircle size={13} /> Missing in Portal (Books Only • DRC-01C)
+                                      </span>
+                                    )}
+                                  </div>
                                 </div>
-                                <div className="v2-preview-box">
-                                  <h5>Internal Purchase Register (Books) Snapshot</h5>
-                                  <pre>{JSON.stringify(rec.pr_preview, null, 2)}</pre>
+
+                                {/* 2. Side-by-Side Dual-Ledger Comparative Matrix */}
+                                <div className="v4-inspector-matrix-box">
+                                  <table className="v4-inspector-table">
+                                    <thead>
+                                      <tr>
+                                        <th style={{ width: "22%" }}>Reconciliation Anchor</th>
+                                        <th style={{ width: "32%" }}>
+                                          <div className="v4-table-header-ledger portal">
+                                            <Landmark size={12} />
+                                            <span>Government Portal (GSTR-2B)</span>
+                                          </div>
+                                        </th>
+                                        <th style={{ width: "32%" }}>
+                                          <div className="v4-table-header-ledger books">
+                                            <FileText size={12} />
+                                            <span>Purchase Register (Books)</span>
+                                          </div>
+                                        </th>
+                                        <th style={{ width: "14%", textAlign: "right" }}>Variance / Delta</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {/* Anchor 1: Supplier GSTIN */}
+                                      <tr>
+                                        <td className="v4-anchor-label">
+                                          <span className="v4-anchor-icon"><Landmark size={12} /></span>
+                                          <span>Supplier GSTIN</span>
+                                        </td>
+                                        <td className="v4-ledger-val mono">
+                                          {gstrGstin || <span className="v4-val-empty">Missing in Portal</span>}
+                                        </td>
+                                        <td className="v4-ledger-val mono">
+                                          {prGstin || <span className="v4-val-empty">Missing in Books</span>}
+                                        </td>
+                                        <td className="v4-ledger-delta">
+                                          {getTextDeltaBadge(gstrGstin, prGstin)}
+                                        </td>
+                                      </tr>
+
+                                      {/* Anchor 2: Invoice Number */}
+                                      <tr>
+                                        <td className="v4-anchor-label">
+                                          <span className="v4-anchor-icon"><Hash size={12} /></span>
+                                          <span>Document / Invoice #</span>
+                                        </td>
+                                        <td className="v4-ledger-val mono bold">
+                                          {gstrDoc || <span className="v4-val-empty">Missing in Portal</span>}
+                                        </td>
+                                        <td className="v4-ledger-val mono bold">
+                                          {prDoc || <span className="v4-val-empty">Missing in Books</span>}
+                                        </td>
+                                        <td className="v4-ledger-delta">
+                                          {getTextDeltaBadge(gstrDoc, prDoc, true)}
+                                        </td>
+                                      </tr>
+
+                                      {/* Anchor 3: Invoice Date */}
+                                      <tr>
+                                        <td className="v4-anchor-label">
+                                          <span className="v4-anchor-icon"><Calendar size={12} /></span>
+                                          <span>Invoice Date</span>
+                                        </td>
+                                        <td className="v4-ledger-val">
+                                          {gstrDate || <span className="v4-val-empty">—</span>}
+                                        </td>
+                                        <td className="v4-ledger-val">
+                                          {prDate || <span className="v4-val-empty">—</span>}
+                                        </td>
+                                        <td className="v4-ledger-delta">
+                                          {getTextDeltaBadge(gstrDate, prDate)}
+                                        </td>
+                                      </tr>
+
+                                      {/* Anchor 4: Taxable Value */}
+                                      <tr>
+                                        <td className="v4-anchor-label">
+                                          <span className="v4-anchor-icon"><Scale size={12} /></span>
+                                          <span>Taxable Value</span>
+                                        </td>
+                                        <td className="v4-ledger-val num">
+                                          {gstrTaxable !== null ? formatINR(gstrTaxable) : <span className="v4-val-empty">—</span>}
+                                        </td>
+                                        <td className="v4-ledger-val num">
+                                          {prTaxable !== null ? formatINR(prTaxable) : <span className="v4-val-empty">—</span>}
+                                        </td>
+                                        <td className="v4-ledger-delta">
+                                          {getNumericDeltaBadge(gstrTaxable, prTaxable)}
+                                        </td>
+                                      </tr>
+
+                                      {/* Anchor 5: Tax Amount (ITC) */}
+                                      <tr>
+                                        <td className="v4-anchor-label">
+                                          <span className="v4-anchor-icon highlight"><Zap size={12} /></span>
+                                          <span style={{ fontWeight: 700, color: "#00338d" }}>Statutory ITC Amount</span>
+                                        </td>
+                                        <td className="v4-ledger-val num itc">
+                                          {gstrTax !== null ? formatINR(gstrTax) : <span className="v4-val-empty">—</span>}
+                                        </td>
+                                        <td className="v4-ledger-val num itc">
+                                          {prTax !== null ? formatINR(prTax) : <span className="v4-val-empty">—</span>}
+                                        </td>
+                                        <td className="v4-ledger-delta">
+                                          {getNumericDeltaBadge(gstrTax, prTax)}
+                                        </td>
+                                      </tr>
+
+                                      {/* Anchor 6: Total Invoice Value */}
+                                      <tr>
+                                        <td className="v4-anchor-label">
+                                          <span className="v4-anchor-icon"><Scale size={12} /></span>
+                                          <span>Total Invoice Value</span>
+                                        </td>
+                                        <td className="v4-ledger-val num">
+                                          {gstrTotal !== null ? formatINR(gstrTotal) : <span className="v4-val-empty">—</span>}
+                                        </td>
+                                        <td className="v4-ledger-val num">
+                                          {prTotal !== null ? formatINR(prTotal) : <span className="v4-val-empty">—</span>}
+                                        </td>
+                                        <td className="v4-ledger-delta">
+                                          {getNumericDeltaBadge(gstrTotal, prTotal)}
+                                        </td>
+                                      </tr>
+                                    </tbody>
+                                  </table>
                                 </div>
+
+                                {/* 3. Statutory Audit Provenance & Findings */}
+                                <div className="v4-inspector-provenance-card">
+                                  <div className="v4-provenance-header">
+                                    <ShieldCheck size={14} className="provenance-shield" />
+                                    <span>Statutory Audit Provenance & Legal Basis</span>
+                                  </div>
+                                  <div className="v4-provenance-body">
+                                    <p className="v4-provenance-reason">
+                                      {rec.classification_reason || "Deterministic match verified against statutory parameters."}
+                                    </p>
+                                    {rec.ai_reason && (
+                                      <p className="v4-provenance-ai-note">
+                                        <strong>Audit Intelligence: </strong>{rec.ai_reason}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* 4. Technical JSON Payloads Drawer (Clean Collapsed Default) */}
+                                <details className="v4-inspector-json-drawer">
+                                  <summary className="v4-json-summary">
+                                    <span>Technical Raw JSON Audit Payload (Dual Ledger Source)</span>
+                                  </summary>
+                                  <div className="v4-json-panes-grid">
+                                    <div className="v4-json-pane">
+                                      <span className="v4-json-pane-title">Government Portal GSTR-2B Raw</span>
+                                      <pre>{JSON.stringify(rec.gstr_preview, null, 2)}</pre>
+                                    </div>
+                                    <div className="v4-json-pane">
+                                      <span className="v4-json-pane-title">Internal Purchase Register (Books) Raw</span>
+                                      <pre>{JSON.stringify(rec.pr_preview, null, 2)}</pre>
+                                    </div>
+                                  </div>
+                                </details>
                               </div>
-                              <div style={{ marginTop: 12, padding: "10px 14px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
-                                <strong style={{ fontSize: 12, color: "#0f172a" }}>Statutory Audit Provenance: </strong>
-                                <span style={{ fontSize: 12, color: "#334155" }}>
-                                  {rec.classification_reason || "Deterministic match verified against statutory parameters."}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      )}
+                            </td>
+                          </tr>
+                        );
+                      })()}
                     </React.Fragment>
                   );
                 })

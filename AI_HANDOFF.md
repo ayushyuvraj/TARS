@@ -1,5 +1,33 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 4.0 • Audit Hub Round-Trip, Refined Inspector & Frozen Panes (12th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 4.0 Audit Hub Round-Trip, Refined Inspector & Frozen Panes`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-12-recon-v4-audit-roundtrip-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Audit Hub Round-Trip & Recon 4.0 Life Cycle Integration*:
+     - `backend/app/services/audit_v2_service.py`: Fixed `compile_session_lifecycle` to recognize `recon_type == "v4"` and `V4-` session IDs, generating `resume_url = f"/reconciliations-v4/{session_id}/{stage_key}"` instead of defaulting to `/reconciliations-v2`.
+     - `backend/app/api/reconciliations_v2.py`: Updated `resume_session_from_run` endpoint to inspect `recon_type` and return `/reconciliations-v4/` for V4 runs.
+     - `frontend/src/Audit2Workspace.tsx`: Added dedicated `Recon 4.0` filter chip; updated session card badge (`Recon 4.0 • Waterfall`) and flight deck header badge (`Recon 4.0 • Multi-Pass Waterfall`); fixed `handleResumeSession` to save `tars_v4_active_session_id` and navigate to `/reconciliations-v4/${session_id}/${stage}`.
+     - `frontend/src/ReconciliationV4Workspace.tsx`: Initialized `isHydrating` from `Boolean(routeSessionId)` to guard against premature redirects on initial mount; added `"reconciled"` to all stage unlock and completion predicates.
+  2. *Refined Row Inspector (UI/UX Pro Max Craft)*:
+     - Replaced cognitive-overload expanded row views with a clean, executive inspection card (`.v4-refined-row-card`).
+     - Symmetrical Dual Ledger Comparison (Counterparty GSTR-2B vs Client Purchase Register).
+     - Side-by-side variance chips (Taxable variance, Tax variance, Invoice Date Delta, Matching Confidence).
+     - KPMG Statutory Rule Badge and plain-language explanation of statutory cause and effect.
+     - Expandable Raw Data Payload drawer with tabs for Government (2B), Books (PR), Variances, and Copilot Telemetry JSON.
+  3. *Sticky Frozen Panes in Reconciled Table*:
+     - Frozen sticky header row (`position: sticky; top: 0; z-index: 20;`).
+     - Frozen sticky first column (`position: sticky; left: 0; z-index: 10;`) across all 58 columns, maintaining zebra striping and hover contrast.
+     - Top-left header corner cell has elevated `z-index: 25` to prevent scrolling collision.
+  4. *Build & Verification*:
+     - `tsc -b && vite build` passed with 0 errors.
+     - Verified in browser with automated round-trip from `/audit-v2` directly into `/reconciliations-v4/:id/results` preserving full refined state.
+
+---
+
 ## Reconciliation 4.0 • Seniority HUD, 2-Line Filters & Residuals Consolidation (12th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 4.0 Seniority HUD, 2-Line Filters & Residuals Consolidation`
