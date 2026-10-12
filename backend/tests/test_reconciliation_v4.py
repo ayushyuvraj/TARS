@@ -398,3 +398,89 @@ def test_rule1_true_1_to_n_disjoint_unrolled():
     assert r.taxable_diff == 0.0
     assert len(r.batch_components) == 3
 
+
+def test_ambiguity_cluster_generation_and_api():
+    """Verify that ambiguous records generate ambiguity clusters and can be resolved or reclassified via V4 endpoints."""
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    client = TestClient(app)
+    df = pd.DataFrame([
+        {
+            "CPGstin": "27AAACB9999M1Z9",
+            "PRGstin": "27AAACB9999M1Z9",
+            "CPDocumentNumber": "INV-CONFLICT-01",
+            "PRDocumentNumber": "INV-CONFLICT-99",
+            "CPDocumentDate": "01-Oct-2026",
+            "PRDocumentDate": "20-Oct-2026",
+            "CPTaxableValue": 5000.0,
+            "PRTaxableValue": 4500.0,
+            "CPIgstAmount": 900.0,
+            "PRIgstAmount": 810.0,
+        }
+    ])
+    engine = WaterfallMatchingEngineV4()
+    res = engine.execute_waterfall(df, session_id="test-ambig-sess")
+    assert res.summary.ambiguous == 1
+    assert len(res.ambiguities) == 1
+    cluster = res.ambiguities[0]
+    assert cluster["cluster_id"].startswith("CLUST-V4-")
+    assert len(cluster["candidates"]) >= 1
+    assert cluster["candidates"][0]["confidence_score"] > 0
+    assert "invoice_similarity" in cluster["candidates"][0]["score_breakdown"]
+
+    # Test API endpoints
+    sess_id = "V4-TEST-AMBIG-API"
+    from app.api.reconciliations_v4 import _V4_SESSIONS
+    _V4_SESSIONS[sess_id] = {
+        "id": sess_id,
+        "recon_type": "v4",
+        "title": "Test V4 Session",
+        "status": "reconciled",
+        "current_stage": "results",
+        "created_at": "2026-10-12T00:00:00Z",
+        "rules_v4": [],
+        "stage4_results": res.model_dump(),
+    }
+    rec_id = res.records[0].id
+
+    # 1. Test recommend endpoint
+    recom_res = client.post(f"/api/reconciliations-v4/{sess_id}/records/{rec_id}/recommend")
+    assert recom_res.status_code == 200
+    recom_data = recom_res.json()
+    assert "recommended_bucket" in recom_data
+    assert "confidence" in recom_data
+    assert "category_policies" in recom_data
+
+    # 2. Test reclassify endpoint with direct id
+    reclass_res = client.post(
+        f"/api/reconciliations-v4/{sess_id}/records/{rec_id}/reclassify",
+        json={"target_bucket": "TOLERANCE_MATCH", "reviewer_note": "Approved manual tolerance override"}
+    )
+    assert reclass_res.status_code == 200
+    reclass_data = reclass_res.json()
+    target_rec = next(r for r in reclass_data["records"] if r["id"] == rec_id)
+    assert target_rec["bucket"] == "TOLERANCE_MATCH"
+    assert target_rec["reclassified_from"] == "AMBIGUOUS"
+
+    # 3. Test reclassify endpoint with row index string "0"
+    reclass_res2 = client.post(
+        f"/api/reconciliations-v4/{sess_id}/records/0/reclassify",
+        json={"target_bucket": "EXACT_MATCH", "reviewer_note": "Override to Exact Match by row index"}
+    )
+    assert reclass_res2.status_code == 200
+    reclass_data2 = reclass_res2.json()
+    target_rec2 = next(r for r in reclass_data2["records"] if r["id"] == rec_id)
+    assert target_rec2["bucket"] == "EXACT_MATCH"
+
+    # 4. Test reclassify endpoint with lowercase id
+    reclass_res3 = client.post(
+        f"/api/reconciliations-v4/{sess_id}/records/{rec_id.lower()}/reclassify",
+        json={"target_bucket": "NEAR_MATCH", "reviewer_note": "Override to Near Match by lowercase id"}
+    )
+    assert reclass_res3.status_code == 200
+    reclass_data3 = reclass_res3.json()
+    target_rec3 = next(r for r in reclass_data3["records"] if r["id"] == rec_id)
+    assert target_rec3["bucket"] == "NEAR_MATCH"
+
+

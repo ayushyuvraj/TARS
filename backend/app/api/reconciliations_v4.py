@@ -38,10 +38,34 @@ from app.services.matching_engine_v4 import (
     WaterfallMatchingEngineV4,
     build_default_rules_v4,
 )
+from app.services.matching_engine_v2 import (
+    AmbiguityCluster,
+    AmbiguityCandidate,
+    ScoreBreakdown,
+    reclassify_ambiguity_candidate,
+)
+from app.services.matching_engine_v3 import (
+    AmbiguityRecommendation,
+    evaluate_ambiguity_recommendation,
+    evaluate_target_category_policy,
+)
 
 logger = logging.getLogger(__name__)
 
 router_v4 = APIRouter(prefix="/reconciliations-v4", tags=["reconciliations-v4"])
+
+
+class ReclassifyRecordRequestV4(BaseModel):
+    target_bucket: str  # EXACT_MATCH, TOLERANCE_MATCH, NEAR_MATCH, GSTR_ONLY, PR_ONLY
+    reviewer_note: str | None = None
+    override_policy: bool = False
+
+
+class ResolveAmbiguityRequestV4(BaseModel):
+    cluster_id: str
+    chosen_candidate_id: str | None = None
+    action: str = "CHOOSE"  # CHOOSE, REJECT
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 CACHE_DIR_V4 = PROJECT_ROOT / "data" / "cache_v4"
@@ -299,6 +323,12 @@ def _ensure_session_v4(session_id: str) -> dict[str, Any]:
             saved["rules_v4"] = parsed_rules or load_master_rules_v4_catalog()
         else:
             saved["rules_v4"] = load_master_rules_v4_catalog()
+
+        s4_saved = saved.get("stage4_results")
+        if not s4_saved or not isinstance(s4_saved, dict) or not s4_saved.get("records"):
+            disk_s4 = audit_v2_service.get_stage4_results(session_id)
+            if disk_s4 and disk_s4.get("records"):
+                saved["stage4_results"] = disk_s4
 
         _V4_SESSIONS[session_id] = saved
         return saved
@@ -601,6 +631,10 @@ def _execute_stage4_v4_internal(session_id: str) -> Stage4ExecutionResponseV4:
     session["status"] = "reconciled"
     session["current_stage"] = "results"
     _persist_session_disk_v4(session)
+    try:
+        audit_v2_service.save_stage4_results(session_id, result.model_dump())
+    except Exception as exc:
+        logger.warning(f"Could not persist stage4 results to audit storage: {exc}")
 
     # Record Audit 2.0 Run
     try:
@@ -666,6 +700,312 @@ def get_stage4_results_v4(session_id: str) -> Stage4ExecutionResponseV4:
     if cached and isinstance(cached, dict):
         return Stage4ExecutionResponseV4(**cached)
     raise HTTPException(status_code=404, detail="Reconciliation engine has not been executed yet for this session.")
+
+
+@router_v4.post("/{session_id}/records/{record_id}/recommend", response_model=AmbiguityRecommendation)
+def get_record_recommendation_v4(
+    session_id: str,
+    record_id: str,
+    body: dict[str, Any] | None = None,
+) -> AmbiguityRecommendation:
+    session = _ensure_session_v4(session_id)
+    cached = session.get("stage4_results")
+    record_data = None
+    if cached and isinstance(cached, dict):
+        records = cached.get("records", [])
+        for r in records:
+            r_dict = r if isinstance(r, dict) else (r.model_dump() if hasattr(r, "model_dump") else dict(r))
+            if str(r_dict.get("id")) == str(record_id) or str(r_dict.get("gstr_row_index")) == str(record_id) or str(r_dict.get("index")) == str(record_id):
+                record_data = r_dict
+                break
+
+    if not record_data and body and isinstance(body, dict):
+        record_data = body.get("record") or body
+
+    if not record_data:
+        raise HTTPException(status_code=404, detail=f"Record '{record_id}' not found in session results.")
+
+    return evaluate_ambiguity_recommendation(record_data)
+
+
+@router_v4.post("/{session_id}/records/{record_id}/reclassify", response_model=Stage4ExecutionResponseV4)
+def reclassify_record_v4(
+    session_id: str,
+    record_id: str,
+    req: ReclassifyRecordRequestV4,
+) -> Stage4ExecutionResponseV4:
+    session = _ensure_session_v4(session_id)
+    cached = session.get("stage4_results")
+    if not cached or not isinstance(cached, dict) or not cached.get("records"):
+        disk_s4 = audit_v2_service.get_stage4_results(session_id)
+        if disk_s4 and disk_s4.get("records"):
+            cached = disk_s4
+            session["stage4_results"] = cached
+
+    if not cached or not isinstance(cached, dict) or not cached.get("records"):
+        raise HTTPException(status_code=404, detail="No reconciliation results found for this session.")
+
+    records = cached.get("records", [])
+    summary = cached.get("summary", {})
+
+    target_rec = None
+    target_idx = -1
+    clean_rec_id = str(record_id).strip()
+    digits_in_req = "".join(filter(str.isdigit, clean_rec_id))
+
+    for i, r in enumerate(records):
+        r_dict = r if isinstance(r, dict) else (r.model_dump() if hasattr(r, "model_dump") else dict(r))
+        r_id = str(r_dict.get("id") or "").strip()
+        r_idx = str(r_dict.get("gstr_row_index") if r_dict.get("gstr_row_index") is not None else "")
+        r_v3_idx = str(r_dict.get("index") if r_dict.get("index") is not None else "")
+        r_pr_idx = str(r_dict.get("pr_row_index") if r_dict.get("pr_row_index") is not None else "")
+        r_clust = str(r_dict.get("ambiguity_cluster_id") or "").strip()
+        r_doc = str(r_dict.get("document_number") or r_dict.get("source_doc_num") or "").strip()
+
+        # 1. Direct equality (case-insensitive)
+        if clean_rec_id.lower() in (r_id.lower(), r_idx, r_v3_idx, r_pr_idx, r_clust.lower(), r_doc.lower()):
+            target_rec = r_dict
+            target_idx = i
+            break
+
+        # 2. Match by numeric row number
+        if digits_in_req:
+            req_int = int(digits_in_req)
+            if (
+                (r_idx and int(r_idx) == req_int)
+                or (r_idx and int(r_idx) + 1 == req_int)
+                or (r_v3_idx and int(r_v3_idx) == req_int)
+                or (r_v3_idx and int(r_v3_idx) + 1 == req_int)
+            ):
+                target_rec = r_dict
+                target_idx = i
+                break
+
+    if not target_rec or target_idx < 0:
+        raise HTTPException(status_code=404, detail=f"Record '{record_id}' not found.")
+
+    old_bucket = target_rec.get("bucket") or "AMBIGUOUS"
+    new_bucket = req.target_bucket
+
+    verdict, policy_msg = evaluate_target_category_policy(target_rec, new_bucket)
+
+    target_rec["reclassified_from"] = old_bucket
+    target_rec["bucket"] = new_bucket
+    target_rec["matched_by_pass"] = f"Manual Reclassification → {new_bucket}"
+    target_rec["reclassification_note"] = req.reviewer_note or f"Manually classified to {new_bucket} ({verdict}): {policy_msg}"
+    target_rec["classification_reason"] = f"Accountant Manual Disposition: {policy_msg}"
+
+    verdict_labels = {
+        "EXACT_MATCH": "Exact Match",
+        "TOLERANCE_MATCH": "Tolerance Match",
+        "NEAR_MATCH": "Near Match",
+        "GSTR_ONLY": "GST Only",
+        "PR_ONLY": "PR Only",
+        "AMBIGUOUS": "Ambiguous",
+    }
+    target_rec["tars_verdict"] = verdict_labels.get(new_bucket, "Ambiguous")
+    if new_bucket in ("EXACT_MATCH", "TOLERANCE_MATCH", "NEAR_MATCH"):
+        target_rec["concurrence"] = "AGREEMENT"
+
+    records[target_idx] = target_rec
+    cached["records"] = records
+
+    # Update summary counts safely
+    v4_bucket_map = {
+        "EXACT_MATCH": ("exact_matches", "exact_match_count"),
+        "TOLERANCE_MATCH": ("tolerance_matches", "tolerance_match_count"),
+        "NEAR_MATCH": ("near_matches", "near_match_count"),
+        "AMBIGUOUS": ("ambiguous", "ambiguous_count"),
+        "GSTR_ONLY": ("gst_only", "gstr_only_count"),
+        "PR_ONLY": ("pr_only", "pr_only_count"),
+    }
+    old_fields = v4_bucket_map.get(old_bucket)
+    new_fields = v4_bucket_map.get(new_bucket)
+    if old_fields:
+        for fld in old_fields:
+            if summary.get(fld, 0) > 0:
+                summary[fld] -= 1
+    if new_fields:
+        for fld in new_fields:
+            summary[fld] = summary.get(fld, 0) + 1
+
+    # Recalculate reconciled totals
+    tot_rec = (
+        summary.get("exact_matches", 0)
+        + summary.get("tolerance_matches", 0)
+        + summary.get("near_matches", 0)
+        + summary.get("ineligible_itc_matches", 0)
+        + summary.get("consolidated_matches", 0)
+    )
+    summary["total_reconciled_count"] = tot_rec
+    tot_all = summary.get("total_records", len(records)) or 1
+    summary["accuracy_percentage"] = round((tot_rec / tot_all) * 100.0, 1)
+    summary["overall_reconciliation_rate"] = summary["accuracy_percentage"]
+
+    # Mark ambiguity cluster as resolved if attached
+    cluster_id = target_rec.get("ambiguity_cluster_id")
+    if cluster_id and "ambiguities" in cached:
+        for cl in cached["ambiguities"]:
+            c_dict = cl if isinstance(cl, dict) else (cl.model_dump() if hasattr(cl, "model_dump") else dict(cl))
+            if c_dict.get("cluster_id") == cluster_id:
+                c_dict["status"] = "RESOLVED"
+                c_dict["resolved_at"] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    cached["summary"] = summary
+    session["stage4_results"] = cached
+    _persist_session_disk_v4(session)
+    try:
+        audit_v2_service.save_stage4_results(session_id, cached)
+    except Exception as exc:
+        logger.warning(f"Error persisting stage4 results to audit storage: {exc}")
+
+    return Stage4ExecutionResponseV4(**cached)
+
+
+@router_v4.post("/{session_id}/results/resolve-ambiguity", response_model=Stage4ExecutionResponseV4)
+def resolve_ambiguity_v4(
+    session_id: str,
+    req: ResolveAmbiguityRequestV4,
+) -> Stage4ExecutionResponseV4:
+    session = _ensure_session_v4(session_id)
+    cached = session.get("stage4_results")
+    if not cached or not isinstance(cached, dict) or not cached.get("records"):
+        disk_s4 = audit_v2_service.get_stage4_results(session_id)
+        if disk_s4 and disk_s4.get("records"):
+            cached = disk_s4
+            session["stage4_results"] = cached
+
+    if not cached or not isinstance(cached, dict):
+        raise HTTPException(status_code=404, detail="No reconciliation results found for this session.")
+
+    ambiguities = cached.get("ambiguities", [])
+    records = cached.get("records", [])
+    summary = cached.get("summary", {})
+
+    target_cluster = next((c for c in ambiguities if c.get("cluster_id") == req.cluster_id), None)
+    if not target_cluster:
+        raise HTTPException(status_code=404, detail=f"Ambiguity cluster '{req.cluster_id}' not found.")
+
+    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    candidate_count = len(target_cluster.get("candidates", []))
+
+    if req.action == "CHOOSE" and req.chosen_candidate_id:
+        chosen_cand = next((c for c in target_cluster.get("candidates", []) if c.get("candidate_id") == req.chosen_candidate_id), None)
+        if not chosen_cand:
+            raise HTTPException(status_code=404, detail=f"Candidate '{req.chosen_candidate_id}' not found in cluster.")
+
+        target_cluster["status"] = "RESOLVED"
+        target_cluster["resolved_pr_record_id"] = chosen_cand.get("pr_record_id")
+        target_cluster["resolved_pr_row_index"] = chosen_cand.get("pr_row_index")
+        target_cluster["resolved_at"] = now_iso
+
+        # Locate the record
+        target_rec = next((r for r in records if r.get("ambiguity_cluster_id") == req.cluster_id or str(r.get("id")) == str(target_cluster.get("gstr_record_id"))), None)
+        gstr_preview = target_rec.get("gstr_preview", {}) if target_rec else target_cluster.get("anchor_preview", {})
+
+        reclass_result = reclassify_ambiguity_candidate(
+            gstr_preview=gstr_preview,
+            chosen_cand=chosen_cand,
+            candidate_count=candidate_count,
+            action="CHOOSE",
+            rules=session.get("rules_v4", []),
+        )
+
+        chosen_pr_row_idx = chosen_cand.get("pr_row_index")
+        if target_rec:
+            target_rec["bucket"] = reclass_result["bucket"]
+            target_rec["tars_verdict"] = (
+                "Exact Match" if reclass_result["bucket"] == "EXACT_MATCH"
+                else "Tolerance Match" if reclass_result["bucket"] == "TOLERANCE_MATCH"
+                else "Near Match" if reclass_result["bucket"] == "NEAR_MATCH"
+                else "Ambiguous"
+            )
+            target_rec["pr_row_index"] = chosen_pr_row_idx
+            target_rec["pr_record_id"] = chosen_cand.get("pr_record_id")
+            target_rec["pr_preview"] = chosen_cand.get("pr_preview", {})
+            target_rec["matched_by_pass"] = reclass_result["matched_by_pass"]
+            target_rec["classification_reason"] = reclass_result["classification_reason"]
+            target_rec["ai_reason"] = reclass_result["ai_reason"]
+            target_rec["reclassified_from"] = reclass_result["reclassified_from"]
+            target_rec["reclassification_note"] = reclass_result["reclassification_note"]
+            target_rec["variances"] = {
+                **reclass_result.get("variances", {}),
+                "resolved_by": "Senior Tax Accountant",
+                "confidence_at_resolution": chosen_cand.get("confidence_score"),
+                "resolved_at": now_iso,
+                "candidate_count": candidate_count,
+            }
+
+        cand_tax = float(chosen_cand.get("pr_preview", {}).get("tax_amount") or (target_rec.get("tax_amount", 0.0) if target_rec else 0.0))
+        target_bucket = reclass_result["bucket"]
+
+        summary["ambiguous"] = max(0, summary.get("ambiguous", 1) - 1)
+        summary["ambiguous_count"] = max(0, summary.get("ambiguous_count", 1) - 1)
+        summary["ambiguous_itc"] = max(0.0, round(summary.get("ambiguous_itc", 0.0) - cand_tax, 2))
+
+        if target_bucket == "EXACT_MATCH":
+            summary["exact_matches"] = summary.get("exact_matches", 0) + 1
+            summary["exact_match_count"] = summary.get("exact_match_count", 0) + 1
+            summary["exact_match_itc"] = round(summary.get("exact_match_itc", 0.0) + cand_tax, 2)
+        elif target_bucket == "TOLERANCE_MATCH":
+            summary["tolerance_matches"] = summary.get("tolerance_matches", 0) + 1
+            summary["tolerance_match_count"] = summary.get("tolerance_match_count", 0) + 1
+            summary["tolerance_match_itc"] = round(summary.get("tolerance_match_itc", 0.0) + cand_tax, 2)
+        elif target_bucket == "NEAR_MATCH":
+            summary["near_matches"] = summary.get("near_matches", 0) + 1
+            summary["near_match_count"] = summary.get("near_match_count", 0) + 1
+            summary["near_match_itc"] = round(summary.get("near_match_itc", 0.0) + cand_tax, 2)
+
+        tot_rec = summary.get("exact_matches", 0) + summary.get("tolerance_matches", 0) + summary.get("near_matches", 0)
+        summary["total_reconciled_count"] = tot_rec
+        tot_all = summary.get("total_records", len(records)) or 1
+        summary["accuracy_percentage"] = round((tot_rec / tot_all) * 100.0, 1)
+
+    elif req.action == "REJECT":
+        target_cluster["status"] = "REJECTED"
+        target_cluster["resolved_at"] = now_iso
+
+        target_rec = next((r for r in records if r.get("ambiguity_cluster_id") == req.cluster_id or str(r.get("id")) == str(target_cluster.get("gstr_record_id"))), None)
+        gstr_preview = target_rec.get("gstr_preview", {}) if target_rec else target_cluster.get("anchor_preview", {})
+
+        reclass_result = reclassify_ambiguity_candidate(
+            gstr_preview=gstr_preview,
+            chosen_cand=None,
+            candidate_count=candidate_count,
+            action="REJECT",
+            rules=session.get("rules_v4", []),
+        )
+
+        if target_rec:
+            target_rec["bucket"] = "GSTR_ONLY"
+            target_rec["tars_verdict"] = "GST Only"
+            target_rec["matched_by_pass"] = reclass_result["matched_by_pass"]
+            target_rec["classification_reason"] = reclass_result["classification_reason"]
+            target_rec["ai_reason"] = reclass_result["ai_reason"]
+            target_rec["reclassified_from"] = reclass_result["reclassified_from"]
+            target_rec["reclassification_note"] = reclass_result["reclassification_note"]
+            target_rec["variances"] = reclass_result.get("variances", {})
+
+        g_tax = float(target_rec.get("tax_amount", 0.0) if target_rec else 0.0)
+        summary["ambiguous"] = max(0, summary.get("ambiguous", 1) - 1)
+        summary["ambiguous_count"] = max(0, summary.get("ambiguous_count", 1) - 1)
+        summary["ambiguous_itc"] = max(0.0, round(summary.get("ambiguous_itc", 0.0) - g_tax, 2))
+        summary["gst_only"] = summary.get("gst_only", 0) + 1
+        summary["gstr_only_count"] = summary.get("gstr_only_count", 0) + 1
+        summary["gstr_only_itc"] = round(summary.get("gstr_only_itc", 0.0) + g_tax, 2)
+
+    cached["ambiguities"] = ambiguities
+    cached["records"] = records
+    cached["summary"] = summary
+    session["stage4_results"] = cached
+    _persist_session_disk_v4(session)
+    try:
+        audit_v2_service.save_stage4_results(session_id, cached)
+    except Exception as exc:
+        logger.warning(f"Error persisting ambiguity resolution results to audit storage: {exc}")
+
+    return Stage4ExecutionResponseV4(**cached)
+
 
 
 # STAGE 5: SUMMARY & DISPATCH

@@ -11,6 +11,12 @@ import pandas as pd
 from pydantic import BaseModel, Field
 
 from app.domain.models import CanonicalDataType
+from app.services.matching_engine_v2 import (
+    AmbiguityCandidate,
+    AmbiguityCluster,
+    ScoreBreakdown,
+    calculate_string_ratio,
+)
 
 
 def _clean_str(val: Any) -> str:
@@ -75,6 +81,8 @@ class Rule4Item(BaseModel):
 
 
 class ReconciliationRecordItemV4(BaseModel):
+    model_config = {"extra": "allow"}
+
     id: str
     index: int
     tars_verdict: str  # "Exact Match", "Tolerance Match", "Near Match", "Ineligible ITC [Sec 17(5)]", "Consolidated Match", "GST Only", "PR Only", "Ambiguous"
@@ -115,9 +123,12 @@ class ReconciliationRecordItemV4(BaseModel):
     variances: dict[str, Any] = Field(default_factory=dict)
     matched_by_pass: str = ""
     batch_components: list[dict[str, Any]] = Field(default_factory=list)
+    ambiguity_cluster_id: str | None = None
 
 
 class Stage4ResultsSummaryV4(BaseModel):
+    model_config = {"extra": "allow"}
+
     total_records: int
     exact_matches: int
     tolerance_matches: int
@@ -158,6 +169,8 @@ class Stage4ResultsSummaryV4(BaseModel):
 
 
 class Stage4ExecutionResponseV4(BaseModel):
+    model_config = {"extra": "allow"}
+
     session_id: str
     executed_at: str
     duration_ms: float
@@ -1544,6 +1557,72 @@ class WaterfallMatchingEngineV4:
                 )
             )
 
+        # Build Ambiguity Clusters for records flagged as AMBIGUOUS
+        ambiguities: list[dict[str, Any]] = []
+        for r in records:
+            if r.bucket == "AMBIGUOUS":
+                clust_id = f"CLUST-V4-{r.index:06d}"
+                r.ambiguity_cluster_id = clust_id
+
+                cand_diffs = []
+                if r.taxable_diff > 0.01:
+                    cand_diffs.append(f"Taxable Variance: ₹{r.taxable_diff:,.2f}")
+                if r.tax_diff > 0.01:
+                    cand_diffs.append(f"Tax Variance: ₹{r.tax_diff:,.2f}")
+                if r.source_doc_num.strip().upper() != r.target_doc_num.strip().upper():
+                    cand_diffs.append(f"Document # Mismatch: '{r.source_doc_num}' vs '{r.target_doc_num}'")
+                if r.source_date and r.target_date and r.source_date != r.target_date:
+                    cand_diffs.append(f"Date Variance: '{r.source_date}' vs '{r.target_date}'")
+
+                doc_ratio = calculate_string_ratio(r.source_doc_num, r.target_doc_num)
+                doc_sim = round(doc_ratio * 100.0, 1)
+
+                t_max = max(r.source_taxable, r.target_taxable, 1.0)
+                amt_score = round(max(0.0, 100.0 - (r.taxable_diff / t_max * 100.0)), 1)
+
+                tx_max = max(r.source_tax, r.target_tax, 1.0)
+                tax_score = round(max(0.0, 100.0 - (r.tax_diff / tx_max * 100.0)), 1)
+
+                date_score = 90.0 if r.source_date == r.target_date else 70.0
+                conf = round((doc_sim * 0.35 + amt_score * 0.35 + tax_score * 0.15 + date_score * 0.15), 1)
+
+                cand1 = AmbiguityCandidate(
+                    candidate_id=f"CAND-{r.index}-1",
+                    pr_row_index=r.pr_row_index if r.pr_row_index is not None else (r.index - 1),
+                    pr_record_id=f"PR-VOUCHER-{r.index:06d}",
+                    confidence_score=conf,
+                    score_breakdown=ScoreBreakdown(
+                        invoice_similarity=doc_sim,
+                        amount_score=amt_score,
+                        date_score=date_score,
+                        tax_score=tax_score,
+                    ),
+                    detected_differences=cand_diffs or ["Minor formatting variance"],
+                    ai_reason=(
+                        f"Primary ERP Ledger Voucher for counterparty GSTIN {r.source_gstin}. "
+                        f"Financial variance ₹{r.taxable_diff:.2f} with {doc_sim}% document string correlation."
+                    ),
+                    pr_preview=r.pr_preview,
+                )
+
+                clust = AmbiguityCluster(
+                    cluster_id=clust_id,
+                    gstr_row_index=r.gstr_row_index if r.gstr_row_index is not None else (r.index - 1),
+                    gstr_record_id=r.id,
+                    anchor_preview=r.gstr_preview,
+                    candidates=[cand1],
+                    ai_justification=(
+                        f"Ambiguous collision for Portal Document #{r.source_doc_num} (GSTIN: {r.source_gstin}). "
+                        f"Potential variance requires accountant disambiguation or manual statutory reclassification."
+                    ),
+                    status="PENDING_REVIEW",
+                    ambiguity_category="PROBABLE_EXACT_MATCH" if conf >= 85.0 else "SPLIT_BATCH_DELIVERY",
+                    category_label="High-Confidence Probable Match" if conf >= 85.0 else "Multi-Candidate Collision",
+                    recommended_action="Confirm dominant candidate or reclassify category",
+                    priority="ROUTINE" if conf >= 85.0 else "REVIEW",
+                )
+                ambiguities.append(clust.model_dump())
+
         # Compute accurate summary metrics strictly based on all emitted records (1:1 with workbook rows)
         total_records_count = n_rows
         exact_count = sum(1 for r in records if r.tars_verdict == "Exact Match")
@@ -1641,4 +1720,6 @@ class WaterfallMatchingEngineV4:
             summary=summary,
             records=records,
             kics_status_column=kics_col or "ReconciliationSection",
+            ambiguities=ambiguities,
         )
+

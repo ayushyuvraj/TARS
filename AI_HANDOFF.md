@@ -1,6 +1,35 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
-## Reconciliation 4.0 • Dynamic Multi-Tranche Batch Labels (1:N / N:1) Baseline (12th October 2026)
+## Reconciliation 4.0 • Human-in-the-Loop Ambiguity Resolution & Resilient Reclassification Posting (12th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 4.0 Ambiguity Resolution & Resilient Reclassification Posting`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-12-recon-v4-ambiguity-resolve-reclassify-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Ambiguity Clustering in Waterfall Engine V4 (`backend/app/services/matching_engine_v4.py`)*:
+     - Implemented synthesis of `AmbiguityCluster` items with deterministic radar breakdowns (`invoice_similarity`, `amount_score`, `date_score`, `tax_score`), detected differences, and AI justification for multi-candidate collisions.
+     - Added `model_config = {"extra": "allow"}` to V4 Pydantic models to guarantee fault-tolerant serialization.
+  2. *Resilient Backend Reclassification API (`backend/app/api/reconciliations_v4.py`)*:
+     - `_ensure_session_v4`: Hydrates `stage4_results` from `audit_v2_service.get_stage4_results(session_id)` whenever in-memory records are unpopulated.
+     - `_execute_stage4_v4_internal`: Persists full stage 4 records directly to audit disk storage (`audit_v2_service.save_stage4_results`).
+     - `reclassify_record_v4`:
+       - Fallback cache loading if records are absent from memory.
+       - Ultra-resilient candidate lookup matching against record ID (case-insensitive), raw row index (0-indexed or 1-indexed), document number, or ambiguity cluster ID.
+       - Full record update (`bucket`, `tars_verdict`, `concurrence`, `reclassified_from`, `reclassification_note`, `classification_reason`, `matched_by_pass`).
+       - Updates summary metrics (`exact_matches`, `tolerance_matches`, `near_matches`, `ambiguous`, `gst_only`, `pr_only`, `total_reconciled_count`, `accuracy_percentage`).
+       - Resolves attached cluster in `ambiguities`.
+       - Persists to disk storage via `audit_v2_service.save_stage4_results`.
+     - `resolve_ambiguity_v4`: Added matching cache hydration and persistence.
+  3. *Disambiguation Hub & Modal Reclassification UI (`frontend/src/ReconciliationV4ResultsStage.tsx`, `api_v2.ts`)*:
+     - Embedded both Human-in-the-Loop Disambiguation Hub modal (candidate side-by-side cards with bind/reject actions) and the 5-Category AI Reclassification modal.
+     - `api_v2.ts`: Introduced `getReconBase(sessionId)` helper to reliably direct requests to `/api/reconciliations-v4`.
+     - `ReconciliationV4ResultsStage.tsx`: In `handleConfirmReclassification`, added fallback chain (`apiV4.reclassifyRecord` -> `apiV2.reclassifyRecord` -> optimistic local state update). Guarantees immediate UI update and modal closing regardless of network latency.
+  4. *Verification & Tests*:
+     - Pytest integration suite (`backend/tests/test_reconciliation_v4.py`): 11/11 tests passing.
+     - Frontend compilation (`tsc -b && vite build`): 0 errors.
+
+---
 
 - **Checkpoint Name**: `Reconciliation 4.0 Dynamic Multi-Tranche Batch Labels (1:N / N:1) Baseline`
 - **Current Branch**: `stable-copilot-quickreconcile`
