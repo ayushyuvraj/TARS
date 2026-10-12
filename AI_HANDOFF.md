@@ -1,5 +1,22 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 4.0 • Dynamic Multi-Tranche Batch Labels (1:N / N:1) Baseline (12th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 4.0 Dynamic Multi-Tranche Batch Labels (1:N / N:1) Baseline`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-12-recon-v4-batch-labels-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Dynamic Multi-Tranche Badges & Filter Chip (`frontend/src/ReconciliationV4ResultsStage.tsx`)*:
+     - Updated top statutory filter chip from `Banking Tranches (N:1)` to `Multi-Tranche Batches (1:N / N:1)`.
+     - Replaced static `Rule 1: Banking N:1` row badge with dynamic indicator (`Rule 1: Batch 1:N` vs `Rule 1: Batch N:1`) based on `rec.variances.batch_type`.
+     - Updated inspector drawer audit pill to display `MULTI-TRANCHE (1:N)` or `MULTI-TRANCHE (N:1)`.
+  2. *Verification*:
+     - `tsc -b && vite build` passed cleanly with 0 errors.
+     - Live browser verified on session `V4-2882F168` showing accurate chip and dynamic badge labeling.
+
+---
+
 ## Reconciliation 4.0 • Single Master Batch Row Emission & Constituent Multi-Tranche Breakdown Inspector (12th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 4.0 Single Master Batch Row Emission & Constituent Multi-Tranche Breakdown Inspector`

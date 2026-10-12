@@ -457,7 +457,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       },
       {
         id: "BANKING_MULTI_TRANCHE",
-        name: "Banking Tranches (N:1)",
+        name: "Multi-Tranche Batches (1:N / N:1)",
         icon: <Landmark size={13} />,
         className: "banking",
         passKey: "TOLERANCE_MATCH",
@@ -1026,7 +1026,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                               )}
                               {subC === "BANKING_MULTI_TRANCHE" && (
                                 <span className="v4-rule-pill rule-banking">
-                                  🏦 Rule 1: Banking N:1
+                                  🏦 {rec.variances?.batch_type ? `Rule 1: Batch ${rec.variances.batch_type}` : "Rule 1: Multi-Tranche Batch"}
                                 </span>
                               )}
                               {subC === "DOC_PREFIX_NORMALIZED" && (
@@ -1142,7 +1142,9 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                                       </span>
                                       {rec.sub_classification && (
                                         <span className="v4-inspector-rule-badge">
-                                          {rec.sub_classification.replace(/_/g, " ")}
+                                          {rec.sub_classification === "BANKING_MULTI_TRANCHE" && rec.variances?.batch_type
+                                            ? `MULTI-TRANCHE (${rec.variances.batch_type})`
+                                            : rec.sub_classification.replace(/_/g, " ")}
                                         </span>
                                       )}
                                     </div>
