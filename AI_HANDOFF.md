@@ -1,5 +1,33 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 4.0 • Seniority HUD, 2-Line Filters & Residuals Consolidation (12th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 4.0 Seniority HUD, 2-Line Filters & Residuals Consolidation`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-12-recon-v4-seniority-hud-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Top Accuracy Banner Removal & Integrated "View All"*:
+     - Removed the redundant top concurrence & accuracy banner.
+     - Moved the `View All (50,000)` button directly into the right side of the Filters panel header (`.v4-rule-strip-header`) cleanly aligned across from the "Filters" heading.
+     - Interactive behavior restores full 50k view across all passes with active highlight state.
+  2. *Top HUD Waterfall Seniority & Vertical Height Optimization*:
+     - Replaced tall 3-row KPI cards (~105px) with ultra-compact 2-row cards (~56px), reducing vertical screen consumption by ~45%.
+     - Prominently displays waterfall statutory seniority badges (`PASS 1`, `PASS 2`, `PASS 3`, `PASS 4`, `PASS 5`).
+     - Minimal text: removed redundant unit labels ("rows", "cases") and repetitive subtitles ("Pass X • Zero Variance").
+  3. *Pass 5 Residuals Consolidation (Symmetrical 5-Column Grid)*:
+     - Consolidated separate GSTR 2B Only and PR Only boxes into a single executive `PASS 5: Residuals` card showing combined single-sided unmatched count (6,858 / 13.7%).
+     - Top HUD updated to a balanced 5-column grid (`repeat(5, minmax(0, 1fr))`) reflecting the 5 statutory waterfall tiers.
+  4. *Filters Section 2-Line Layout*:
+     - Updated `.v4-rule-chips-grid` to a 6-column grid so all 11 scenario filter chips fit in exactly 2 lines (Line 1: 6 chips, Line 2: 5 chips) with zero wrapping to line 3.
+     - Both single-sided residual options — `GSTR 2B Only` (Unclaimed Credit) and `PR Only` (DRC-01C Risk) — are prominently displayed on Line 2 of the Filters grid.
+     - Clicking `PASS 5: Residuals` in the HUD dynamically scopes the Filters section specifically to those two residual options for one-click drill-down.
+  5. *Test Suite & Build Verification*:
+     - `tsc -b && vite build` passed with 0 errors.
+     - `backend/tests/test_reconciliation_v4.py` passed 6/6 tests.
+
+---
+
 ## Reconciliation 4.0 • Single Ledger Updated & KPMG Client Rules (12th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 4.0 Single Ledger Updated & KPMG Client Rules`

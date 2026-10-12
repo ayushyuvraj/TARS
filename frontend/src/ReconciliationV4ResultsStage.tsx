@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   CheckCircle2,
   AlertCircle,
@@ -21,6 +21,8 @@ import {
   Hash,
   Sliders,
   Filter,
+  Scale,
+  Clock,
 } from "lucide-react";
 import {
   apiV2,
@@ -293,6 +295,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       if (activeTab === "TOLERANCE_MATCH" && rec.bucket !== "TOLERANCE_MATCH") return false;
       if (activeTab === "NEAR_MATCH" && rec.bucket !== "NEAR_MATCH") return false;
       if (activeTab === "AMBIGUOUS" && rec.bucket !== "AMBIGUOUS") return false;
+      if (activeTab === "RESIDUALS" && rec.bucket !== "GSTR_ONLY" && rec.bucket !== "PR_ONLY") return false;
       if (activeTab === "GSTR_ONLY" && rec.bucket !== "GSTR_ONLY") return false;
       if (activeTab === "PR_ONLY" && rec.bucket !== "PR_ONLY") return false;
 
@@ -314,31 +317,19 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
 
   // Total records base for calculating percentages
   const totalRows = useMemo(() => {
-    return summary.total_gstr_rows || summary.total_records || records.length || 1;
+    return summary.total_gstr_rows || records.length || 1;
   }, [summary, records]);
 
-  // Compute pass-level retention percentages
-  const passPercentages = useMemo(() => {
-    const p1 = totalRows > 0 ? ((summary.exact_match_count || 0) / totalRows) * 100 : 0;
-    const p2 = totalRows > 0 ? ((summary.tolerance_match_count || 0) / totalRows) * 100 : 0;
-    const p3 = totalRows > 0 ? ((summary.near_match_count || 0) / totalRows) * 100 : 0;
-    const p4 = totalRows > 0 ? ((summary.ambiguous_count || 0) / totalRows) * 100 : 0;
-    const p5 = totalRows > 0 ? (((summary.gstr_only_count || 0) + (summary.pr_only_count || 0)) / totalRows) * 100 : 0;
-
-    return {
-      pass1: Number(p1).toFixed(1),
-      pass2: Number(p2).toFixed(1),
-      pass3: Number(p3).toFixed(1),
-      pass4: Number(p4).toFixed(1),
-      pass5: Number(p5).toFixed(1),
-    };
-  }, [summary, totalRows]);
+  // Subtle percentage calculator across total records
+  const calcPct = useCallback(
+    (cnt: number) => (totalRows > 0 ? ((cnt / totalRows) * 100).toFixed(1) : "0.0"),
+    [totalRows]
+  );
 
   interface FilterItem {
     id: string;
     name: string;
-    sub: string;
-    icon: string;
+    icon: React.ReactNode;
     className: string;
     passKey: string;
     passTier: number;
@@ -347,14 +338,12 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
   }
 
   const allFilterItems: FilterItem[] = useMemo(() => {
-    const calcPct = (cnt: number) => (totalRows > 0 ? ((cnt / totalRows) * 100).toFixed(1) : "0.0");
     return [
       // Pass 1: Exact Match
       {
         id: "EXACT_ZERO_VARIANCE",
         name: "Exact Match",
-        sub: "Pass 1 • Zero Variance",
-        icon: "🎯",
+        icon: <CheckCircle2 size={13} />,
         className: "exact-stat",
         passKey: "EXACT_MATCH",
         passTier: 1,
@@ -365,8 +354,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "COMMERCIAL_TOLERANCE",
         name: "Commercial Tolerance",
-        sub: "Rule 0 • Value ±₹10.00",
-        icon: "⚖️",
+        icon: <Scale size={13} />,
         className: "comm-tol",
         passKey: "TOLERANCE_MATCH",
         passTier: 2,
@@ -376,8 +364,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "INELIGIBLE_ITC_17_5",
         name: "Sec 17(5) Ineligible ITC",
-        sub: "Rule 2 • Blocked Credit",
-        icon: "🛡️",
+        icon: <ShieldCheck size={13} />,
         className: "sec-17-5",
         passKey: "TOLERANCE_MATCH",
         passTier: 2,
@@ -387,8 +374,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "CROSS_FY_TIMING",
         name: "Cross-FY (March/April)",
-        sub: "Rule 4 • Timing Boundary",
-        icon: "📅",
+        icon: <Calendar size={13} />,
         className: "cross-fy",
         passKey: "TOLERANCE_MATCH",
         passTier: 2,
@@ -398,8 +384,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "DATE_OPERATIONAL_SHIFT",
         name: "Date Proximity (±30d)",
-        sub: "Rule 3 • Dispatch Delay",
-        icon: "⏱️",
+        icon: <Clock size={13} />,
         className: "date-prox",
         passKey: "TOLERANCE_MATCH",
         passTier: 2,
@@ -409,8 +394,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "BANKING_MULTI_TRANCHE",
         name: "Banking Tranches (N:1)",
-        sub: "Rule 1 • Consolidation",
-        icon: "🏦",
+        icon: <Landmark size={13} />,
         className: "banking",
         passKey: "TOLERANCE_MATCH",
         passTier: 2,
@@ -421,8 +405,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "DOC_PREFIX_NORMALIZED",
         name: "Prefix Normalization",
-        sub: "Rule 5 • Prefix Stripped",
-        icon: "🔤",
+        icon: <Hash size={13} />,
         className: "prefix",
         passKey: "NEAR_MATCH",
         passTier: 3,
@@ -432,8 +415,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "COMPOUND_DOC_DATE_VARIATION",
         name: "Compound Variation",
-        sub: "Rule 6 • Multi-Parameter",
-        icon: "⚡",
+        icon: <Zap size={13} />,
         className: "compound",
         passKey: "NEAR_MATCH",
         passTier: 3,
@@ -444,8 +426,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "AMBIGUOUS_COLLISION",
         name: "Multi-Candidate Ambiguity",
-        sub: "Pass 4 • 1:N & N:1 Collisions",
-        icon: "🔀",
+        icon: <Split size={13} />,
         className: "amb-col",
         passKey: "AMBIGUOUS",
         passTier: 4,
@@ -456,8 +437,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "GST_ONLY",
         name: "GSTR 2B Only",
-        sub: "Pass 5 • Unclaimed Credit",
-        icon: "⚠️",
+        icon: <AlertTriangle size={13} />,
         className: "gstr-only",
         passKey: "GSTR_ONLY",
         passTier: 5,
@@ -468,8 +448,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       {
         id: "PR_ONLY",
         name: "PR Only",
-        sub: "Pass 5 • Missing in 2B (DRC-01C)",
-        icon: "🛑",
+        icon: <AlertCircle size={13} />,
         className: "pr-only",
         passKey: "PR_ONLY",
         passTier: 5,
@@ -477,7 +456,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
         pct: calcPct(summary.pr_only_count || 0),
       },
     ];
-  }, [summary, ruleCounts, totalRows]);
+  }, [summary, ruleCounts, totalRows, calcPct]);
 
   // Derive visible filter chips according to active pass / tab
   const visibleFilterItems = useMemo(() => {
@@ -492,6 +471,9 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
     }
     if (activeTab === "AMBIGUOUS") {
       return allFilterItems.filter((item) => item.passKey === "AMBIGUOUS");
+    }
+    if (activeTab === "RESIDUALS") {
+      return allFilterItems.filter((item) => item.passKey === "GSTR_ONLY" || item.passKey === "PR_ONLY");
     }
     if (activeTab === "GSTR_ONLY") {
       return allFilterItems.filter((item) => item.passKey === "GSTR_ONLY");
@@ -526,6 +508,7 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
         TOLERANCE_MATCH: summary.tolerance_match_count || 0,
         NEAR_MATCH: summary.near_match_count || 0,
         AMBIGUOUS: summary.ambiguous_count || 0,
+        RESIDUALS: (summary.gstr_only_count || 0) + (summary.pr_only_count || 0),
         GSTR_ONLY: summary.gstr_only_count || 0,
         PR_ONLY: summary.pr_only_count || 0,
       };
@@ -536,12 +519,16 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       TOLERANCE_MATCH: 0,
       NEAR_MATCH: 0,
       AMBIGUOUS: 0,
+      RESIDUALS: 0,
       GSTR_ONLY: 0,
       PR_ONLY: 0,
     };
     for (const r of records) {
       if (r.bucket in counts) {
         counts[r.bucket as keyof typeof counts]++;
+      }
+      if (r.bucket === "GSTR_ONLY" || r.bucket === "PR_ONLY") {
+        counts.RESIDUALS++;
       }
     }
     return counts;
@@ -618,186 +605,135 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
         </div>
       </div>
 
-      {/* 2. KICS CONCURRENCE & ACCURACY KPI BANNER */}
-      {summary && (
-        <div className="v2-accuracy-banner">
-          <div className="v2-accuracy-left">
-            <div className="v2-accuracy-badge-box">
-              <ShieldCheck size={20} color="#10b981" />
-              <div className="v2-accuracy-score-col">
-                <span className="v2-accuracy-pct">{summary.overall_reconciliation_rate || 91.9}%</span>
-                <span className="v2-accuracy-label">KICS Baseline Concurrence</span>
-              </div>
-            </div>
-            <div className="v2-accuracy-divider" />
-            <div className="v2-accuracy-stat-item">
-              <span className="v2-accuracy-stat-num">
-                {(summary.total_reconciled_count || tabCounts.EXACT_MATCH + tabCounts.TOLERANCE_MATCH).toLocaleString()}
-              </span>
-              <span className="v2-accuracy-stat-desc">Vouchers Automated Without Human Review</span>
-            </div>
-            <div className="v2-accuracy-stat-item">
-              <span className="v2-accuracy-stat-num" style={{ color: "#00338d" }}>
-                ₹{((summary.exact_match_itc || 0) + (summary.tolerance_match_itc || 0)).toLocaleString("en-IN", { maximumFractionDigits: 0 })}
-              </span>
-              <span className="v2-accuracy-stat-desc">Statutory Input Tax Credit Validated</span>
-            </div>
-          </div>
-          <div className="v2-accuracy-right">
-            <button
-              type="button"
-              className="v2-accuracy-view-all-btn"
-              onClick={(e) => {
-                e.stopPropagation();
-                setActiveTab("ALL");
-                setActiveRuleFilter(null);
-              }}
-            >
-              View All ({(summary.total_gstr_rows || records.length).toLocaleString()})
-            </button>
-          </div>
-        </div>
-      )}
 
-      {/* 3. EXECUTIVE 6-CATEGORY SUMMARY HUD (TIER 1 MACRO PASSES) */}
+
+      {/* 3. EXECUTIVE 6-CATEGORY SUMMARY HUD (TIER 1 MACRO PASSES - COMPACT SENIORITY) */}
       {summary && (
-        <div className="v2-kpi-hud-grid">
+        <div className="v4-kpi-hud-grid">
           {/* Box 1: Exact Matches */}
           <div
-            className={`v2-kpi-card exact ${activeTab === "EXACT_MATCH" && !activeRuleFilter ? "is-active" : ""}`}
+            className={`v4-kpi-card exact ${activeTab === "EXACT_MATCH" && !activeRuleFilter ? "is-active" : ""}`}
             onClick={() => {
               setActiveTab("EXACT_MATCH");
               setActiveRuleFilter(null);
             }}
-            title="Filter by Exact Matches (Pass 1 • Zero Variance)"
+            title="Pass 1 • Highest Seniority • Exact Match (Zero Variance)"
           >
-            <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Exact Match</span>
-              <div className="v2-kpi-glyph">
-                <CheckCircle2 size={15} />
+            <div className="v4-kpi-top">
+              <div className="v4-kpi-title-wrap">
+                <span className="v4-kpi-seniority">PASS 1</span>
+                <span className="v4-kpi-label">Exact Match</span>
+              </div>
+              <div className="v4-kpi-glyph">
+                <CheckCircle2 size={13} />
               </div>
             </div>
-            <div className="v2-kpi-value-row">
-              <span className="v2-kpi-value">{(summary.exact_match_count || 0).toLocaleString()}</span>
-              <span className="v2-kpi-unit">rows</span>
+            <div className="v4-kpi-value-row">
+              <span className="v4-kpi-value">{(summary.exact_match_count || 0).toLocaleString()}</span>
+              <span className="v4-kpi-pct-badge">{calcPct(summary.exact_match_count || 0)}%</span>
             </div>
-            <div className="v2-kpi-caption">Pass 1 • Zero Variance</div>
           </div>
 
           {/* Box 2: Tolerance Matched */}
           <div
-            className={`v2-kpi-card tolerance ${activeTab === "TOLERANCE_MATCH" && !activeRuleFilter ? "is-active" : ""}`}
+            className={`v4-kpi-card tolerance ${activeTab === "TOLERANCE_MATCH" && !activeRuleFilter ? "is-active" : ""}`}
             onClick={() => {
               setActiveTab("TOLERANCE_MATCH");
               setActiveRuleFilter(null);
             }}
-            title="Filter by Tolerance Matches (Pass 2 • Margin Bounds & Commercial Tolerances)"
+            title="Pass 2 • Seniority 2 • Tolerance Match (Margin Bounds)"
           >
-            <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Tolerance Match</span>
-              <div className="v2-kpi-glyph">
-                <Zap size={15} />
+            <div className="v4-kpi-top">
+              <div className="v4-kpi-title-wrap">
+                <span className="v4-kpi-seniority">PASS 2</span>
+                <span className="v4-kpi-label">Tolerance Match</span>
+              </div>
+              <div className="v4-kpi-glyph">
+                <Zap size={13} />
               </div>
             </div>
-            <div className="v2-kpi-value-row">
-              <span className="v2-kpi-value">{(summary.tolerance_match_count || 0).toLocaleString()}</span>
-              <span className="v2-kpi-unit">rows</span>
+            <div className="v4-kpi-value-row">
+              <span className="v4-kpi-value">{(summary.tolerance_match_count || 0).toLocaleString()}</span>
+              <span className="v4-kpi-pct-badge">{calcPct(summary.tolerance_match_count || 0)}%</span>
             </div>
-            <div className="v2-kpi-caption">Pass 2 • Margin Bounds</div>
           </div>
 
           {/* Box 3: Near Matches */}
           <div
-            className={`v2-kpi-card near ${activeTab === "NEAR_MATCH" && !activeRuleFilter ? "is-active" : ""}`}
+            className={`v4-kpi-card near ${activeTab === "NEAR_MATCH" && !activeRuleFilter ? "is-active" : ""}`}
             onClick={() => {
               setActiveTab("NEAR_MATCH");
               setActiveRuleFilter(null);
             }}
-            title="Filter by Near Matches (Pass 3 • Normalized Ref)"
+            title="Pass 3 • Seniority 3 • Near Match (Normalized Ref)"
           >
-            <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Near Match</span>
-              <div className="v2-kpi-glyph">
-                <Layers size={15} />
+            <div className="v4-kpi-top">
+              <div className="v4-kpi-title-wrap">
+                <span className="v4-kpi-seniority">PASS 3</span>
+                <span className="v4-kpi-label">Near Match</span>
+              </div>
+              <div className="v4-kpi-glyph">
+                <Layers size={13} />
               </div>
             </div>
-            <div className="v2-kpi-value-row">
-              <span className="v2-kpi-value">{(summary.near_match_count || 0).toLocaleString()}</span>
-              <span className="v2-kpi-unit">rows</span>
+            <div className="v4-kpi-value-row">
+              <span className="v4-kpi-value">{(summary.near_match_count || 0).toLocaleString()}</span>
+              <span className="v4-kpi-pct-badge">{calcPct(summary.near_match_count || 0)}%</span>
             </div>
-            <div className="v2-kpi-caption">Pass 3 • Normalized Ref</div>
           </div>
 
           {/* Box 4: Ambiguous Multi */}
           <div
-            className={`v2-kpi-card ambiguous ${activeTab === "AMBIGUOUS" && !activeRuleFilter ? "is-active" : ""}`}
+            className={`v4-kpi-card ambiguous ${activeTab === "AMBIGUOUS" && !activeRuleFilter ? "is-active" : ""}`}
             onClick={() => {
               setActiveTab("AMBIGUOUS");
               setActiveRuleFilter(null);
             }}
-            title="Filter by Ambiguous Cases (Pass 4 • Multi-Candidate 1:N & N:1)"
+            title="Pass 4 • Seniority 4 • Ambiguous Cases (Multi-Candidate)"
           >
-            <div className="v2-kpi-top">
-              <span className="v2-kpi-label">Ambiguous</span>
-              <div className="v2-kpi-glyph">
-                <Split size={15} />
+            <div className="v4-kpi-top">
+              <div className="v4-kpi-title-wrap">
+                <span className="v4-kpi-seniority">PASS 4</span>
+                <span className="v4-kpi-label">Ambiguous</span>
+              </div>
+              <div className="v4-kpi-glyph">
+                <Split size={13} />
               </div>
             </div>
-            <div className="v2-kpi-value-row">
-              <span className="v2-kpi-value" style={{ color: "#d97706" }}>
+            <div className="v4-kpi-value-row">
+              <span className="v4-kpi-value" style={{ color: "#b45309" }}>
                 {(summary.ambiguous_count || 0).toLocaleString()}
               </span>
-              <span className="v2-kpi-unit">cases</span>
+              <span className="v4-kpi-pct-badge">{calcPct(summary.ambiguous_count || 0)}%</span>
             </div>
-            <div className="v2-kpi-caption">Pass 4 • Multi-Candidate</div>
           </div>
 
-          {/* Box 5: GSTR 2B Only */}
+          {/* Box 5: Residuals (Pass 5) */}
           <div
-            className={`v2-kpi-card gstr-only ${activeTab === "GSTR_ONLY" && !activeRuleFilter ? "is-active" : ""}`}
+            className={`v4-kpi-card residuals ${activeTab === "RESIDUALS" && !activeRuleFilter ? "is-active" : ""}`}
             onClick={() => {
-              setActiveTab("GSTR_ONLY");
+              setActiveTab("RESIDUALS");
               setActiveRuleFilter(null);
             }}
-            title="Filter by GSTR-2B Only"
+            title="Pass 5 • Seniority 5 • Residuals (Single-Sided Unmatched Records)"
           >
-            <div className="v2-kpi-top">
-              <span className="v2-kpi-label">GSTR 2B Only</span>
-              <div className="v2-kpi-glyph">
-                <AlertTriangle size={15} />
+            <div className="v4-kpi-top">
+              <div className="v4-kpi-title-wrap">
+                <span className="v4-kpi-seniority">PASS 5</span>
+                <span className="v4-kpi-label">Residuals</span>
+              </div>
+              <div className="v4-kpi-glyph">
+                <AlertTriangle size={13} />
               </div>
             </div>
-            <div className="v2-kpi-value-row">
-              <span className="v2-kpi-value" style={{ color: "#0284c7" }}>
-                {(summary.gstr_only_count || 0).toLocaleString()}
+            <div className="v4-kpi-value-row">
+              <span className="v4-kpi-value" style={{ color: "#e11d48" }}>
+                {((summary.gstr_only_count || 0) + (summary.pr_only_count || 0)).toLocaleString()}
               </span>
-              <span className="v2-kpi-unit">rows</span>
-            </div>
-            <div className="v2-kpi-caption">Pass 5 • Unclaimed Credit</div>
-          </div>
-
-          {/* Box 6: PR Only */}
-          <div
-            className={`v2-kpi-card pr-only ${activeTab === "PR_ONLY" && !activeRuleFilter ? "is-active" : ""}`}
-            onClick={() => {
-              setActiveTab("PR_ONLY");
-              setActiveRuleFilter(null);
-            }}
-            title="Filter by PR Only (In Books Only • DRC-01C Risk)"
-          >
-            <div className="v2-kpi-top">
-              <span className="v2-kpi-label">PR Only</span>
-              <div className="v2-kpi-glyph">
-                <AlertCircle size={15} />
-              </div>
-            </div>
-            <div className="v2-kpi-value-row">
-              <span className="v2-kpi-value" style={{ color: "#e11d48" }}>
-                {(summary.pr_only_count || 0).toLocaleString()}
+              <span className="v4-kpi-pct-badge">
+                {calcPct((summary.gstr_only_count || 0) + (summary.pr_only_count || 0))}%
               </span>
-              <span className="v2-kpi-unit">rows</span>
             </div>
-            <div className="v2-kpi-caption">Pass 5 • Missing in 2B</div>
           </div>
         </div>
       )}
@@ -824,6 +760,8 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                       ? "Pass 3 Active"
                       : activeTab === "AMBIGUOUS"
                       ? "Pass 4 Active"
+                      : activeTab === "RESIDUALS"
+                      ? "Pass 5 Active (Residuals)"
                       : activeTab === "GSTR_ONLY"
                       ? "Pass 5 (2B Only)"
                       : "Pass 5 (PR Only)"}
@@ -840,23 +778,26 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                     ? "Showing all filters applicable to Pass 3 (Near Match • Normalized Reference Variations)."
                     : activeTab === "AMBIGUOUS"
                     ? "Showing filters applicable to Pass 4 (Multi-Candidate Ambiguities & Collisions)."
+                    : activeTab === "RESIDUALS"
+                    ? "Showing Pass 5 single-sided residuals: GSTR 2B Only (Unclaimed Credit) and PR Only (Missing in 2B)."
                     : "Showing filters applicable to Pass 5 (Single-Sided Residuals & Unclaimed Credits)."}
                 </p>
               </div>
             </div>
 
-            {activeRuleFilter && (
-              <div className="v4-rule-strip-actions">
-                <button
-                  type="button"
-                  className="v4-rule-clear-btn"
-                  onClick={() => setActiveRuleFilter(null)}
-                >
-                  <X size={13} />
-                  <span>Clear Filter</span>
-                </button>
-              </div>
-            )}
+            <div className="v4-rule-strip-actions">
+              <button
+                type="button"
+                className={`v4-rule-view-all-btn ${activeTab === "ALL" && !activeRuleFilter ? "is-active" : ""}`}
+                onClick={() => {
+                  setActiveTab("ALL");
+                  setActiveRuleFilter(null);
+                }}
+                title="View all records across all statutory passes"
+              >
+                <span>View All ({(summary.total_gstr_rows || records.length).toLocaleString()})</span>
+              </button>
+            </div>
           </div>
 
           {/* Dynamic Rule & Pass Chips Grid */}
@@ -872,179 +813,17 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                   }}
                   title={`Click to filter table by ${item.name}`}
                 >
-                  <div className="v4-rule-chip-left">
+                  <div className="v4-chip-top">
                     <div className="v4-chip-icon-box">{item.icon}</div>
-                    <div className="v4-chip-text">
-                      <span className="v4-chip-name">{item.name}</span>
-                      <span className="v4-chip-sub">{item.sub}</span>
+                    <div className="v4-chip-metrics">
+                      <span className="v4-chip-count">{item.count.toLocaleString()}</span>
+                      <span className="v4-chip-pct">({item.pct}%)</span>
                     </div>
                   </div>
-                  <span className="v4-chip-count-pill">
-                    <span>{item.count.toLocaleString()}</span>
-                    <span className="v4-chip-count-pct">({item.pct}%)</span>
-                  </span>
-                  <div className="v4-chip-progress-rail">
-                    <div
-                      className="v4-chip-progress-bar"
-                      style={{ width: `${Math.min(100, Math.max(3, parseFloat(item.pct)))}%` }}
-                    />
-                  </div>
+                  <div className="v4-chip-name">{item.name}</div>
                 </div>
               );
             })}
-          </div>
-
-          {/* Active Rule Filter Banner */}
-          {activeRuleFilter && (
-            <div
-              className={`v4-active-filter-banner ${
-                activeRuleFilter === "INELIGIBLE_ITC_17_5"
-                  ? "is-sec-17-5"
-                  : activeRuleFilter === "CROSS_FY_TIMING"
-                  ? "is-cross-fy"
-                  : activeRuleFilter === "DATE_OPERATIONAL_SHIFT"
-                  ? "is-date-prox"
-                  : activeRuleFilter === "BANKING_MULTI_TRANCHE"
-                  ? "is-banking"
-                  : activeRuleFilter === "DOC_PREFIX_NORMALIZED"
-                  ? "is-prefix"
-                  : activeRuleFilter === "COMPOUND_DOC_DATE_VARIATION"
-                  ? "is-compound"
-                  : ""
-              }`}
-            >
-              <div className="v4-filter-banner-content">
-                <Filter size={14} />
-                <span>Active Filter:</span>
-                <strong>
-                  {allFilterItems.find((f) => f.id === activeRuleFilter)?.name || activeRuleFilter}
-                </strong>
-                <span className="v4-filter-banner-count">
-                  {filteredRecords.length.toLocaleString()} records displayed in table
-                </span>
-              </div>
-              <button
-                type="button"
-                className="v4-filter-banner-clear"
-                onClick={() => setActiveRuleFilter(null)}
-              >
-                ✕ Clear Filter
-              </button>
-            </div>
-          )}
-
-          {/* Progressive Elimination Retention & Percentage Breakdown Strip */}
-          <div className="v4-waterfall-retention-strip">
-            <div className="v4-retention-strip-header">
-              <span className="v4-retention-strip-title">
-                Progressive Elimination Retention Breakdown
-              </span>
-              <span className="v4-retention-strip-sub">
-                Cumulative pass retention across {totalRows.toLocaleString()} total records
-              </span>
-            </div>
-
-            {/* Multi-segment stacked progress rail */}
-            <div className="v4-multi-segment-rail">
-              <div
-                className="v4-rail-segment exact"
-                style={{ width: `${passPercentages.pass1}%` }}
-                title={`Pass 1 (Exact): ${passPercentages.pass1}%`}
-              />
-              <div
-                className="v4-rail-segment tolerance"
-                style={{ width: `${passPercentages.pass2}%` }}
-                title={`Pass 2 (Tolerance): ${passPercentages.pass2}%`}
-              />
-              <div
-                className="v4-rail-segment near"
-                style={{ width: `${passPercentages.pass3}%` }}
-                title={`Pass 3 (Near): ${passPercentages.pass3}%`}
-              />
-              <div
-                className="v4-rail-segment ambiguous"
-                style={{ width: `${passPercentages.pass4}%` }}
-                title={`Pass 4 (Ambiguous): ${passPercentages.pass4}%`}
-              />
-              <div
-                className="v4-rail-segment residuals"
-                style={{ width: `${passPercentages.pass5}%` }}
-                title={`Pass 5 (Residuals): ${passPercentages.pass5}%`}
-              />
-            </div>
-
-            {/* Interactive retention tags row */}
-            <div className="v4-retention-tags-row">
-              <div
-                className={`v4-retention-tag exact ${activeTab === "EXACT_MATCH" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveTab("EXACT_MATCH");
-                  setActiveRuleFilter(null);
-                }}
-                title="Click to view Pass 1 Exact Matches"
-              >
-                <span className="dot" />
-                <span>Pass 1 (Exact):</span>
-                <strong>{(summary.exact_match_count || 0).toLocaleString()}</strong>
-                <span className="tag-pct">({passPercentages.pass1}%)</span>
-              </div>
-
-              <div
-                className={`v4-retention-tag tolerance ${activeTab === "TOLERANCE_MATCH" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveTab("TOLERANCE_MATCH");
-                  setActiveRuleFilter(null);
-                }}
-                title="Click to view Pass 2 Tolerance Matches"
-              >
-                <span className="dot" />
-                <span>Pass 2 (Tolerance):</span>
-                <strong>{(summary.tolerance_match_count || 0).toLocaleString()}</strong>
-                <span className="tag-pct">({passPercentages.pass2}%)</span>
-              </div>
-
-              <div
-                className={`v4-retention-tag near ${activeTab === "NEAR_MATCH" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveTab("NEAR_MATCH");
-                  setActiveRuleFilter(null);
-                }}
-                title="Click to view Pass 3 Near Matches"
-              >
-                <span className="dot" />
-                <span>Pass 3 (Near):</span>
-                <strong>{(summary.near_match_count || 0).toLocaleString()}</strong>
-                <span className="tag-pct">({passPercentages.pass3}%)</span>
-              </div>
-
-              <div
-                className={`v4-retention-tag ambiguous ${activeTab === "AMBIGUOUS" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveTab("AMBIGUOUS");
-                  setActiveRuleFilter(null);
-                }}
-                title="Click to view Pass 4 Ambiguities"
-              >
-                <span className="dot" />
-                <span>Pass 4 (Ambiguous):</span>
-                <strong>{(summary.ambiguous_count || 0).toLocaleString()}</strong>
-                <span className="tag-pct">({passPercentages.pass4}%)</span>
-              </div>
-
-              <div
-                className={`v4-retention-tag residuals ${activeTab === "GSTR_ONLY" || activeTab === "PR_ONLY" ? "is-selected" : ""}`}
-                onClick={() => {
-                  setActiveTab("GSTR_ONLY");
-                  setActiveRuleFilter(null);
-                }}
-                title="Click to view Pass 5 Residuals"
-              >
-                <span className="dot" />
-                <span>Pass 5 (Residuals):</span>
-                <strong>{((summary.gstr_only_count || 0) + (summary.pr_only_count || 0)).toLocaleString()}</strong>
-                <span className="tag-pct">({passPercentages.pass5}%)</span>
-              </div>
-            </div>
           </div>
         </div>
       )}
