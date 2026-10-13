@@ -128,16 +128,19 @@ class ExportV2Service:
         export_format: str = "xlsx",
         color_coded: bool = True,
         include_auxiliary: bool = True,
+        stage4_data: dict[str, Any] | None = None,
+        session_dict: dict[str, Any] | None = None,
     ) -> tuple[bytes, str, str]:
         """
         Builds the reconciliation export package.
         Returns: (file_bytes, filename, media_type)
         """
-        stage4_data = audit_v2_service.get_stage4_results(session_id)
+        if stage4_data is None:
+            stage4_data = audit_v2_service.get_stage4_results(session_id)
         if not stage4_data or not isinstance(stage4_data, dict):
             raise ValueError(f"No completed reconciliation matrix found for session {session_id}.")
 
-        session = audit_v2_service.get_session(session_id) or {}
+        session = session_dict if session_dict is not None else (audit_v2_service.get_session(session_id) or {})
         client_name = session.get("client_name") or "Enterprise Client"
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
 
@@ -350,13 +353,18 @@ class ExportV2Service:
             # Date delta
             diff_days = 0
             if rec.get("document_date") and p_date:
-                try:
-                    dt_g = pd.to_datetime(str(rec.get("document_date"))[:10], errors="coerce")
-                    dt_p = pd.to_datetime(str(p_date)[:10], errors="coerce")
-                    if pd.notna(dt_g) and pd.notna(dt_p):
-                        diff_days = abs((dt_g - dt_p).days)
-                except Exception:
+                dt_g_str = str(rec.get("document_date"))[:10]
+                dt_p_str = str(p_date)[:10]
+                if dt_g_str == dt_p_str:
                     diff_days = 0
+                else:
+                    try:
+                        dt_g = pd.to_datetime(dt_g_str, errors="coerce")
+                        dt_p = pd.to_datetime(dt_p_str, errors="coerce")
+                        if pd.notna(dt_g) and pd.notna(dt_p):
+                            diff_days = abs((dt_g - dt_p).days)
+                    except Exception:
+                        diff_days = 0
 
             reason = rec.get("classification_reason") or rec.get("ai_reason") or "Reconciled"
             prov_note = rec.get("reclassification_note") or ("Reclassified from Ambiguous (Pass 4)" if rec.get("reclassified_from") else "Original Waterfall Classification")
@@ -533,8 +541,14 @@ class ExportV2Service:
         }
         return json.dumps(payload, indent=2, ensure_ascii=False).encode("utf-8")
 
-    def get_preview(self, session_id: str, limit: int = 50) -> dict[str, Any]:
-        stage4_data = audit_v2_service.get_stage4_results(session_id)
+    def get_preview(
+        self,
+        session_id: str,
+        limit: int = 50,
+        stage4_data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        if stage4_data is None:
+            stage4_data = audit_v2_service.get_stage4_results(session_id)
         if not stage4_data or not isinstance(stage4_data, dict):
             raise ValueError(f"No completed reconciliation matrix found for session {session_id}.")
         records = stage4_data.get("records", [])
@@ -576,7 +590,12 @@ class ExportV2Service:
     # DYNAMIC COLUMN CATALOGUE & METADATA INTROSPECTION
     # =========================================================================
 
-    def get_available_columns(self, session_id: str) -> dict[str, Any]:
+    def get_available_columns(
+        self,
+        session_id: str,
+        stage4_data: dict[str, Any] | None = None,
+        session_dict: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """
         Dynamically introspects and returns all available columns across 3 families:
         1. CALCULATED (Reconciliation Intelligence, Variances, AI Remarks, Provenance)
@@ -584,9 +603,10 @@ class ExportV2Service:
         3. PR (All original columns from the uploaded Purchase Register Excel)
         Handles arbitrary column volumes (15 to 1,500+ cols) dynamically.
         """
-        stage4_data = audit_v2_service.get_stage4_results(session_id) or {}
+        if stage4_data is None:
+            stage4_data = audit_v2_service.get_stage4_results(session_id) or {}
         records = stage4_data.get("records", [])
-        session = audit_v2_service.get_session(session_id) or {}
+        session = session_dict if session_dict is not None else (audit_v2_service.get_session(session_id) or {})
 
         # 1. Calculated Family (Standard + Derived)
         calc_columns: list[ExportColumnDescriptor] = [
@@ -671,6 +691,51 @@ class ExportV2Service:
                 default_selected=False,
                 description="Audited ITC eligible to claim in GSTR-3B under Section 16(2)(aa)",
             ),
+            ExportColumnDescriptor(
+                id="calc_tars_verdict",
+                label="TARS Statutory Verdict",
+                family="CALCULATED",
+                source_field="tars_verdict",
+                dtype="string",
+                default_selected=True,
+                description="TARS Rule Engine Statutory Verdict",
+            ),
+            ExportColumnDescriptor(
+                id="calc_kics_verdict",
+                label="KICS Client Baseline Verdict",
+                family="CALCULATED",
+                source_field="kics_verdict",
+                dtype="string",
+                default_selected=True,
+                description="KICS client legacy verdict",
+            ),
+            ExportColumnDescriptor(
+                id="calc_concurrence",
+                label="Concurrence Outcome",
+                family="CALCULATED",
+                source_field="concurrence",
+                dtype="string",
+                default_selected=True,
+                description="Agreement or Disparity between TARS and KICS",
+            ),
+            ExportColumnDescriptor(
+                id="calc_sub_classification",
+                label="Statutory Sub-Classification",
+                family="CALCULATED",
+                source_field="sub_classification",
+                dtype="string",
+                default_selected=False,
+                description="Sub-classification code (e.g. INELIGIBLE_ITC_17_5, BANKING_CONSOLIDATED)",
+            ),
+            ExportColumnDescriptor(
+                id="calc_batch_type",
+                label="Multi-Tranche Batch Type",
+                family="CALCULATED",
+                source_field="batch_type",
+                dtype="string",
+                default_selected=False,
+                description="Consolidation batch structure (1:N or N:1)",
+            ),
         ]
 
         # 2. Extract Government GSTR Columns dynamically from cached DF or preview records
@@ -730,6 +795,7 @@ class ExportV2Service:
 
         # Primary PR fields first
         primary_pr = [
+            ("pr_gstin", "Vendor GSTIN [PR]", "gstin", "string"),
             ("pr_document_number", "ERP Document # [PR]", "document_number", "string"),
             ("pr_document_date", "ERP Invoice Date [PR]", "document_date", "date"),
             ("pr_taxable_value", "ERP Taxable Value [PR]", "taxable_value", "currency"),
@@ -772,6 +838,48 @@ class ExportV2Service:
                         )
                     )
 
+        # 4. Check session correlation if present to harvest additional GSTR / PR columns
+        corr = session.get("correlation")
+        if corr:
+            if hasattr(corr, "correlations"):
+                c_list = corr.correlations
+            elif isinstance(corr, dict):
+                c_list = corr.get("correlations", [])
+            else:
+                c_list = []
+
+            for c in c_list:
+                s_col = getattr(c, "source_column", None) or (c.get("source_column") if isinstance(c, dict) else None)
+                t_col = getattr(c, "selected_target_column", None) or (c.get("selected_target_column") if isinstance(c, dict) else None)
+                if s_col:
+                    s_clean = str(s_col).strip()
+                    if s_clean and s_clean.lower() not in seen_gstr_keys:
+                        seen_gstr_keys.add(s_clean.lower())
+                        gstr_columns.append(
+                            ExportColumnDescriptor(
+                                id=f"gstr_raw_{s_clean}",
+                                label=f"{s_clean} [2B]",
+                                family="GSTR",
+                                source_field=s_clean,
+                                dtype="string",
+                                default_selected=False,
+                            )
+                        )
+                if t_col:
+                    t_clean = str(t_col).strip()
+                    if t_clean and t_clean.lower() not in seen_pr_keys:
+                        seen_pr_keys.add(t_clean.lower())
+                        pr_columns.append(
+                            ExportColumnDescriptor(
+                                id=f"pr_raw_{t_clean}",
+                                label=f"{t_clean} [PR]",
+                                family="PR",
+                                source_field=t_clean,
+                                dtype="string",
+                                default_selected=False,
+                            )
+                        )
+
         return {
             "session_id": session_id,
             "total_available_columns": len(calc_columns) + len(gstr_columns) + len(pr_columns),
@@ -813,17 +921,19 @@ class ExportV2Service:
             diff = round(abs(g_tax - p_tax), 2) if (g_tax > 0 and p_tax > 0) else 0.0
             return diff, "currency"
         if col_id == "calc_date_delta_days":
-            p_date = p_prev.get("document_date") or p_prev.get("DocumentDate") or ""
-            diff_days = 0
-            if rec.get("document_date") and p_date:
+            p_date = str(p_prev.get("document_date") or p_prev.get("DocumentDate") or "")
+            g_date = str(rec.get("document_date") or "")
+            if g_date and p_date:
+                if g_date[:10] == p_date[:10]:
+                    return 0, "number"
                 try:
-                    dt_g = pd.to_datetime(str(rec.get("document_date"))[:10], errors="coerce")
-                    dt_p = pd.to_datetime(str(p_date)[:10], errors="coerce")
+                    dt_g = pd.to_datetime(g_date[:10], errors="coerce")
+                    dt_p = pd.to_datetime(p_date[:10], errors="coerce")
                     if pd.notna(dt_g) and pd.notna(dt_p):
-                        diff_days = abs((dt_g - dt_p).days)
+                        return abs((dt_g - dt_p).days), "number"
                 except Exception:
-                    diff_days = 0
-            return diff_days, "number"
+                    pass
+            return 0, "number"
         if col_id == "calc_ai_reason":
             return rec.get("classification_reason") or rec.get("ai_reason") or "Deterministic match verified.", "string"
         if col_id == "calc_lifecycle_provenance":
@@ -831,6 +941,18 @@ class ExportV2Service:
         if col_id == "calc_reconciled_itc":
             bucket = rec.get("bucket", "")
             return (g_tax if bucket in ("EXACT_MATCH", "TOLERANCE_MATCH", "NEAR_MATCH") else 0.0), "currency"
+        if col_id == "calc_tars_verdict":
+            return rec.get("tars_verdict") or rec.get("bucket", "UNMATCHED").replace("_", " "), "string"
+        if col_id == "calc_kics_verdict":
+            return rec.get("kics_verdict") or "—", "string"
+        if col_id == "calc_concurrence":
+            return rec.get("concurrence") or "AGREEMENT", "string"
+        if col_id == "calc_sub_classification":
+            return rec.get("sub_classification") or "—", "string"
+        if col_id == "calc_batch_type":
+            return rec.get("variances", {}).get("batch_type") or "—", "string"
+        if col_id == "calc_batch_sum":
+            return float(rec.get("variances", {}).get("batch_sum", 0.0) or 0.0), "currency"
 
         # 2. GSTR Primary
         if col_id == "gstr_gstin":
@@ -847,6 +969,8 @@ class ExportV2Service:
             return float(rec.get("total_value") or 0.0), "currency"
 
         # 3. PR Primary
+        if col_id == "pr_gstin":
+            return p_prev.get("gstin") or p_prev.get("GSTIN") or rec.get("target_gstin", ""), "string"
         if col_id == "pr_document_number":
             return p_prev.get("document_number") or p_prev.get("DocumentNumber") or "", "string"
         if col_id == "pr_document_date":
@@ -879,16 +1003,19 @@ class ExportV2Service:
         self,
         session_id: str,
         request: CustomExportRequest,
+        stage4_data: dict[str, Any] | None = None,
+        session_dict: dict[str, Any] | None = None,
     ) -> tuple[bytes, str, str]:
         """
         Builds a custom user-designed export file in XLSX, CSV, DSV, or JSON.
         Returns: (file_bytes, filename, media_type)
         """
-        stage4_data = audit_v2_service.get_stage4_results(session_id)
+        if stage4_data is None:
+            stage4_data = audit_v2_service.get_stage4_results(session_id)
         if not stage4_data or not isinstance(stage4_data, dict):
             raise ValueError(f"No completed reconciliation matrix found for session {session_id}.")
 
-        session = audit_v2_service.get_session(session_id) or {}
+        session = session_dict if session_dict is not None else (audit_v2_service.get_session(session_id) or {})
         client_name = session.get("client_name") or "Enterprise Client"
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         fmt = (request.export_format or "xlsx").lower().strip()

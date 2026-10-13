@@ -1558,70 +1558,199 @@ class WaterfallMatchingEngineV4:
             )
 
         # Build Ambiguity Clusters for records flagged as AMBIGUOUS
+        def _safe_flt(val: Any) -> float:
+            try:
+                return float(val) if (val is not None and not pd.isna(val)) else 0.0
+            except Exception:
+                return 0.0
+
+        cp_doc_clean_lst = cp_doc_clean.astype(str).tolist() if hasattr(cp_doc_clean, "tolist") else list(cp_doc_clean)
+        pr_doc_clean_lst = pr_doc_clean.astype(str).tolist() if hasattr(pr_doc_clean, "tolist") else list(pr_doc_clean)
+
+        # Index available PR voucher records across the dataset
+        pr_pool_by_gstin: dict[str, list[tuple[int, float]]] = {}
+        pr_pool_by_clean_doc: dict[str, list[int]] = {}
+        for j in range(n_rows):
+            p_gst = str(pr_gstin_lst[j]).strip().upper()
+            p_clean = str(pr_doc_clean_lst[j]).strip().upper()
+            p_taxable = _safe_flt(pr_taxable_lst[j])
+            p_doc = str(pr_doc_lst[j]).strip()
+            if (p_gst and p_gst not in ("NAN", "NONE")) or (p_clean and p_clean not in ("NAN", "NONE")) or p_taxable > 0.0 or (p_doc and p_doc not in ("NAN", "NONE")):
+                if p_gst and p_gst not in ("NAN", "NONE"):
+                    pr_pool_by_gstin.setdefault(p_gst, []).append((j, p_taxable))
+                if p_clean and p_clean not in ("NAN", "NONE"):
+                    pr_pool_by_clean_doc.setdefault(p_clean, []).append(j)
+
         ambiguities: list[dict[str, Any]] = []
         for r in records:
             if r.bucket == "AMBIGUOUS":
-                clust_id = f"CLUST-V4-{r.index:06d}"
-                r.ambiguity_cluster_id = clust_id
+                try:
+                    candidate_j_indices: set[int] = set()
 
-                cand_diffs = []
-                if r.taxable_diff > 0.01:
-                    cand_diffs.append(f"Taxable Variance: ₹{r.taxable_diff:,.2f}")
-                if r.tax_diff > 0.01:
-                    cand_diffs.append(f"Tax Variance: ₹{r.tax_diff:,.2f}")
-                if r.source_doc_num.strip().upper() != r.target_doc_num.strip().upper():
-                    cand_diffs.append(f"Document # Mismatch: '{r.source_doc_num}' vs '{r.target_doc_num}'")
-                if r.source_date and r.target_date and r.source_date != r.target_date:
-                    cand_diffs.append(f"Date Variance: '{r.source_date}' vs '{r.target_date}'")
+                    # 1. Directly paired PR row (if it has PR data)
+                    if r.pr_row_index is not None and r.pr_row_index < n_rows:
+                        if _safe_flt(pr_taxable_lst[r.pr_row_index]) > 0.0 or str(pr_doc_lst[r.pr_row_index]).strip() not in ("", "NAN", "NONE"):
+                            candidate_j_indices.add(r.pr_row_index)
 
-                doc_ratio = calculate_string_ratio(r.source_doc_num, r.target_doc_num)
-                doc_sim = round(doc_ratio * 100.0, 1)
+                    # 2. Same supplier GSTIN PR vouchers (pick top 3 closest by taxable amount for instant O(1) performance)
+                    r_gstin = str(r.source_gstin).strip().upper()
+                    r_clean = str(cp_doc_clean_lst[r.index]).strip().upper() if r.index < len(cp_doc_clean_lst) else ""
+                    if r_gstin and r_gstin not in ("NAN", "NONE"):
+                        gstin_prs = pr_pool_by_gstin.get(r_gstin, [])
+                        if gstin_prs:
+                            sorted_by_amt = sorted(gstin_prs, key=lambda item: abs(item[1] - r.source_taxable))[:4]
+                            for j_idx, _ in sorted_by_amt:
+                                candidate_j_indices.add(j_idx)
 
-                t_max = max(r.source_taxable, r.target_taxable, 1.0)
-                amt_score = round(max(0.0, 100.0 - (r.taxable_diff / t_max * 100.0)), 1)
+                    # 3. Same clean document number across records (document collision)
+                    if r_clean and r_clean not in ("NAN", "NONE"):
+                        doc_prs = pr_pool_by_clean_doc.get(r_clean, [])
+                        for j_idx in doc_prs[:3]:
+                            candidate_j_indices.add(j_idx)
 
-                tx_max = max(r.source_tax, r.target_tax, 1.0)
-                tax_score = round(max(0.0, 100.0 - (r.tax_diff / tx_max * 100.0)), 1)
+                    cand_objects: list[AmbiguityCandidate] = []
+                    for j in candidate_j_indices:
+                        j_doc_raw = str(pr_doc_lst[j]).strip()
+                        j_clean = str(pr_doc_clean_lst[j]).strip().upper()
+                        j_date_str = str(pr_date_lst[j]).strip()
+                        j_taxable = _safe_flt(pr_taxable_lst[j])
+                        j_tax = _safe_flt(pr_igst_lst[j])
+                        j_gstin = str(pr_gstin_lst[j]).strip().upper()
 
-                date_score = 90.0 if r.source_date == r.target_date else 70.0
-                conf = round((doc_sim * 0.35 + amt_score * 0.35 + tax_score * 0.15 + date_score * 0.15), 1)
+                        doc_ratio = calculate_string_ratio(r.source_doc_num, j_doc_raw)
+                        clean_ratio = calculate_string_ratio(r_clean, j_clean) if r_clean and j_clean else 0.0
+                        doc_sim = round(max(doc_ratio, clean_ratio) * 100.0, 1)
 
-                cand1 = AmbiguityCandidate(
-                    candidate_id=f"CAND-{r.index}-1",
-                    pr_row_index=r.pr_row_index if r.pr_row_index is not None else (r.index - 1),
-                    pr_record_id=f"PR-VOUCHER-{r.index:06d}",
-                    confidence_score=conf,
-                    score_breakdown=ScoreBreakdown(
-                        invoice_similarity=doc_sim,
-                        amount_score=amt_score,
-                        date_score=date_score,
-                        tax_score=tax_score,
-                    ),
-                    detected_differences=cand_diffs or ["Minor formatting variance"],
-                    ai_reason=(
-                        f"Primary ERP Ledger Voucher for counterparty GSTIN {r.source_gstin}. "
-                        f"Financial variance ₹{r.taxable_diff:.2f} with {doc_sim}% document string correlation."
-                    ),
-                    pr_preview=r.pr_preview,
-                )
+                        t_max = max(r.source_taxable, j_taxable, 1.0)
+                        amt_score = round(max(0.0, 100.0 - (abs(r.source_taxable - j_taxable) / t_max * 100.0)), 1)
 
-                clust = AmbiguityCluster(
-                    cluster_id=clust_id,
-                    gstr_row_index=r.gstr_row_index if r.gstr_row_index is not None else (r.index - 1),
-                    gstr_record_id=r.id,
-                    anchor_preview=r.gstr_preview,
-                    candidates=[cand1],
-                    ai_justification=(
-                        f"Ambiguous collision for Portal Document #{r.source_doc_num} (GSTIN: {r.source_gstin}). "
-                        f"Potential variance requires accountant disambiguation or manual statutory reclassification."
-                    ),
-                    status="PENDING_REVIEW",
-                    ambiguity_category="PROBABLE_EXACT_MATCH" if conf >= 85.0 else "SPLIT_BATCH_DELIVERY",
-                    category_label="High-Confidence Probable Match" if conf >= 85.0 else "Multi-Candidate Collision",
-                    recommended_action="Confirm dominant candidate or reclassify category",
-                    priority="ROUTINE" if conf >= 85.0 else "REVIEW",
-                )
-                ambiguities.append(clust.model_dump())
+                        tx_max = max(r.source_tax, j_tax, 1.0)
+                        tax_score = round(max(0.0, 100.0 - (abs(r.source_tax - j_tax) / tx_max * 100.0)), 1)
+
+                        date_score = 70.0
+                        date_diff_days = 0
+                        if j < len(date_diff_lst):
+                            date_diff_days = int(date_diff_lst[j]) if date_diff_lst[j] is not None and not pd.isna(date_diff_lst[j]) else 0
+                        if date_diff_days == 0:
+                            date_score = 95.0
+                        elif date_diff_days <= 7:
+                            date_score = 88.0
+                        elif date_diff_days <= 30:
+                            date_score = 75.0
+                        elif date_diff_days <= 60:
+                            date_score = 60.0
+                        else:
+                            date_score = 40.0
+
+                        conf = round(doc_sim * 0.40 + amt_score * 0.30 + tax_score * 0.15 + date_score * 0.15, 1)
+
+                        diffs = []
+                        if abs(r.source_taxable - j_taxable) > 0.01:
+                            diffs.append(f"Taxable Variance: ₹{abs(r.source_taxable - j_taxable):,.2f}")
+                        if abs(r.source_tax - j_tax) > 0.01:
+                            diffs.append(f"Tax Variance: ₹{abs(r.source_tax - j_tax):,.2f}")
+                        if r.source_doc_num.strip().upper() != j_doc_raw.strip().upper():
+                            diffs.append(f"Document # Mismatch: '{r.source_doc_num}' vs '{j_doc_raw}'")
+                        if date_diff_days > 0:
+                            diffs.append(f"Date Displacement: {date_diff_days} days")
+
+                        cand_preview = records[j].pr_preview if j < len(records) else {
+                            "gstin": j_gstin,
+                            "document_number": j_doc_raw,
+                            "invoice_number": j_doc_raw,
+                            "document_date": j_date_str,
+                            "invoice_date": j_date_str,
+                            "taxable_value": j_taxable,
+                            "tax_amount": j_tax,
+                            "total_value": round(j_taxable + j_tax, 2),
+                        }
+
+                        cand_obj = AmbiguityCandidate(
+                            candidate_id=f"CAND-{r.index}-{len(cand_objects)+1}",
+                            pr_row_index=j,
+                            pr_record_id=f"PR-VOUCHER-{j+1:06d}",
+                            confidence_score=conf,
+                            score_breakdown=ScoreBreakdown(
+                                invoice_similarity=doc_sim,
+                                amount_score=amt_score,
+                                date_score=date_score,
+                                tax_score=tax_score,
+                            ),
+                            detected_differences=diffs or ["Minor formatting variance"],
+                            ai_reason=(
+                                f"ERP Candidate #{j+1} shares identifying attributes with {conf}% confidence. "
+                                f"Doc similarity: {doc_sim}%, amount closeness: {amt_score}%."
+                            ),
+                            pr_preview=cand_preview,
+                        )
+                        cand_objects.append(cand_obj)
+
+                    cand_objects.sort(key=lambda c: c.confidence_score, reverse=True)
+                    for rank_idx, c_item in enumerate(cand_objects):
+                        c_item.candidate_id = f"CAND-{r.index}-{rank_idx+1}"
+
+                    # Strict noise invariant: Only create ambiguity cluster if >= 2 competing candidates!
+                    if len(cand_objects) < 2:
+                        continue
+
+                    top_candidates = cand_objects[:3]
+                    cand_1 = top_candidates[0]
+                    cand_2 = top_candidates[1]
+                    gap = round(cand_1.confidence_score - cand_2.confidence_score, 1)
+
+                    close_traits = []
+                    if cand_2.score_breakdown.amount_score >= 95.0:
+                        close_traits.append("identical taxable value")
+                    elif cand_2.score_breakdown.amount_score >= 80.0:
+                        close_traits.append("proximate taxable value")
+                    if cand_2.score_breakdown.invoice_similarity >= 75.0:
+                        close_traits.append(f"{cand_2.score_breakdown.invoice_similarity}% document similarity")
+                    if cand_2.score_breakdown.date_score >= 80.0:
+                        close_traits.append("proximate transaction date")
+                    if cand_2.pr_preview.get("gstin") == r_gstin:
+                        close_traits.append("matching supplier GSTIN")
+
+                    close_call_summary = " & ".join(close_traits) if close_traits else "similar financial and document attributes"
+
+                    cand_1.ai_reason = (
+                        f"AI Top Pick: Dominant ERP candidate exhibiting highest multi-factor alignment ({cand_1.confidence_score}% confidence). "
+                        f"Invoice similarity: {cand_1.score_breakdown.invoice_similarity}%, amount closeness: {cand_1.score_breakdown.amount_score}%."
+                    )
+                    cand_2.ai_reason = (
+                        f"Close Call Competitor: Competing ERP candidate with {cand_2.confidence_score}% alignment (gap: {gap} pts). "
+                        f"Plausible match due to {close_call_summary}."
+                    )
+                    if len(top_candidates) > 2:
+                        top_candidates[2].ai_reason = (
+                            f"Secondary Alternative: Fallback candidate with {top_candidates[2].confidence_score}% alignment."
+                        )
+
+                    ai_justification = (
+                        f"Multi-Candidate Conflict: {len(top_candidates)} ERP purchase register vouchers qualify for Portal Document #{r.source_doc_num} (GSTIN: {r.source_gstin}). "
+                        f"AI Top Pick: Candidate #1 ({cand_1.pr_record_id}) is the highest pick with {cand_1.confidence_score}% confidence. "
+                        f"Candidate #2 ({cand_2.pr_record_id}) is a close call ({cand_2.confidence_score}% confidence, gap: {gap} pts) due to {close_call_summary}. "
+                        f"Recommendation: Confirm Candidate #1 to claim primary statutory credit, or select Candidate #2 if operational physical goods receipt aligns."
+                    )
+
+                    clust_id = f"CLUST-V4-{r.index:06d}"
+                    r.ambiguity_cluster_id = clust_id
+
+                    clust = AmbiguityCluster(
+                        cluster_id=clust_id,
+                        gstr_row_index=r.gstr_row_index if r.gstr_row_index is not None else (r.index - 1),
+                        gstr_record_id=r.id,
+                        anchor_preview=r.gstr_preview,
+                        candidates=top_candidates,
+                        ai_justification=ai_justification,
+                        status="PENDING_REVIEW",
+                        ambiguity_category="PROBABLE_EXACT_MATCH" if cand_1.confidence_score >= 85.0 else "SPLIT_BATCH_DELIVERY",
+                        category_label="High-Confidence Probable Match" if cand_1.confidence_score >= 85.0 else "Multi-Candidate Collision",
+                        recommended_action=f"Bind Candidate #1 ({cand_1.pr_record_id}) or review Candidate #2",
+                        priority="ROUTINE" if cand_1.confidence_score >= 85.0 else "REVIEW",
+                    )
+                    ambiguities.append(clust.model_dump())
+                except Exception as exc:
+                    logger.warning(f"Ambiguity clustering skipped row {r.index}: {exc}")
 
         # Compute accurate summary metrics strictly based on all emitted records (1:1 with workbook rows)
         total_records_count = n_rows

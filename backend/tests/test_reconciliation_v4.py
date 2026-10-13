@@ -400,7 +400,7 @@ def test_rule1_true_1_to_n_disjoint_unrolled():
 
 
 def test_ambiguity_cluster_generation_and_api():
-    """Verify that ambiguous records generate ambiguity clusters and can be resolved or reclassified via V4 endpoints."""
+    """Verify that ambiguous records generate ambiguity clusters with >= 2 candidates, AI top pick, and can be resolved or reclassified via V4 endpoints."""
     from fastapi.testclient import TestClient
     from app.main import app
 
@@ -417,17 +417,31 @@ def test_ambiguity_cluster_generation_and_api():
             "PRTaxableValue": 4500.0,
             "CPIgstAmount": 900.0,
             "PRIgstAmount": 810.0,
-        }
+        },
+        {
+            "CPGstin": "27AAACB9999M1Z9",
+            "PRGstin": "27AAACB9999M1Z9",
+            "CPDocumentNumber": "INV-CONFLICT-02",
+            "PRDocumentNumber": "INV-CONFLICT-01-ALT",
+            "CPDocumentDate": "01-Oct-2026",
+            "PRDocumentDate": "03-Oct-2026",
+            "CPTaxableValue": 1000.0,
+            "PRTaxableValue": 4980.0,
+            "CPIgstAmount": 180.0,
+            "PRIgstAmount": 896.4,
+        },
     ])
     engine = WaterfallMatchingEngineV4()
     res = engine.execute_waterfall(df, session_id="test-ambig-sess")
-    assert res.summary.ambiguous == 1
-    assert len(res.ambiguities) == 1
+    assert res.summary.ambiguous >= 1
+    assert len(res.ambiguities) >= 1
     cluster = res.ambiguities[0]
     assert cluster["cluster_id"].startswith("CLUST-V4-")
-    assert len(cluster["candidates"]) >= 1
-    assert cluster["candidates"][0]["confidence_score"] > 0
-    assert "invoice_similarity" in cluster["candidates"][0]["score_breakdown"]
+    assert len(cluster["candidates"]) >= 2
+    assert cluster["candidates"][0]["confidence_score"] >= cluster["candidates"][1]["confidence_score"]
+    assert "AI Top Pick" in cluster["candidates"][0]["ai_reason"]
+    assert "Close Call" in cluster["candidates"][1]["ai_reason"]
+    assert "AI Top Pick" in cluster["ai_justification"]
 
     # Test API endpoints
     sess_id = "V4-TEST-AMBIG-API"
@@ -482,5 +496,116 @@ def test_ambiguity_cluster_generation_and_api():
     reclass_data3 = reclass_res3.json()
     target_rec3 = next(r for r in reclass_data3["records"] if r["id"] == rec_id)
     assert target_rec3["bucket"] == "NEAR_MATCH"
+
+    # 5. Test resolve-ambiguity endpoint choosing Candidate #1
+    clust_id = cluster["cluster_id"]
+    cand_id = cluster["candidates"][0]["candidate_id"]
+    resolve_res = client.post(
+        f"/api/reconciliations-v4/{sess_id}/results/resolve-ambiguity",
+        json={"cluster_id": clust_id, "chosen_candidate_id": cand_id, "action": "CHOOSE"}
+    )
+    assert resolve_res.status_code == 200
+    resolve_data = resolve_res.json()
+    resolved_cluster = next(c for c in resolve_data["ambiguities"] if c["cluster_id"] == clust_id)
+    assert resolved_cluster["status"] == "RESOLVED"
+    assert resolved_cluster["resolved_pr_record_id"] == cluster["candidates"][0]["pr_record_id"]
+
+
+def test_stage6_export_universe_and_custom_dispatch():
+    """Verify that Stage 6 Export Studio introspects the full Column Universe and supports custom export."""
+    from uuid import uuid4
+    from fastapi.testclient import TestClient
+    from app.main import app
+    from app.api.reconciliations_v4 import _V4_SESSIONS
+
+    client = TestClient(app)
+    sess_id = f"test-export-v4-{uuid4().hex[:6]}"
+
+    # Setup session with synthetic records
+    raw_df = pd.DataFrame([
+        {
+            "CPGstin": "27AABCU9603R1ZM",
+            "PRGstin": "27AABCU9603R1ZM",
+            "CPDocumentNumber": "INV-100",
+            "PRDocumentNumber": "INV-100",
+            "CPDocumentDate": "2026-06-01",
+            "PRDocumentDate": "2026-06-01",
+            "CPTaxableValue": 50000.0,
+            "PRTaxableValue": 50000.0,
+            "CPIgstAmount": 9000.0,
+            "PRIgstAmount": 9000.0,
+        }
+    ])
+    engine = WaterfallMatchingEngineV4()
+    s4_res = engine.execute_waterfall(raw_df, session_id=sess_id)
+    _V4_SESSIONS[sess_id] = {
+        "id": sess_id,
+        "recon_type": "v4",
+        "title": "Test V4 Export Session",
+        "status": "reconciled",
+        "current_stage": "results",
+        "created_at": "2026-10-13T00:00:00Z",
+        "_cached_df": raw_df,
+        "stage4_results": s4_res.model_dump(),
+    }
+
+    # 1. Test /export/columns endpoint
+    cols_res = client.get(f"/api/reconciliations-v4/{sess_id}/export/columns")
+    assert cols_res.status_code == 200, f"Expected 200, got {cols_res.status_code}: {cols_res.text}"
+    cols_data = cols_res.json()
+    assert "families" in cols_data
+    assert cols_data["total_available_columns"] > 0
+    assert len(cols_data["families"]["CALCULATED"]) >= 9
+    assert len(cols_data["families"]["GSTR"]) >= 6
+    assert len(cols_data["families"]["PR"]) >= 6
+
+    # Verify key statutory and intel fields exist in the Column Universe
+    calc_ids = [c["id"] for c in cols_data["families"]["CALCULATED"]]
+    assert "calc_id" in calc_ids
+    assert "calc_bucket" in calc_ids
+    assert "calc_tars_verdict" in calc_ids
+    assert "calc_concurrence" in calc_ids
+    assert "calc_tax_variance" in calc_ids
+
+    # 2. Test /export/presets endpoint
+    presets_res = client.get("/api/reconciliations-v4/export/presets")
+    assert presets_res.status_code == 200
+    presets = presets_res.json()
+    assert len(presets) >= 4
+    preset_ids = [p["id"] for p in presets]
+    assert "preset_kpmg_statutory" in preset_ids
+
+    # 3. Test /export/preview endpoint
+    prev_res = client.get(f"/api/reconciliations-v4/{sess_id}/export/preview?limit=10")
+    assert prev_res.status_code == 200
+    prev_data = prev_res.json()
+    assert prev_data["total_records"] >= 1
+    assert len(prev_data["preview_records"]) >= 1
+    row = prev_data["preview_records"][0]
+    assert "gstr_doc" in row
+    assert "pr_doc" in row
+    assert "gstr_taxable" in row
+    assert "pr_taxable" in row
+
+    # 4. Test /export/custom endpoint
+    custom_req = {
+        "export_format": "csv",
+        "columns": [
+            {"id": "calc_id", "alias": "Reconciliation ID"},
+            {"id": "calc_bucket", "alias": "Status"},
+            {"id": "gstr_document_number", "alias": "Invoice # (2B)"},
+        ],
+        "conditional_rules": [],
+    }
+    custom_res = client.post(f"/api/reconciliations-v4/{sess_id}/export/custom", json=custom_req)
+    assert custom_res.status_code == 200
+    assert "Reconciliation ID" in custom_res.text
+    assert "INV-100" in custom_res.text
+
+    # 5. Test /complete endpoint
+    comp_res = client.post(f"/api/reconciliations-v4/{sess_id}/complete")
+    assert comp_res.status_code == 200
+    assert comp_res.json()["status"] == "completed"
+
 
 

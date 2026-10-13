@@ -49,6 +49,14 @@ from app.services.matching_engine_v3 import (
     evaluate_ambiguity_recommendation,
     evaluate_target_category_policy,
 )
+from app.services.export_v2_service import (
+    ActiveExportColumn,
+    ConditionalFormattingRule,
+    CustomExportRequest,
+    ExportColumnDescriptor,
+    ExportPreset,
+    export_v2_service,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -1029,41 +1037,151 @@ def get_v4_summary(session_id: str) -> dict[str, Any]:
     }
 
 
-# EXPORT PREVIEW & DOWNLOAD
+# =========================================================================
+# EXPORT 4.0 REST ENDPOINTS (STAGE 6)
+# =========================================================================
+
+@router_v4.get("/export/presets")
+def list_v4_export_presets():
+    """Returns all built-in and user-saved export presets."""
+    try:
+        return export_v2_service.get_presets()
+    except Exception as exc:
+        logger.error(f"Error listing export presets: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to list export presets: {exc}") from exc
+
+
+@router_v4.post("/export/presets")
+def save_v4_export_preset(preset: ExportPreset):
+    """Persists a user-defined export preset layout and rules to disk."""
+    try:
+        return export_v2_service.save_preset(preset)
+    except Exception as exc:
+        logger.error(f"Error saving export preset: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to save export preset: {exc}") from exc
+
+
+@router_v4.delete("/export/presets/{preset_id}")
+def delete_v4_export_preset(preset_id: str):
+    """Deletes a custom user preset."""
+    try:
+        return export_v2_service.delete_preset(preset_id)
+    except Exception as exc:
+        logger.error(f"Error deleting export preset {preset_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to delete export preset: {exc}") from exc
+
+
+@router_v4.get("/{session_id}/export/columns")
+def get_v4_export_columns(session_id: str):
+    """Returns the complete universe of columns across CALCULATED, GSTR, and PR families."""
+    try:
+        session = _ensure_session_v4(session_id)
+        cached_s4 = session.get("stage4_results")
+        if not cached_s4:
+            s4_res = _execute_stage4_v4_internal(session_id)
+            cached_s4 = s4_res.model_dump()
+        return export_v2_service.get_available_columns(session_id, stage4_data=cached_s4, session_dict=session)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error fetching export columns for session {session_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to inspect export columns: {exc}") from exc
+
+
 @router_v4.get("/{session_id}/export/preview")
 def get_v4_export_preview(session_id: str, limit: int = 50) -> dict[str, Any]:
-    session = _ensure_session_v4(session_id)
-    cached_s4 = session.get("stage4_results")
-    if not cached_s4:
-        s4_res = _execute_stage4_v4_internal(session_id)
-        cached_s4 = s4_res.model_dump()
+    """Returns preview records and summary stats for Stage 6 Export Studio."""
+    try:
+        session = _ensure_session_v4(session_id)
+        cached_s4 = session.get("stage4_results")
+        if not cached_s4:
+            s4_res = _execute_stage4_v4_internal(session_id)
+            cached_s4 = s4_res.model_dump()
+        return export_v2_service.get_preview(session_id, limit=limit, stage4_data=cached_s4)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error fetching export preview for session {session_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate export preview: {exc}") from exc
 
-    records = cached_s4.get("records", [])[:limit]
-    summary = cached_s4.get("summary", {})
-    return {
-        "session_id": session_id,
-        "total_records": summary.get("total_records", len(records)),
-        "preview_records": records,
-    }
+
+@router_v4.post("/{session_id}/export/custom")
+def download_v4_custom_export(session_id: str, req: CustomExportRequest):
+    """Streams a user-designed export file in XLSX, CSV, DSV, or JSON with custom order and formatting."""
+    try:
+        session = _ensure_session_v4(session_id)
+        cached_s4 = session.get("stage4_results")
+        if not cached_s4:
+            s4_res = _execute_stage4_v4_internal(session_id)
+            cached_s4 = s4_res.model_dump()
+
+        content, filename, media_type = export_v2_service.build_custom_export(
+            session_id=session_id,
+            request=req,
+            stage4_data=cached_s4,
+            session_dict=session,
+        )
+        try:
+            audit_v2_service.record_export_event(
+                session_id=session_id,
+                request=req.model_dump() if hasattr(req, "model_dump") else dict(req),
+                filename=filename,
+                filesize=len(content) if content else 0,
+            )
+        except Exception as e_err:
+            logger.warning(f"Failed to record export event to audit_v2_service: {e_err}")
+
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error compiling custom export package for session {session_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to compile custom export: {exc}") from exc
 
 
 @router_v4.get("/{session_id}/export/download")
-def download_v4_export(session_id: str) -> Response:
-    session = _ensure_session_v4(session_id)
-    cached_s4 = session.get("stage4_results")
-    if not cached_s4:
-        s4_res = _execute_stage4_v4_internal(session_id)
-        cached_s4 = s4_res.model_dump()
+def download_v4_export(
+    session_id: str,
+    format: str = "xlsx",
+    color_coded: bool = True,
+    include_auxiliary: bool = True,
+):
+    """Streams the compiled reconciliation ledger workbook (XLSX), flat CSV, or JSON."""
+    try:
+        session = _ensure_session_v4(session_id)
+        cached_s4 = session.get("stage4_results")
+        if not cached_s4:
+            s4_res = _execute_stage4_v4_internal(session_id)
+            cached_s4 = s4_res.model_dump()
 
-    records = cached_s4.get("records", [])
-    df_out = pd.DataFrame(records)
-    csv_bytes = df_out.to_csv(index=False).encode("utf-8")
-    filename = f"TARS_Reconciliation_4_0_{session_id}_{datetime.datetime.now().strftime('%Y%m%d')}.csv"
-    return Response(
-        content=csv_bytes,
-        media_type="text/csv",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
-    )
+        content, filename, media_type = export_v2_service.build_export(
+            session_id=session_id,
+            export_format=format,
+            color_coded=color_coded,
+            include_auxiliary=include_auxiliary,
+            stage4_data=cached_s4,
+            session_dict=session,
+        )
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "Access-Control-Expose-Headers": "Content-Disposition",
+            },
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        logger.error(f"Error generating export package for session {session_id}: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to generate export package: {exc}") from exc
 
 
 @router_v4.post("/{session_id}/complete")
@@ -1073,4 +1191,10 @@ def complete_v4_session(session_id: str) -> dict[str, Any]:
     session["is_completed"] = True
     session["current_stage"] = "export"
     _persist_session_disk_v4(session)
-    return {"status": "completed", "session_id": session_id}
+    return {
+        "id": session_id,
+        "status": "completed",
+        "current_stage": "export",
+        "created_at": session.get("created_at", ""),
+        "recon_filename": session.get("recon_filename"),
+    }

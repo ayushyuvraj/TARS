@@ -2317,23 +2317,184 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                 </div>
               </div>
 
-              {/* AI Justification Explanation */}
-              <div style={{ background: "#f8fafc", padding: "12px 16px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13, color: "#334155", display: "flex", alignItems: "flex-start", gap: 10 }}>
-                <Info size={16} color="#00338d" style={{ marginTop: 2, flexShrink: 0 }} />
-                <span>{selectedCluster.ai_justification}</span>
-              </div>
+              {/* Executive AI Recommendation Intelligence Banner */}
+              {(() => {
+                const topCand = selectedCluster.candidates[0];
+                const secCand = selectedCluster.candidates[1];
+                const gap = topCand && secCand ? (topCand.confidence_score - secCand.confidence_score).toFixed(1) : null;
+
+                return (
+                  <div style={{
+                    background: "linear-gradient(135deg, #f0f7ff 0%, #f8fafc 100%)",
+                    border: "1.5px solid #bfdbfe",
+                    borderRadius: 12,
+                    padding: "16px 20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 12,
+                    boxShadow: "0 2px 8px rgba(37,99,235,0.06)"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <div style={{
+                          background: "#2563eb",
+                          color: "#fff",
+                          width: 24,
+                          height: 24,
+                          borderRadius: 6,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontWeight: 800,
+                          fontSize: 13
+                        }}>
+                          ★
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: "#1e3a8a", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                          AI Match Intelligence • Conflict Disambiguation Engine
+                        </span>
+                      </div>
+                      {topCand && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                          <span style={{
+                            background: "#dcfce7",
+                            color: "#15803d",
+                            border: "1px solid #86efac",
+                            padding: "3px 10px",
+                            borderRadius: 20,
+                            fontSize: 12,
+                            fontWeight: 700
+                          }}>
+                            AI Top Pick: Candidate #1 ({topCand.confidence_score}%)
+                          </span>
+                          {secCand && gap !== null && (
+                            <span style={{
+                              background: "#fef3c7",
+                              color: "#b45309",
+                              border: "1px solid #fde68a",
+                              padding: "3px 10px",
+                              borderRadius: 20,
+                              fontSize: 12,
+                              fontWeight: 700
+                            }}>
+                              Close Call: Candidate #2 ({secCand.confidence_score}%, gap: {gap} pts)
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ fontSize: 13, color: "#334155", lineHeight: 1.5, background: "rgba(255,255,255,0.85)", padding: "10px 14px", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                      {selectedCluster.ai_justification}
+                    </div>
+
+                    {topCand && (
+                      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, paddingTop: 2 }}>
+                        <span style={{ fontSize: 12, color: "#64748b" }}>
+                          AI Recommendation:
+                        </span>
+                        <button
+                          type="button"
+                          style={{
+                            background: "linear-gradient(135deg, #16a34a 0%, #15803d 100%)",
+                            color: "#fff",
+                            border: "none",
+                            borderRadius: 8,
+                            padding: "8px 18px",
+                            fontSize: 13,
+                            fontWeight: 700,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                            cursor: "pointer",
+                            boxShadow: "0 2px 6px rgba(22,163,74,0.25)"
+                          }}
+                          onClick={() => handleResolveAmbiguity(selectedCluster.cluster_id, topCand.candidate_id, "CHOOSE")}
+                          disabled={isResolving}
+                        >
+                          <Check size={16} />
+                          <span>Accept AI Top Pick (Bind Candidate #1: {topCand.pr_record_id})</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Candidates Side-by-Side Cards */}
               <div className="v2-candidates-grid">
                 {selectedCluster.candidates.map((cand, idx) => {
                   const conf = cand.confidence_score;
                   const pillClass = conf >= 85 ? "high" : conf >= 70 ? "medium" : "low";
+                  const isTopPick = idx === 0;
+                  const isCloseCall = idx === 1;
 
                   return (
                     <div
                       key={cand.candidate_id}
-                      className={`v2-candidate-card ${idx === 0 ? "top-rank" : ""}`}
+                      className={`v2-candidate-card ${isTopPick ? "top-rank" : ""}`}
+                      style={{
+                        borderColor: isTopPick ? "#2563eb" : isCloseCall ? "#f59e0b" : "#e2e8f0",
+                        background: isTopPick ? "linear-gradient(to bottom, #f8faff 0%, #ffffff 100%)" : isCloseCall ? "linear-gradient(to bottom, #fffdfa 0%, #ffffff 100%)" : "#ffffff",
+                        boxShadow: isTopPick ? "0 4px 14px rgba(37,99,235,0.12)" : isCloseCall ? "0 4px 14px rgba(245,158,11,0.08)" : undefined
+                      }}
                     >
+                      {/* Badge for AI Ranking */}
+                      {isTopPick && (
+                        <div style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          alignSelf: "flex-start",
+                          background: "#dcfce7",
+                          color: "#15803d",
+                          border: "1px solid #86efac",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          textTransform: "uppercase"
+                        }}>
+                          ⭐ AI Top Pick · Recommended
+                        </div>
+                      )}
+                      {isCloseCall && (
+                        <div style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          alignSelf: "flex-start",
+                          background: "#fef3c7",
+                          color: "#b45309",
+                          border: "1px solid #fde68a",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          textTransform: "uppercase"
+                        }}>
+                          ⚠️ Close Call Competitor
+                        </div>
+                      )}
+                      {!isTopPick && !isCloseCall && (
+                        <div style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 5,
+                          alignSelf: "flex-start",
+                          background: "#f1f5f9",
+                          color: "#475569",
+                          border: "1px solid #cbd5e1",
+                          fontSize: 11,
+                          fontWeight: 800,
+                          padding: "2px 8px",
+                          borderRadius: 6,
+                          textTransform: "uppercase"
+                        }}>
+                          Alternative Candidate #{idx + 1}
+                        </div>
+                      )}
+
                       <div className="v2-candidate-top">
                         <div>
                           <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>
@@ -2405,11 +2566,15 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
                         <button
                           type="button"
                           className="v2-btn-select-candidate"
+                          style={{
+                            background: isTopPick ? "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)" : isCloseCall ? "linear-gradient(135deg, #d97706 0%, #b45309 100%)" : undefined,
+                            color: "#fff"
+                          }}
                           onClick={() => handleResolveAmbiguity(selectedCluster.cluster_id, cand.candidate_id, "CHOOSE")}
                           disabled={isResolving}
                         >
                           <Check size={14} />
-                          <span>Bind Candidate #{idx + 1}</span>
+                          <span>{isTopPick ? `Bind Candidate #1 (AI Top Pick)` : isCloseCall ? `Bind Candidate #2 (Close Call)` : `Bind Candidate #${idx + 1}`}</span>
                         </button>
                       </div>
                     </div>

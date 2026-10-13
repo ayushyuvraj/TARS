@@ -37,6 +37,45 @@ import {
   Sliders,
 } from "lucide-react";
 
+const DEFAULT_COLUMN_FAMILIES: {
+  CALCULATED: ExportColumnDescriptor[];
+  GSTR: ExportColumnDescriptor[];
+  PR: ExportColumnDescriptor[];
+} = {
+  CALCULATED: [
+    { id: "calc_id", label: "Reconciliation ID", family: "CALCULATED", source_field: "id", dtype: "string", default_selected: true },
+    { id: "calc_bucket", label: "Classification Bucket", family: "CALCULATED", source_field: "bucket", dtype: "string", default_selected: true },
+    { id: "calc_matched_by_pass", label: "Matching Waterfall Pass", family: "CALCULATED", source_field: "matched_by_pass", dtype: "string", default_selected: true },
+    { id: "calc_taxable_variance", label: "Taxable Variance (INR)", family: "CALCULATED", source_field: "taxable_variance", dtype: "currency", default_selected: true },
+    { id: "calc_tax_variance", label: "Tax Amount Variance (INR)", family: "CALCULATED", source_field: "tax_variance", dtype: "currency", default_selected: true },
+    { id: "calc_date_delta_days", label: "Invoice Date Delta (Days)", family: "CALCULATED", source_field: "date_delta_days", dtype: "number", default_selected: true },
+    { id: "calc_ai_reason", label: "AI & Deterministic Classification Rationale", family: "CALCULATED", source_field: "ai_reason", dtype: "string", default_selected: true },
+    { id: "calc_lifecycle_provenance", label: "Lifecycle Provenance Trace", family: "CALCULATED", source_field: "lifecycle_provenance", dtype: "string", default_selected: true },
+    { id: "calc_reconciled_itc", label: "Statutory Claimable ITC (INR)", family: "CALCULATED", source_field: "reconciled_itc", dtype: "currency", default_selected: false },
+    { id: "calc_tars_verdict", label: "TARS Statutory Verdict", family: "CALCULATED", source_field: "tars_verdict", dtype: "string", default_selected: true },
+    { id: "calc_kics_verdict", label: "KICS Client Baseline Verdict", family: "CALCULATED", source_field: "kics_verdict", dtype: "string", default_selected: true },
+    { id: "calc_concurrence", label: "Concurrence Outcome", family: "CALCULATED", source_field: "concurrence", dtype: "string", default_selected: true },
+    { id: "calc_sub_classification", label: "Statutory Sub-Classification", family: "CALCULATED", source_field: "sub_classification", dtype: "string", default_selected: false },
+    { id: "calc_batch_type", label: "Multi-Tranche Batch Type", family: "CALCULATED", source_field: "batch_type", dtype: "string", default_selected: false },
+  ],
+  GSTR: [
+    { id: "gstr_gstin", label: "Supplier GSTIN [2B]", family: "GSTR", source_field: "gstin", dtype: "string", default_selected: true },
+    { id: "gstr_document_number", label: "Document Number [2B]", family: "GSTR", source_field: "document_number", dtype: "string", default_selected: true },
+    { id: "gstr_document_date", label: "Invoice Date [2B]", family: "GSTR", source_field: "document_date", dtype: "date", default_selected: true },
+    { id: "gstr_taxable_value", label: "Taxable Value [2B]", family: "GSTR", source_field: "taxable_value", dtype: "currency", default_selected: true },
+    { id: "gstr_tax_amount", label: "Tax Amount [2B]", family: "GSTR", source_field: "tax_amount", dtype: "currency", default_selected: true },
+    { id: "gstr_total_value", label: "Total Invoice Value [2B]", family: "GSTR", source_field: "total_value", dtype: "currency", default_selected: true },
+  ],
+  PR: [
+    { id: "pr_gstin", label: "Vendor GSTIN [PR]", family: "PR", source_field: "gstin", dtype: "string", default_selected: true },
+    { id: "pr_document_number", label: "ERP Document # [PR]", family: "PR", source_field: "document_number", dtype: "string", default_selected: true },
+    { id: "pr_document_date", label: "ERP Invoice Date [PR]", family: "PR", source_field: "document_date", dtype: "date", default_selected: true },
+    { id: "pr_taxable_value", label: "ERP Taxable Value [PR]", family: "PR", source_field: "taxable_value", dtype: "currency", default_selected: true },
+    { id: "pr_tax_amount", label: "ERP Tax Amount [PR]", family: "PR", source_field: "tax_amount", dtype: "currency", default_selected: true },
+    { id: "pr_total_value", label: "ERP Total Value [PR]", family: "PR", source_field: "total_value", dtype: "currency", default_selected: true },
+  ],
+};
+
 interface ReconciliationV2ExportStageProps {
   sessionId: string;
   onBack: () => void;
@@ -76,11 +115,7 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
     CALCULATED: ExportColumnDescriptor[];
     GSTR: ExportColumnDescriptor[];
     PR: ExportColumnDescriptor[];
-  }>({
-    CALCULATED: [],
-    GSTR: [],
-    PR: [],
-  });
+  }>(DEFAULT_COLUMN_FAMILIES);
   const [activeColumns, setActiveColumns] = useState<ActiveExportColumn[]>([]);
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [selectedFamily, setSelectedFamily] = useState<"ALL" | "CALCULATED" | "GSTR" | "PR">("ALL");
@@ -138,7 +173,13 @@ export const ReconciliationV2ExportStage: React.FC<ReconciliationV2ExportStagePr
 
         if (!isMounted) return;
 
-        if (colsRes && colsRes.families) {
+        if (
+          colsRes &&
+          colsRes.families &&
+          (colsRes.families.CALCULATED?.length > 0 ||
+            colsRes.families.GSTR?.length > 0 ||
+            colsRes.families.PR?.length > 0)
+        ) {
           setAvailableColumns(colsRes.families);
         }
 

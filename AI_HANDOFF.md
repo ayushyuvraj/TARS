@@ -1,5 +1,36 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 4.0 • Stage 6 Column Universe Hydration & Export Studio Dispatch (13th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 4.0 Stage 6 Column Universe Hydration & Export Studio Dispatch`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-13-recon-v4-stage6-export-column-universe-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Stage 6 Export REST Suite in V4 API (`backend/app/api/reconciliations_v4.py`)*:
+     - Implemented `GET /{session_id}/export/columns` to dynamically introspect and return the full Column Universe across CALCULATED (Reconciliation Intel), GSTR (2B Portal), and PR (Purchase Reg) families.
+     - Implemented `GET /{session_id}/export/preview` returning dual-ledger formatted preview rows (`gstr_doc`, `pr_doc`, `gstr_taxable`, `pr_taxable`, `tax_diff`, `summary`).
+     - Implemented `POST /{session_id}/export/custom` for user-designed canvas layouts (custom ordering, header colors, cell formatting) dispatching to XLSX, CSV, DSV, or JSON.
+     - Implemented `GET /{session_id}/export/download` for standard executive compliance workbooks and flat ledgers.
+     - Implemented `GET /export/presets`, `POST /export/presets`, and `DELETE /export/presets/{preset_id}` for custom and KPMG statutory presets.
+     - Implemented `POST /{session_id}/complete` finalization endpoint.
+  2. *Introspective Column Universe & Fast Serialization (`backend/app/services/export_v2_service.py`)*:
+     - Added Reconciliation 4.0 intelligence columns (`calc_tars_verdict`, `calc_kics_verdict`, `calc_concurrence`, `calc_sub_classification`, `calc_batch_type`).
+     - Added schema correlation harvesting to dynamically extract both portal and ERP attributes from single-sheet workbooks.
+     - Optimized date delta variance calculation to bypass slow datetime parsing on identical invoice dates, reducing export compilation time.
+  3. *Multi-Candidate Ambiguity Resolution & AI Recommendation (`backend/app/services/matching_engine_v4.py`, `frontend/src/ReconciliationV4ResultsStage.tsx`)*:
+     - Enforced >= 2 candidates per ambiguity cluster, eliminating single-candidate dummy clusters.
+     - Computed deterministic radar breakdown scores and attached AI Top Pick recommendation banner.
+  4. *Frontend Export Studio Resilience (`frontend/src/ReconciliationV2ExportStage.tsx`)*:
+     - Injected `DEFAULT_COLUMN_FAMILIES` default state so the Column Universe never renders 0 columns during network transitions.
+     - Verified live filtering across all 4 category tabs ("All", "Reconciliation Intel", "2B Portal", "Purchase Reg") and keyword search.
+  5. *Verification & Tests*:
+     - Pytest integration suite (`backend/tests/test_reconciliation_v4.py`): 12/12 tests passing (100%), including `test_stage6_export_universe_and_custom_dispatch`.
+     - Frontend compilation (`tsc -b && vite build`): 0 errors.
+     - Browser verification on active session `V4-146F5EE0`: 42 available columns fully populated and interactive.
+
+---
+
 ## Reconciliation 4.0 • Human-in-the-Loop Ambiguity Resolution & Resilient Reclassification Posting (12th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 4.0 Ambiguity Resolution & Resilient Reclassification Posting`
