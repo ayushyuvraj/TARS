@@ -65,3 +65,4 @@ test_run_crlf.bat
 # Deployment packages and offline distribution bundles
 *.zip
 tars_kpmg_*/
+dist_kpmg_*/

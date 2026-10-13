@@ -1614,7 +1614,10 @@ class AuditV2Service:
 
             recon_type = sess.get("recon_type", "v2")
             s_id_str = str(session_id)
-            if recon_type == "v4" or s_id_str.startswith("V4-"):
+            if recon_type == "v5" or s_id_str.startswith("V5-"):
+                recon_type = "v5"
+                base_url = "/reconciliations-v5"
+            elif recon_type == "v4" or s_id_str.startswith("V4-"):
                 recon_type = "v4"
                 base_url = "/reconciliations-v4"
             elif recon_type == "v3" or s_id_str.startswith("V3-"):
@@ -1707,7 +1710,9 @@ class AuditV2Service:
                 "is_completed": is_exported,
                 "resume_stage": "export" if is_exported else "setup",
                 "resume_url": (
-                    (f"/reconciliations-v4/{session_id}/export" if is_exported else f"/reconciliations-v4/{session_id}/setup")
+                    (f"/reconciliations-v5/{session_id}/export" if is_exported else f"/reconciliations-v5/{session_id}/setup")
+                    if sess.get("recon_type") == "v5" or str(session_id).startswith("V5-")
+                    else (f"/reconciliations-v4/{session_id}/export" if is_exported else f"/reconciliations-v4/{session_id}/setup")
                     if sess.get("recon_type") == "v4" or str(session_id).startswith("V4-")
                     else (f"/reconciliations-v3/{session_id}/export" if is_exported else f"/reconciliations-v3/{session_id}/setup")
                     if sess.get("recon_type") == "v3" or str(session_id).startswith("V3-")

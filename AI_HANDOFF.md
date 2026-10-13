@@ -1,5 +1,41 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 5.0 • Double Ledger Updated Dual-File Ingestion, Waterfall Engine & Rules Wiki (13th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 5.0 Double Ledger Updated Architecture Baseline`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-13-recon-v5-baseline-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Architecture & Concept*:
+     - Implemented **Reconciliation 5.0** (*Double Ledger Updated*), matching between two separate Excel workbooks: Government GSTR-2B extract and Client Purchase Register (PR) / internal ERP ledger.
+     - Preserved Reconciliation 2.0, 3.0, and 4.0 100% intact with zero breaking changes or regressions.
+  2. *Dual-File Ingestion & Schema Coupling (Stages 1 & 2)*:
+     - Leveraged Reconciliation 2.0 dual dropzones, probe header ingestion, and cross-table column pairing via `DynamicMappingGridV2`.
+     - Supports direct upload or one-click sample loading (`#v5-load-sample-btn`) on `POST /api/reconciliations-v5/upload`.
+  3. *5-Tier Waterfall Matching Engine V5 (`backend/app/services/matching_engine_v5.py`)*:
+     - **Pass 1 (Strict Exact Match)**: Zero-day variance (`date_diff_days == 0`) and tax head equality (`not is_tax_head_mismatch`). Sub-classification `EXACT_1_TO_1`.
+     - **Pass 2 (Tolerance & Batch Consolidation)**: Multi-tranche N:1 (Multiple GSTR charge rows -> 1 PR voucher) and 1:N batch consolidations with deduplicated master rows and `constituent_items` / `batch_components`. Supports Section 17(5) blocked credit (`INELIGIBLE_ITC_17_5`), Cross-FY timing lag (`CROSS_FY_TIMING_LAG`), date operational shift (`DATE_OPERATIONAL_SHIFT`), and commercial penny tolerance (`VALUE_COMMERCIAL_TOLERANCE`).
+     - **Pass 3 (Near Match)**: Tax head interchange (IGST vs CGST/SGST swaps) and fuzzy document number normalization (`DOC_PREFIX_NORMALIZED`).
+     - **Pass 4 (Multi-Candidate Ambiguity)**: Radar score breakdown (`invoice_similarity`, `amount_score`, `date_score`, `tax_score`), AI top pick recommendation, and Disambiguation Hub modal resolution.
+     - **Pass 5 (Residuals)**: Single-sided GSTR-2B only (unclaimed credit) and PR only (DRC-01C reversal risk).
+     - **Ultra-fast Telemetry Generator**: `simulate_rules_v5` executes simulated parameter impacts in <15ms.
+  4. *Comprehensive REST API Suite (`backend/app/api/reconciliations_v5.py`)*:
+     - Full 6-stage lifecycle: `/upload`, `/mapping`, `/mapping/confirm`, `/rules`, `/rules/confirm`, `/rules-v5/catalog`, `/rules-v5/simulate`, `/results/execute`, `/results`, `/records/{id}/reclassify`, `/records/{id}/recommend`, `/ambiguities/resolve`, `/summary`, `/export/...`, `/complete`.
+     - Session ID prefix `V5-` tracked in `audit_v2_service` for audit history and resume navigation.
+  5. *Frontend Experience (`frontend/src/`)*:
+     - `ReconciliationV5Workspace.tsx`: 6-stage orchestrator with live stage navigation, stepper breadcrumb, and sample loader.
+     - `ReconciliationV5RulesStage.tsx`: Interactive Stage 3 configuration with real-time simulation HUD.
+     - `ReconciliationV5ResultsStage.tsx`: Stage 4 Results with 5-tier match HUD, filter chips, multi-tranche constituent drawer inspector, Human-in-the-Loop Disambiguation Hub modal, and 5-category AI reclassification modal.
+     - `RulesWikiV2.tsx`: Added `Double Ledger Updated (Recon 5.0)` tab displaying 8 cross-table master rules in a Bento Grid with interactive normalizers, tolerances, and live simulation telemetry HUD.
+     - `App.tsx`: Added flyout sidebar link `Double Ledger (Updated)` pointing to `/reconciliations-v5`.
+  6. *Verification & Tests*:
+     - Pytest suites: 31/31 passed across V5 (`test_reconciliation_v5.py`), V4 (`test_reconciliation_v4.py`), and V2 (`test_reconciliation_v2.py`).
+     - TypeScript check: 0 errors.
+     - Browser verification: End-to-end execution of Stages 1-6 and Rules Wiki 5.0 tab recorded in WebP artifacts.
+
+---
+
 ## Reconciliation 4.0 • Stage 6 Column Universe Hydration & Export Studio Dispatch (13th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 4.0 Stage 6 Column Universe Hydration & Export Studio Dispatch`

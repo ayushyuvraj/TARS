@@ -77,6 +77,7 @@ import { AgenticDashboard } from "./AgenticDashboard";
 import { ReconciliationV2Workspace } from "./ReconciliationV2Workspace";
 import { ReconciliationV3Workspace } from "./ReconciliationV3Workspace";
 import { ReconciliationV4Workspace } from "./ReconciliationV4Workspace";
+import { ReconciliationV5Workspace } from "./ReconciliationV5Workspace";
 import { Audit2Workspace } from "./Audit2Workspace";
 
 type BusyState =
@@ -1547,12 +1548,13 @@ export default function App() {
               className={`sidebar-nav-item ${
                 loc.pathname.startsWith("/reconciliations-v2") ||
                 loc.pathname.startsWith("/reconciliations-v3") ||
-                loc.pathname.startsWith("/reconciliations-v4")
+                loc.pathname.startsWith("/reconciliations-v4") ||
+                loc.pathname.startsWith("/reconciliations-v5")
                   ? "active"
                   : ""
               }`}
               onClick={() => {
-                nav("/reconciliations-v4");
+                nav("/reconciliations-v5");
                 setNavOpen(false);
               }}
               data-tooltip={sidebarCollapsed ? "Reconciliation" : undefined}
@@ -1572,6 +1574,21 @@ export default function App() {
                 onMouseEnter={handleReconMouseEnter}
                 onMouseLeave={handleReconMouseLeave}
               >
+                <NavLink
+                  to="/reconciliations-v5"
+                  className={({ isActive }) =>
+                    `sidebar-flyout-item ${loc.pathname.startsWith("/reconciliations-v5") ? "active" : ""}`
+                  }
+                  onClick={() => {
+                    setReconMenuHovered(false);
+                    setNavOpen(false);
+                  }}
+                >
+                  <div className="sidebar-flyout-icon blue">
+                    <Files size={15} />
+                  </div>
+                  <span className="sidebar-flyout-label">Double Ledger (Updated)</span>
+                </NavLink>
                 <NavLink
                   to="/reconciliations-v4"
                   className={({ isActive }) =>
@@ -1674,7 +1691,7 @@ export default function App() {
           className={
             loc.pathname === "/dashboard"
               ? "workspace workspace--dashboard"
-              : loc.pathname.startsWith("/reconciliations-v2") || loc.pathname.startsWith("/reconciliations-v3") || loc.pathname.startsWith("/reconciliations-v4") || loc.pathname.startsWith("/rules-v2") || loc.pathname === "/rules"
+              : loc.pathname.startsWith("/reconciliations-v2") || loc.pathname.startsWith("/reconciliations-v3") || loc.pathname.startsWith("/reconciliations-v4") || loc.pathname.startsWith("/reconciliations-v5") || loc.pathname.startsWith("/rules-v2") || loc.pathname === "/rules"
               ? "workspace workspace--v2"
               : loc.pathname.startsWith("/audit-v2")
               ? "workspace workspace--audit-v2"
@@ -1928,6 +1945,9 @@ export default function App() {
             <Route path="/reconciliations-v4" element={<ReconciliationV4Workspace />} />
             <Route path="/reconciliations-v4/:id" element={<ReconciliationV4Workspace />} />
             <Route path="/reconciliations-v4/:id/:stage" element={<ReconciliationV4Workspace />} />
+            <Route path="/reconciliations-v5" element={<ReconciliationV5Workspace />} />
+            <Route path="/reconciliations-v5/:id" element={<ReconciliationV5Workspace />} />
+            <Route path="/reconciliations-v5/:id/:stage" element={<ReconciliationV5Workspace />} />
             <Route
               path="/quick-reconcile"
               element={

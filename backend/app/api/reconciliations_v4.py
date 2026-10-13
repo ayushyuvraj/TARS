@@ -235,13 +235,30 @@ def _load_df_safely_v4(path: Path, sheet_name: str | None = None) -> pd.DataFram
 
                 sheet = wb.get_sheet_by_name(target)
                 data = sheet.to_python()
+                # Find best header row (most non-empty text cells in first 10 rows)
                 header = None
                 rows = []
-                for idx, r in enumerate(data):
-                    if any(c is not None and str(c).strip() != "" for c in r):
-                        header = [str(c) if c is not None else f"Column_{i+1}" for i, c in enumerate(r)]
-                        rows = data[idx + 1 :]
-                        break
+                best_idx = 0
+                max_non_empty = 0
+                for idx, r in enumerate(data[:10]):
+                    cnt = sum(1 for c in r if c is not None and str(c).strip() != "")
+                    if cnt > max_non_empty:
+                        max_non_empty = cnt
+                        best_idx = idx
+
+                if max_non_empty > 0:
+                    raw_header = [str(c) if c is not None and str(c).strip() != "" else f"Column_{i+1}" for i, c in enumerate(data[best_idx])]
+                    seen_h: dict[str, int] = {}
+                    header = []
+                    for i, c in enumerate(raw_header):
+                        if c in seen_h:
+                            seen_h[c] += 1
+                            header.append(f"{c}_{seen_h[c]}")
+                        else:
+                            seen_h[c] = 1
+                            header.append(c)
+                    rows = data[best_idx + 1 :]
+
                 if header:
                     df = pd.DataFrame(rows, columns=header)
             except Exception as e_cal:
@@ -270,8 +287,17 @@ def _load_df_safely_v4(path: Path, sheet_name: str | None = None) -> pd.DataFram
                     n_cols = 0
                     for row in row_iter:
                         if header is None:
-                            if any(v is not None for v in row):
-                                header = [str(c) if c is not None else f"Column_{i+1}" for i, c in enumerate(row)]
+                            if any(v is not None and str(v).strip() != "" for v in row):
+                                raw_header = [str(c) if c is not None and str(c).strip() != "" else f"Column_{i+1}" for i, c in enumerate(row)]
+                                seen_h = {}
+                                header = []
+                                for i, c in enumerate(raw_header):
+                                    if c in seen_h:
+                                        seen_h[c] += 1
+                                        header.append(f"{c}_{seen_h[c]}")
+                                    else:
+                                        seen_h[c] = 1
+                                        header.append(c)
                                 n_cols = len(header)
                         else:
                             r_list = list(row)
@@ -294,6 +320,19 @@ def _load_df_safely_v4(path: Path, sheet_name: str | None = None) -> pd.DataFram
                     df = pd.read_excel(excel_file, sheet_name=sheet_to_read)
                 except Exception:
                     df = pd.read_excel(path)
+
+        if df is not None and not df.empty:
+            seen_final: dict[str, int] = {}
+            unique_final: list[str] = []
+            for i, c in enumerate(df.columns):
+                c_clean = str(c).strip() if str(c).strip() != "" else f"Column_{i+1}"
+                if c_clean in seen_final:
+                    seen_final[c_clean] += 1
+                    unique_final.append(f"{c_clean}_{seen_final[c_clean]}")
+                else:
+                    seen_final[c_clean] = 1
+                    unique_final.append(c_clean)
+            df.columns = unique_final
 
         try:
             df.to_pickle(fp_cache)

@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import logging
 
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from app.api.reconciliations import (
     get_mapping_workflow,
@@ -21,6 +25,7 @@ from app.api.reconciliations import (
 from app.api.reconciliations_v2 import router_v2
 from app.api.reconciliations_v3 import router_v3
 from app.api.reconciliations_v4 import router_v4
+from app.api.reconciliations_v5 import router_v5
 from app.config import Settings, get_settings
 from app.domain.models import HealthResponse
 from app.repositories.sqlite import SQLiteReconciliationRepository
@@ -122,7 +127,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.export_service = export_service
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[resolved.frontend_origin],
+        allow_origins=list({resolved.frontend_origin, "http://localhost:8000", "http://127.0.0.1:8000", "http://localhost:5173", "http://127.0.0.1:5173"}),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -151,6 +156,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(router_v2, prefix=resolved.api_prefix)
     app.include_router(router_v3, prefix=resolved.api_prefix)
     app.include_router(router_v4, prefix=resolved.api_prefix)
+    app.include_router(router_v5, prefix=resolved.api_prefix)
 
     @app.get("/health", response_model=HealthResponse, tags=["health"])
     def health() -> HealthResponse:
@@ -167,6 +173,24 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             "secrets_exposed": False,
             "deterministic_mode_available": True,
         })
+
+    # Serve built SPA frontend if dist/ exists (eliminates node/npm runtime requirement)
+    dist_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    if dist_dir.exists() and (dist_dir / "index.html").exists():
+        assets_dir = dist_dir / "assets"
+        if assets_dir.exists():
+            app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+
+        @app.get("/", include_in_schema=False)
+        async def serve_root():
+            return FileResponse(dist_dir / "index.html")
+
+        @app.get("/{full_path:path}", include_in_schema=False)
+        async def serve_spa(full_path: str):
+            candidate = dist_dir / full_path
+            if candidate.is_file():
+                return FileResponse(candidate)
+            return FileResponse(dist_dir / "index.html")
 
     return app
 

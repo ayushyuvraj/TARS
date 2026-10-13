@@ -2,27 +2,36 @@
              TARS GST RECONCILIATION WORKBENCH — KPMG EDITION
 ========================================================================
 
-QUICK START CHEAT SHEET (3 SIMPLE STEPS):
+ONE-TOUCH INSTANT START:
 
-1. CHECK PREREQUISITES:
-   Double-click:  verify_environment.bat
-   Confirm Python 3.11+ (64-bit) and Node.js 20+ LTS are installed.
+1. EXTRACT THIS ZIP FILE
+   Extract to any local folder (e.g., C:\TARS or Desktop\TARS).
 
-2. RUN SETUP (ONE TIME):
-   Double-click:  setup.bat
-   This automatically creates your .venv and installs all dependencies.
+2. DOUBLE-CLICK:  START_TARS.bat  (or run.bat)
+   - Automatically detects your Python 3.11+ runtime.
+   - Automatically creates the isolated virtual environment (.venv).
+   - Automatically installs required dependencies.
+   - Zero Node.js / npm required (enterprise UI is pre-compiled).
+   - Automatically launches TARS and opens your default browser at:
+     👉 http://127.0.0.1:8000
 
-3. LAUNCH TARS:
-   Double-click:  open_app.bat  (to stop: double-click stop_app.bat)
-   The app will automatically start and open in your browser at:
-   http://127.0.0.1:5173
+3. SAMPLE DATASETS READY TO USE:
+   Inside "sample_data\":
+   - 60,000-Row Multi-Tranche: TARS_KIGS_RECON_60000_Rows_Multi_Tranche_Scenarios.xlsx
+   - 20,000-Row Single Ledger: TARS_KIGS_RECON_20000_Rows_All_Scenarios.xlsx
+   - 2-Ledger Benchmark GSTR-2B: POC_Government_GST_Aug2026.xlsx
+   - 2-Ledger Purchase Register: POC_Purchase_Register_Aug2026.xlsx
 
 ------------------------------------------------------------------------
-OPENAI KEY SETUP:
+HOW TO STOP:
+Press any key in the START_TARS command window, or double-click stop_app.bat.
+
+OPTIONAL OPENAI KEY SETUP (FOR AI COPILOT):
 Open ".env" in Notepad and paste your key:
 OPENAI_API_KEY=sk-...
+(Note: Core reconciliation, rules engine, and Excel export work 100% offline
+ without any OpenAI key required).
 
 FULL DOCUMENTATION:
-See KPMG_DEPLOYMENT_GUIDE.md for detailed instructions, corporate
-proxy configurations, and sample data walk-throughs.
+See KPMG_DEPLOYMENT_GUIDE.md for proxy settings and detailed user guide.
 ========================================================================

@@ -308,9 +308,30 @@ def _fast_probe_xlsx(file_path: Path, preferred_sheet: str | None = None) -> tup
                         row_vals[c_i] = v
             grid.append(row_vals)
 
-        # First row is headers
-        headers = [c.strip() if c and c.strip() else f"Column_{i+1}" for i, c in enumerate(grid[0])]
-        samples = grid[1:]
+        # Identify the best header row (row in top 5 with highest number of non-empty text cells)
+        best_row_idx = 0
+        best_count = -1
+        for idx, r in enumerate(grid[:5]):
+            non_empty = sum(1 for c in r if c and str(c).strip() != "")
+            if non_empty > best_count:
+                best_count = non_empty
+                best_row_idx = idx
+
+        raw_headers = grid[best_row_idx] if grid else []
+        samples = grid[best_row_idx + 1:] if grid else []
+
+        # Deduplicate headers and replace empties with Column_{i+1}
+        seen: dict[str, int] = {}
+        headers: list[str] = []
+        for i, c in enumerate(raw_headers):
+            val = str(c).strip() if c and str(c).strip() else f"Column_{i+1}"
+            if val in seen:
+                seen[val] += 1
+                headers.append(f"{val}_{seen[val]}")
+            else:
+                seen[val] = 1
+                headers.append(val)
+
         return actual_sheet_name, headers, samples
 
 
@@ -368,12 +389,28 @@ class DirectSchemaCorrelatorV3:
                         sheet_name = xl.sheet_names[0]
                     df_preview = pd.read_excel(file_path, sheet_name=sheet_name, nrows=5)
 
+        # Enforce unique column names on df_preview
+        if df_preview is not None and not df_preview.empty:
+            seen_cols: dict[str, int] = {}
+            unique_cols: list[str] = []
+            for i, c in enumerate(df_preview.columns):
+                c_str = str(c).strip() if str(c).strip() else f"Column_{i+1}"
+                if c_str in seen_cols:
+                    seen_cols[c_str] += 1
+                    unique_cols.append(f"{c_str}_{seen_cols[c_str]}")
+                else:
+                    seen_cols[c_str] = 1
+                    unique_cols.append(c_str)
+            df_preview.columns = unique_cols
+
         columns = [str(c) for c in df_preview.columns]
         samples: dict[str, list[str]] = {}
         dtypes: dict[str, str] = {}
         for c in df_preview.columns:
-            samples[str(c)] = [str(v) for v in df_preview[c].dropna().tolist()[:3]]
-            dtypes[str(c)] = str(df_preview[c].dtype)
+            col_data = df_preview[c]
+            col_series = col_data.iloc[:, 0] if isinstance(col_data, pd.DataFrame) else col_data
+            samples[str(c)] = [str(v) for v in col_series.dropna().tolist()[:3]]
+            dtypes[str(c)] = str(col_series.dtype)
 
         probe_duration_ms = (time.perf_counter() - t0) * 1000.0
 

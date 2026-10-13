@@ -2425,7 +2425,9 @@ def resume_session_from_run(run_id: str):
     sess = audit_v2_service.get_session(session_id) if session_id else None
     recon_type = (sess or {}).get("recon_type", "v2")
     s_id_str = str(session_id or "")
-    if recon_type == "v4" or s_id_str.startswith("V4-"):
+    if recon_type == "v5" or s_id_str.startswith("V5-"):
+        base_url = "/reconciliations-v5"
+    elif recon_type == "v4" or s_id_str.startswith("V4-"):
         base_url = "/reconciliations-v4"
     elif recon_type == "v3" or s_id_str.startswith("V3-"):
         base_url = "/reconciliations-v3"

@@ -40,26 +40,21 @@ Before running the application on your KPMG laptop or virtual workstation, pleas
 
 ---
 
-## 2. Quick Start: 3-Step Setup
+## 2. Quick Start: One-Touch Launch
 
-### Step 1: Pre-Flight Health Check
-Double-click `verify_environment.bat` in the project root.  
-This automated script tests your Python version, Node.js version, and confirms that ports `8000` and `5173` are open.
+### The One-Touch Experience
+Simply extract the ZIP package and double-click:
+👉 **`START_TARS.bat`** (or `run.bat`)
 
-### Step 2: One-Click Installation
-Double-click `setup.bat`.  
-This script will:
-* Automatically create a dedicated virtual environment (`.venv`).
-* Install all required Python backend dependencies from `backend/requirements.txt`.
-* Install all React/Vite frontend packages from `frontend/package.json`.
-* Initialize your `.env` configuration file.
+The launcher automatically:
+1. **Detects your Python 3.11+ runtime** (probing PATH and enterprise Software Center directories).
+2. **Initializes an isolated virtual environment** (`.venv`).
+3. **Installs all Python dependencies** from `backend/requirements.txt` (with auto-fallback for corporate firewall/proxy).
+4. **Verifies the pre-compiled enterprise UI** (FastAPI serves the React web interface directly on port 8000 — **zero Node.js/npm required** on your laptop).
+5. **Boots the TARS engine and launches your default browser at:**  
+   👉 **`http://127.0.0.1:8000`**
 
-### Step 3: Launch the Application
-Double-click `run.bat` (or `START_TARS.bat`).  
-* The script boots the FastAPI backend and React frontend services.
-* Automatically verifies service health endpoints.
-* Automatically opens your default browser at:  
-  👉 **`http://127.0.0.1:5173`**
+*(To shut down TARS cleanly at any time, return to the launcher window and press any key, or double-click `stop_app.bat`).*
 
 ---
 

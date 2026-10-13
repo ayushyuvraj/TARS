@@ -416,6 +416,13 @@ const API_BASE = "/api/reconciliations-v2";
 
 const getReconBase = (sessionId: string) => {
   if (
+    sessionId.toUpperCase().startsWith("V5-") ||
+    sessionId.toLowerCase().includes("v5") ||
+    (typeof window !== "undefined" && window.location.pathname.includes("-v5"))
+  ) {
+    return "/api/reconciliations-v5";
+  }
+  if (
     sessionId.toUpperCase().startsWith("V4-") ||
     sessionId.toLowerCase().includes("v4") ||
     (typeof window !== "undefined" && window.location.pathname.includes("-v4"))

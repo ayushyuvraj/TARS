@@ -22,6 +22,12 @@ import {
   toggleNormalizerInConfigV4,
 } from "./api_v4";
 import {
+  apiV5,
+  Rule5Item,
+  configToActiveNormalizersV5,
+  toggleNormalizerInConfigV5,
+} from "./api_v5";
+import {
   Play,
   ChevronDown,
   Info,
@@ -73,7 +79,7 @@ function formatAuditDate(iso?: string | null): string {
 
 export const RulesWikiV2: React.FC = () => {
   const navigate = useNavigate();
-  const [reconMode, setReconMode] = useState<"v2" | "v3" | "v4">("v4");
+  const [reconMode, setReconMode] = useState<"v2" | "v3" | "v4" | "v5">("v5");
   const [rules, setRules] = useState<Rule2Item[]>([]);
   const [rulesV3, setRulesV3] = useState<Rule3Item[]>([]);
   const [rulesV4, setRulesV4] = useState<Rule4Item[]>([]);
@@ -90,6 +96,27 @@ export const RulesWikiV2: React.FC = () => {
 
   const toggleRuleExpandV4 = (ruleId: string) => {
     setExpandedRuleV4Ids((prev) => {
+      const next = new Set(prev);
+      if (next.has(ruleId)) next.delete(ruleId);
+      else next.add(ruleId);
+      return next;
+    });
+  };
+
+  const [rulesV5, setRulesV5] = useState<Rule5Item[]>([]);
+  const [selectedRuleV5Ids, setSelectedRuleV5Ids] = useState<Set<string>>(new Set());
+  const [expandedRuleV5Ids, setExpandedRuleV5Ids] = useState<Set<string>>(new Set());
+  const [explainingRuleV5, setExplainingRuleV5] = useState<Rule5Item | null>(null);
+  const [editingRuleV5, setEditingRuleV5] = useState<Rule5Item | null>(null);
+  const [editFormV5, setEditFormV5] = useState<Rule5Item | null>(null);
+  const [deleteModalStateV5, setDeleteModalStateV5] = useState<{
+    isOpen: boolean;
+    ruleIds: string[];
+    ruleName?: string;
+  } | null>(null);
+
+  const toggleRuleExpandV5 = (ruleId: string) => {
+    setExpandedRuleV5Ids((prev) => {
       const next = new Set(prev);
       if (next.has(ruleId)) next.delete(ruleId);
       else next.add(ruleId);
@@ -233,13 +260,20 @@ export const RulesWikiV2: React.FC = () => {
       }
 
       try {
-              try {
-        const catalogV4 = await apiV4.getMasterRulesCatalog();
-        const permV4 = (catalogV4 || []).filter((r: Rule4Item) => !r.is_temporary && r.scope !== "temporary");
-        setRulesV4(permV4);
-      } catch (e) {
-        console.warn("Could not load V4 rules catalog:", e);
-      }
+        try {
+          const catalogV5 = await apiV5.getMasterRulesCatalog();
+          const permV5 = (catalogV5 || []).filter((r: Rule5Item) => !r.is_temporary && r.scope !== "temporary");
+          setRulesV5(permV5);
+        } catch (e) {
+          console.warn("Could not load V5 rules catalog:", e);
+        }
+        try {
+          const catalogV4 = await apiV4.getMasterRulesCatalog();
+          const permV4 = (catalogV4 || []).filter((r: Rule4Item) => !r.is_temporary && r.scope !== "temporary");
+          setRulesV4(permV4);
+        } catch (e) {
+          console.warn("Could not load V4 rules catalog:", e);
+        }
         const catalogV3 = await apiV3.getMasterRulesCatalog();
         const permV3 = (catalogV3 || []).filter((r) => !r.is_temporary && r.scope !== "temporary");
         setRulesV3(permV3);
@@ -303,9 +337,15 @@ export const RulesWikiV2: React.FC = () => {
     }, 350);
 
     try {
-      const res = await apiV2.simulateRulesV2("master-catalog-preview", rulesToSimulate, controller.signal);
-      setSimulationResult(res);
-      setSimulationAborted(false);
+      if (reconMode === "v5") {
+        const res = await apiV5.simulateRules(rulesV5);
+        setSimulationResult(res);
+        setSimulationAborted(false);
+      } else {
+        const res = await apiV2.simulateRulesV2("master-catalog-preview", rulesToSimulate, controller.signal);
+        setSimulationResult(res);
+        setSimulationAborted(false);
+      }
     } catch (err: any) {
       if (err.name === "AbortError" || err.message?.includes("aborted")) {
         if (isExplicitAbortRef.current) {
@@ -795,6 +835,136 @@ export const RulesWikiV2: React.FC = () => {
     setEditFormV3(null);
   };
 
+  // --- V5 Handlers ---
+  const handleToggleRuleV5 = (id: string) => {
+    const updated = rulesV5.map((r) => (r.id === id ? { ...r, is_enabled: !r.is_enabled } : r));
+    setRulesV5(updated);
+    apiV5.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleToggleSelectRuleV5 = (id: string) => {
+    setSelectedRuleV5Ids((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllV5 = () => {
+    if (selectedRuleV5Ids.size === rulesV5.length) setSelectedRuleV5Ids(new Set());
+    else setSelectedRuleV5Ids(new Set(rulesV5.map((r) => r.id)));
+  };
+
+  const handleClearSelectionV5 = () => {
+    setSelectedRuleV5Ids(new Set());
+  };
+
+  const handleToggleNormalizerV5 = (id: string, normType: any) => {
+    const updated = rulesV5.map((r) => {
+      if (r.id === id) {
+        const nextNorms = toggleNormalizerInConfigV5(r.normalizers, normType);
+        return { ...r, normalizers: nextNorms };
+      }
+      return r;
+    });
+    setRulesV5(updated);
+    apiV5.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleSetMatchModeV5 = (id: string, mode: "EXACT" | "TOLERANCE") => {
+    const updated = rulesV5.map((r) => {
+      if (r.id === id) {
+        const isDateRule = r.match_strategy === "DATE_PROXIMITY" || r.id === "R5-04" || r.id === "R5-05";
+        if (mode === "EXACT") {
+          return { ...r, match_strategy: "EXACT", tolerance_value: 0, date_tolerance_value: 0 };
+        } else {
+          return {
+            ...r,
+            match_strategy: isDateRule ? "DATE_PROXIMITY" : "NUMERIC_TOLERANCE",
+            tolerance_value: r.tolerance_value && r.tolerance_value > 0 ? r.tolerance_value : 10.0,
+            date_tolerance_value: r.date_tolerance_value && r.date_tolerance_value > 0 ? r.date_tolerance_value : 30,
+          };
+        }
+      }
+      return r;
+    });
+    setRulesV5(updated);
+    apiV5.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleUpdateNumericTolV5 = (id: string, val: number, mode?: "ABSOLUTE_INR" | "PERCENTAGE") => {
+    const updated = rulesV5.map((r) => (r.id === id ? { ...r, tolerance_value: Math.max(0, val), ...(mode ? { tolerance_mode: mode } : {}) } : r));
+    setRulesV5(updated);
+    apiV5.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleUpdateDateTolV5 = (id: string, val: number, unit?: "DAYS" | "MONTHS" | "YEARS") => {
+    const updated = rulesV5.map((r) => (r.id === id ? { ...r, date_tolerance_value: Math.max(0, val), ...(unit ? { date_tolerance_unit: unit } : {}) } : r));
+    setRulesV5(updated);
+    apiV5.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const handleUpdateClientParamV5 = (id: string, updates: Partial<Rule5Item>) => {
+    const updated = rulesV5.map((r) => (r.id === id ? { ...r, ...updates } : r));
+    setRulesV5(updated);
+    apiV5.updateMasterRulesCatalog(updated).catch(console.error);
+  };
+
+  const promptDeleteSingleV5 = (rule: Rule5Item) => {
+    setDeleteModalStateV5({
+      isOpen: true,
+      ruleIds: [rule.id],
+      ruleName: rule.name,
+    });
+  };
+
+  const promptDeleteBatchV5 = () => {
+    if (selectedRuleV5Ids.size === 0) return;
+    setDeleteModalStateV5({
+      isOpen: true,
+      ruleIds: Array.from(selectedRuleV5Ids),
+    });
+  };
+
+  const handleConfirmDeleteV5 = async () => {
+    if (!deleteModalStateV5 || deleteModalStateV5.ruleIds.length === 0) return;
+    const idsToDelete = new Set(deleteModalStateV5.ruleIds);
+    const updatedRules = rulesV5.filter((r) => !idsToDelete.has(r.id));
+    setRulesV5(updatedRules);
+    setSelectedRuleV5Ids((prev) => {
+      const next = new Set(prev);
+      for (const id of idsToDelete) next.delete(id);
+      return next;
+    });
+    try {
+      localStorage.setItem("tars_master_rules_v5_catalog", JSON.stringify(updatedRules));
+      await apiV5.updateMasterRulesCatalog(updatedRules);
+    } catch {}
+    setDeleteModalStateV5(null);
+  };
+
+  const handleStartEditV5 = (rule: Rule5Item) => {
+    setEditingRuleV5(rule);
+    setEditFormV5({ ...rule });
+  };
+
+  const handleSaveEditV5 = async () => {
+    if (!editFormV5 || !editingRuleV5) return;
+    const updatedRule: Rule5Item = {
+      ...editFormV5,
+      version: editFormV5.version ? incrementVersion(editFormV5.version) : "1.1.0",
+    };
+    const updatedList = rulesV5.map((r) => (r.id === editingRuleV5.id ? updatedRule : r));
+    setRulesV5(updatedList);
+    try {
+      localStorage.setItem("tars_master_rules_v5_catalog", JSON.stringify(updatedList));
+      await apiV5.updateMasterRulesCatalog(updatedList);
+    } catch {}
+    setEditingRuleV5(null);
+    setEditFormV5(null);
+  };
+
   return (
     <div className="v2-executive-root">
       {/* 1. TOP EXECUTIVE TELEMETRY RIBBON */}
@@ -848,11 +1018,11 @@ export const RulesWikiV2: React.FC = () => {
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <button
                   type="button"
-                  onClick={() => setReconMode("v2")}
+                  onClick={() => setReconMode("v5")}
                   style={{
-                    background: reconMode === "v2" ? "#00338D" : "rgba(30, 41, 59, 0.7)",
-                    color: reconMode === "v2" ? "#ffffff" : "#94a3b8",
-                    border: reconMode === "v2" ? "1px solid #3b82f6" : "1px solid rgba(255, 255, 255, 0.08)",
+                    background: reconMode === "v5" ? "#00338D" : "rgba(30, 41, 59, 0.7)",
+                    color: reconMode === "v5" ? "#ffffff" : "#94a3b8",
+                    border: reconMode === "v5" ? "1px solid #3b82f6" : "1px solid rgba(255, 255, 255, 0.08)",
                     borderRadius: 8,
                     padding: "6px 14px",
                     fontSize: 12,
@@ -860,9 +1030,9 @@ export const RulesWikiV2: React.FC = () => {
                     cursor: "pointer",
                   }}
                 >
-                  Two-Table Rules (Recon 2.0)
+                  Double Ledger Updated (Recon 5.0)
                 </button>
-                                <button
+                <button
                   type="button"
                   onClick={() => setReconMode("v4")}
                   style={{
@@ -894,6 +1064,22 @@ export const RulesWikiV2: React.FC = () => {
                 >
                   Intra-Table Rules (Recon 3.0)
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setReconMode("v2")}
+                  style={{
+                    background: reconMode === "v2" ? "#00338D" : "rgba(30, 41, 59, 0.7)",
+                    color: reconMode === "v2" ? "#ffffff" : "#94a3b8",
+                    border: reconMode === "v2" ? "1px solid #3b82f6" : "1px solid rgba(255, 255, 255, 0.08)",
+                    borderRadius: 8,
+                    padding: "6px 14px",
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Two-Table Rules (Recon 2.0)
+                </button>
               </div>
             </div>
 
@@ -912,16 +1098,16 @@ export const RulesWikiV2: React.FC = () => {
           </div>
 
       {/* Floating Bulk Action Bar when rules are selected */}
-      {((reconMode === "v2" && selectedRuleIds.size > 0) || (reconMode === "v3" && selectedRuleV3Ids.size > 0)) && (
+      {((reconMode === "v5" && selectedRuleV5Ids.size > 0) || (reconMode === "v4" && selectedRuleV4Ids.size > 0) || (reconMode === "v3" && selectedRuleV3Ids.size > 0) || (reconMode === "v2" && selectedRuleIds.size > 0)) && (
         <div className="v2-bulk-bar">
           <div className="v2-bulk-info">
             <span className="v2-bulk-count-badge">
-              {reconMode === "v2" ? selectedRuleIds.size : selectedRuleV3Ids.size}
+              {reconMode === "v5" ? selectedRuleV5Ids.size : reconMode === "v4" ? selectedRuleV4Ids.size : reconMode === "v3" ? selectedRuleV3Ids.size : selectedRuleIds.size}
             </span>
             <span>
-              {(reconMode === "v2" ? selectedRuleIds.size : selectedRuleV3Ids.size) === 1
+              {(reconMode === "v5" ? selectedRuleV5Ids.size : reconMode === "v4" ? selectedRuleV4Ids.size : reconMode === "v3" ? selectedRuleV3Ids.size : selectedRuleIds.size) === 1
                 ? "1 rule selected"
-                : `${reconMode === "v2" ? selectedRuleIds.size : selectedRuleV3Ids.size} rules selected`}
+                : `${reconMode === "v5" ? selectedRuleV5Ids.size : reconMode === "v4" ? selectedRuleV4Ids.size : reconMode === "v3" ? selectedRuleV3Ids.size : selectedRuleIds.size} rules selected`}
             </span>
           </div>
 
@@ -929,17 +1115,17 @@ export const RulesWikiV2: React.FC = () => {
             <button
               type="button"
               className="btn-bulk-clear"
-              onClick={reconMode === "v2" ? handleClearSelection : handleClearSelectionV3}
+              onClick={reconMode === "v5" ? handleClearSelectionV5 : reconMode === "v4" ? () => setSelectedRuleV4Ids(new Set()) : reconMode === "v3" ? handleClearSelectionV3 : handleClearSelection}
             >
               Clear Selection
             </button>
             <button
               type="button"
               className="btn-bulk-delete"
-              onClick={reconMode === "v2" ? promptDeleteBatch : promptDeleteBatchV3}
+              onClick={reconMode === "v5" ? promptDeleteBatchV5 : reconMode === "v4" ? () => setDeleteModalStateV4({ isOpen: true, ruleIds: Array.from(selectedRuleV4Ids) }) : reconMode === "v3" ? promptDeleteBatchV3 : promptDeleteBatch}
             >
               <Trash2 size={14} />
-              <span>Delete Selected ({reconMode === "v2" ? selectedRuleIds.size : selectedRuleV3Ids.size})</span>
+              <span>Delete Selected ({reconMode === "v5" ? selectedRuleV5Ids.size : reconMode === "v4" ? selectedRuleV4Ids.size : reconMode === "v3" ? selectedRuleV3Ids.size : selectedRuleIds.size})</span>
             </button>
           </div>
         </div>
@@ -1160,7 +1346,466 @@ export const RulesWikiV2: React.FC = () => {
 
       {/* 3. Rules Catalog List */}
       <section style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-                {reconMode === "v4" ? (
+        {reconMode === "v5" ? (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <label style={{ display: "inline-flex", alignItems: "center", gap: 6, cursor: "pointer", fontSize: 13, fontWeight: 600, color: "#334155" }}>
+                  <input
+                    type="checkbox"
+                    className="v2-card-select-checkbox"
+                    checked={rulesV5.length > 0 && selectedRuleV5Ids.size === rulesV5.length}
+                    onChange={handleToggleSelectAllV5}
+                    title="Select all rules for bulk action"
+                  />
+                  <span>Select All</span>
+                </label>
+                <span style={{ color: "#94a3b8" }}>|</span>
+                <h2 style={{ fontSize: 16, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                  Double Ledger Master Rules ({rulesV5.filter((r) => r.is_enabled).length} of {rulesV5.length} active)
+                </h2>
+              </div>
+
+              <span style={{ fontSize: 12, color: "#64748b" }}>
+                Click rule card to view/configure comparison parameters, client policy boundaries & audit metadata.
+              </span>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {rulesV5.map((rule, idx) => {
+                const isDate = rule.match_strategy === "DATE_PROXIMITY" || rule.id === "R5-04" || rule.id === "R5-05" || rule.canonical_concept === "invoice_date" || rule.canonical_concept === "document_date";
+                const isExactMatch = isDate ? (!rule.date_tolerance_value || rule.date_tolerance_value === 0) : (!rule.tolerance_value || rule.tolerance_value === 0);
+                const activeNorms = configToActiveNormalizersV5(rule.normalizers);
+                const isExpanded = expandedRuleV5Ids.has(rule.id);
+                const isSelected = selectedRuleV5Ids.has(rule.id);
+
+                return (
+                  <div
+                    key={rule.id}
+                    id={`v5-rule-card-${rule.id}`}
+                    className={`v2-rule-item-card ${!rule.is_enabled ? "disabled" : ""} ${isExpanded ? "is-expanded" : ""} ${isSelected ? "is-selected" : ""}`}
+                  >
+                    {/* Compact Main Row */}
+                    <div
+                      className="v2-rule-compact-row"
+                      onClick={() => toggleRuleExpandV5(rule.id)}
+                      title={isExpanded ? "Click to collapse details" : "Click to expand configuration & audit metadata"}
+                    >
+                      {/* Left: Checkbox for batch selection, Apple switch enable toggle, Order #, Category, Name */}
+                      <div className="v2-rule-compact-left">
+                        <input
+                          type="checkbox"
+                          className="v2-card-select-checkbox"
+                          checked={isSelected}
+                          onChange={() => handleToggleSelectRuleV5(rule.id)}
+                          onClick={(e) => e.stopPropagation()}
+                          title={isSelected ? "Deselect rule" : "Select rule"}
+                        />
+
+                        <label
+                          className="v2-apple-switch"
+                          onClick={(e) => e.stopPropagation()}
+                          title={rule.is_enabled ? "Rule is Active. Click to disable" : "Rule is Disabled. Click to enable"}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={rule.is_enabled}
+                            onChange={() => handleToggleRuleV5(rule.id)}
+                          />
+                          <span className="v2-apple-switch-slider" />
+                        </label>
+
+                        <span className="v2-rule-order-badge">
+                          #{idx + 1}
+                        </span>
+
+                        <span className="v2-rule-category-pill">
+                          {rule.category.replaceAll("_", " ")}
+                        </span>
+
+                        <h3 className="v2-rule-name-text">
+                          {rule.name}
+                        </h3>
+                      </div>
+
+                      {/* Middle: Column Mapping & Parameter Summary */}
+                      <div className="v2-rule-compact-mid">
+                        <span className="v2-source-pill-compact" title={`Matched columns: GSTR-2B (${rule.gstr_column}) ⟷ PR (${rule.pr_column})`}>
+                          <strong className="gov">{rule.gstr_column}</strong>
+                          <span style={{ color: "#94a3b8" }}>⟷</span>
+                          <strong className="pr">{rule.pr_column}</strong>
+                        </span>
+
+                        {rule.rule_tier && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: "#1d4ed8",
+                              background: "#eff6ff",
+                              border: "1px solid #bfdbfe",
+                              padding: "2px 7px",
+                              borderRadius: 999,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                            title={`Seniority Waterfall: ${rule.rule_tier}`}
+                          >
+                            <ShieldCheck size={11} /> {rule.rule_tier}
+                          </span>
+                        )}
+
+                        {rule.origin_session_id && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: "#6d28d9",
+                              background: "#f3e8ff",
+                              border: "1px solid #d8b4fe",
+                              padding: "2px 7px",
+                              borderRadius: 999,
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                            title={`Adopted from session ${rule.origin_session_id}`}
+                          >
+                            <Sparkles size={11} /> Saved from Session
+                          </span>
+                        )}
+
+                        {/* Parameter Summary Badge */}
+                        {isExactMatch ? (
+                          <span className="v2-param-badge" style={{ background: "#ecfdf5", color: "#065f46", borderColor: "#a7f3d0" }} title="Exact match (0 variance)">
+                            Exact Match
+                          </span>
+                        ) : isDate ? (
+                          <span className="v2-param-badge date" title="Date tolerance parameter">
+                            ± {rule.date_tolerance_value || 30} {(rule.date_tolerance_unit || "DAYS").toLowerCase()}
+                          </span>
+                        ) : (
+                          <span className="v2-param-badge numeric" title="Numeric tolerance parameter">
+                            ± {rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value}%` : `₹${rule.tolerance_value || 10}`}
+                          </span>
+                        )}
+                        <span className="v2-param-badge" title="Active normalization rules count">
+                          {activeNorms.length} normalizer{activeNorms.length === 1 ? "" : "s"}
+                        </span>
+                      </div>
+
+                      {/* Right: Edit, Delete, Expand Chevron */}
+                      <div className="v2-rule-compact-right">
+                        <button
+                          type="button"
+                          className="v2-rule-action-btn edit"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartEditV5(rule);
+                          }}
+                          title="Edit rule name, columns, tolerances, or rationale"
+                        >
+                          <Edit3 size={12} />
+                          <span>Edit</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className="v2-rule-action-btn delete"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            promptDeleteSingleV5(rule);
+                          }}
+                          title="Delete rule permanently from catalog"
+                        >
+                          <Trash2 size={12} />
+                          <span>Delete</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          className={`v2-expand-chevron-btn ${isExpanded ? "expanded" : ""}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleRuleExpandV5(rule.id);
+                          }}
+                          title={isExpanded ? "Collapse ancillary details" : "Expand ancillary details"}
+                        >
+                          <ChevronDown size={15} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expanded Ancillary Drawer: 2-Column Mac Studio Pro Bento Layout */}
+                    {isExpanded && (
+                      <div className="v2-rule-expanded-drawer" onClick={(e) => e.stopPropagation()}>
+                        <div className="v2-pro-grid-layout">
+                          {/* LEFT COLUMN: Rule Intelligence, Rationale & Audit Lineage */}
+                          <div className="v2-pro-intelligence-card">
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              <div className="v2-pro-card-header">
+                                <ShieldCheck size={14} />
+                                <span>Rule Specification & Accounting Rationale</span>
+                              </div>
+
+                              <p className="v2-pro-desc">
+                                {rule.description}
+                              </p>
+
+                              <div className="v2-pro-rationale-callout">
+                                <Info size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                                <div>
+                                  <strong>Accounting Context:</strong> {rule.statutory_rationale || rule.why_it_matters || "Statutory reconciliation guardrail ensuring strict compliance with GST ITC claims."}
+                                </div>
+                              </div>
+
+                              {rule.canonical_concept && (
+                                <div className="v2-canonical-concept-chip">
+                                  Canonical concept: <code>{rule.canonical_concept}</code>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Bottom Action & Audit Strip */}
+                            <div className="v2-pro-lineage-footer">
+                              <button
+                                type="button"
+                                onClick={() => setExplainingRuleV5(rule)}
+                                className="v2-explain-pill-btn"
+                                title="Click to view deep-dive plain-English explanation, target columns & statutory rationale"
+                              >
+                                <Sparkles size={13} />
+                                <span>Explain Rule with AI</span>
+                              </button>
+
+                              <div className="v2-pro-lineage-meta">
+                                <div className="v2-audit-item" title="Timestamp when this rule was created">
+                                  <Clock size={11} color="#64748b" />
+                                  <span>{formatAuditDate(rule.created_at)}</span>
+                                </div>
+
+                                <div className="v2-audit-item" title="Author or system agent that authored this rule">
+                                  <User size={11} color="#64748b" />
+                                  <span>{rule.created_by || "System Standard Baseline"}</span>
+                                </div>
+
+                                <span className={`v2-audit-badge ${rule.is_temporary ? "ai" : "system"}`}>
+                                  v{rule.version || "1.0.0"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* RIGHT COLUMN: Interactive Engine Controls (Normalizers + Match Policy) */}
+                          <div className="v2-pro-controls-card">
+                            {/* SECTION 1: NORMALISERS */}
+                            <div className="v2-rule-section-block">
+                              <div className="v2-rule-section-header">
+                                <div className="v2-pro-card-header" style={{ color: "#334155" }}>
+                                  <Sliders size={13} />
+                                  <span>Section 1: Normalisation Pipeline</span>
+                                </div>
+                                <span className="v2-rule-section-count">
+                                  {activeNorms.length} active
+                                </span>
+                              </div>
+                              <div className="v2-norm-chips-wrap">
+                                {ALL_NORMALIZERS.map((norm) => {
+                                  const isActive = activeNorms.includes(norm.type);
+                                  return (
+                                    <button
+                                      key={norm.type}
+                                      type="button"
+                                      className={`v2-norm-chip ${isActive ? "is-active" : ""}`}
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleToggleNormalizerV5(rule.id, norm.type);
+                                      }}
+                                      title={norm.description}
+                                    >
+                                      {isActive && <CheckCircle2 size={12} />}
+                                      <span>{norm.label}</span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* SECTION 2: EXACT MATCH & TOLERANCE MATCH */}
+                            <div className="v2-rule-section-block">
+                              <div className="v2-rule-section-header">
+                                <div className="v2-pro-card-header" style={{ color: "#334155" }}>
+                                  <CheckCircle2 size={13} />
+                                  <span>Section 2: Match Policy & Variance</span>
+                                </div>
+                              </div>
+
+                              <div className="v2-match-mode-selector">
+                                <button
+                                  type="button"
+                                  className={`v2-mode-pill ${isExactMatch ? "is-active" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSetMatchModeV5(rule.id, "EXACT");
+                                  }}
+                                >
+                                  <CheckCircle2 size={13} />
+                                  <span>Exact Match</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`v2-mode-pill ${!isExactMatch ? "is-active" : ""}`}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSetMatchModeV5(rule.id, "TOLERANCE");
+                                  }}
+                                >
+                                  <Sliders size={13} />
+                                  <span>Tolerance Match</span>
+                                </button>
+                              </div>
+
+                              {isExactMatch ? (
+                                <div className="v2-exact-mode-info">
+                                  <CheckCircle2 size={13} color="#059669" />
+                                  <span>Strict 1-to-1 Equality: Permitting 0.00 variance after normalisation.</span>
+                                </div>
+                              ) : (
+                                <div className="v2-tolerance-control-group">
+                                  <span className="v2-tolerance-input-label">Permitted Variance:</span>
+                                  <div className="v2-tolerance-inputs-row">
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      step={!isDate && rule.tolerance_mode === "PERCENTAGE" ? 0.1 : 1}
+                                      className="v2-input-number"
+                                      value={isDate ? (rule.date_tolerance_value || 30) : (rule.tolerance_value || 10)}
+                                      onChange={(e) => {
+                                        e.stopPropagation();
+                                        const val = parseFloat(e.target.value) || 0;
+                                        if (isDate) {
+                                          handleUpdateDateTolV5(rule.id, Math.round(val));
+                                        } else {
+                                          handleUpdateNumericTolV5(rule.id, val);
+                                        }
+                                      }}
+                                    />
+
+                                    {isDate ? (
+                                      <select
+                                        className="v2-select-mode"
+                                        value={rule.date_tolerance_unit || "DAYS"}
+                                        onChange={(e) => {
+                                          e.stopPropagation();
+                                          handleUpdateDateTolV5(rule.id, rule.date_tolerance_value || 30, e.target.value as "DAYS" | "MONTHS" | "YEARS");
+                                        }}
+                                      >
+                                        <option value="DAYS">Absolute Days</option>
+                                        <option value="MONTHS">Months</option>
+                                        <option value="YEARS">Years</option>
+                                      </select>
+                                    ) : (
+                                      <select
+                                        className="v2-select-mode"
+                                        value={rule.tolerance_mode || "ABSOLUTE_INR"}
+                                        onChange={(e) => {
+                                          e.stopPropagation();
+                                          handleUpdateNumericTolV5(rule.id, rule.tolerance_value || 10, e.target.value as "ABSOLUTE_INR" | "PERCENTAGE");
+                                        }}
+                                      >
+                                        <option value="ABSOLUTE_INR">Absolute Amount (INR)</option>
+                                        <option value="PERCENTAGE">Percentage (%)</option>
+                                      </select>
+                                    )}
+
+                                    <span className="v2-tolerance-formula-hint">
+                                      {isDate
+                                        ? `(± ${rule.date_tolerance_value || 30} ${(rule.date_tolerance_unit || "DAYS").toLowerCase()})`
+                                        : `(|GSTR - PR| ≤ ${rule.tolerance_mode === "PERCENTAGE" ? `${rule.tolerance_value || 10}%` : `₹${rule.tolerance_value || 10}`})`}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Section 3: Specialized Client Rule Controls */}
+                            {(rule.cross_fy_enabled !== undefined || rule.min_threshold_ineligible !== undefined || rule.custom_date_range_days !== undefined || rule.id === "R5-06") && (
+                              <div className="v2-rule-section-block">
+                                <div className="v2-rule-section-header">
+                                  <div className="v2-pro-card-header" style={{ color: "#334155" }}>
+                                    <ShieldCheck size={13} />
+                                    <span>Section 3: Specialized Client Policy Parameters</span>
+                                  </div>
+                                </div>
+
+                                {rule.cross_fy_enabled !== undefined && (
+                                  <div style={{ marginTop: 8, padding: "8px 10px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                                    <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, fontWeight: 600, color: "#1e293b", cursor: "pointer" }}>
+                                      <input
+                                        type="checkbox"
+                                        checked={!!rule.cross_fy_enabled}
+                                        onChange={(e) => handleUpdateClientParamV5(rule.id, { cross_fy_enabled: e.target.checked })}
+                                      />
+                                      <span>Cross-Financial Year Boundary Allowance (March 31 vs April 2)</span>
+                                    </label>
+                                  </div>
+                                )}
+
+                                {rule.min_threshold_ineligible !== undefined && (
+                                  <div style={{ marginTop: 8, padding: "8px 10px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>Section 17(5) Gap Threshold:</span>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                      <span style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>₹</span>
+                                      <input
+                                        type="number"
+                                        min={0}
+                                        step={10}
+                                        value={rule.min_threshold_ineligible ?? 100}
+                                        onChange={(e) => handleUpdateClientParamV5(rule.id, { min_threshold_ineligible: parseFloat(e.target.value) || 0 })}
+                                        className="v2-input-number"
+                                        style={{ width: 85 }}
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+
+                                {rule.custom_date_range_days !== undefined && (
+                                  <div style={{ marginTop: 8, padding: "8px 10px", background: "#f8fafc", borderRadius: 8, border: "1px solid #e2e8f0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                    <span style={{ fontSize: 12, fontWeight: 600, color: "#334155" }}>Multi-Tranche Date Window:</span>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                      <input
+                                        type="number"
+                                        min={1}
+                                        max={365}
+                                        value={rule.custom_date_range_days ?? 31}
+                                        onChange={(e) => handleUpdateClientParamV5(rule.id, { custom_date_range_days: parseInt(e.target.value) || 31 })}
+                                        className="v2-input-number"
+                                        style={{ width: 75 }}
+                                      />
+                                      <span style={{ fontSize: 12, color: "#64748b" }}>Days</span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {rule.id === "R5-06" && (
+                                  <div style={{ marginTop: 8, padding: "8px 10px", background: "#eff6ff", borderRadius: 8, border: "1px solid #bfdbfe", fontSize: 12, color: "#1e40af", display: "flex", alignItems: "center", gap: 8 }}>
+                                    <Layers size={14} />
+                                    <span>Batch Consolidation enabled: Automatically resolves multi-invoice batching (1:N and N:1) with constituent audit breakdown.</span>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : reconMode === "v4" ? (
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -3339,6 +3984,256 @@ export const RulesWikiV2: React.FC = () => {
                 type="button"
                 className="btn-danger-confirm"
                 onClick={handleConfirmDeleteV4}
+              >
+                <Trash2 size={14} />
+                <span>Yes, Permanently Delete</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* --- V5 PLAIN ENGLISH EXPLANATION MODAL --- */}
+      {explainingRuleV5 && (
+        <div className="v2-modal-backdrop" onClick={() => setExplainingRuleV5(null)}>
+          <div className="v2-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="v2-modal-header">
+              <div>
+                <span className="v2-rules-eyebrow" style={{ marginBottom: 6 }}>
+                  {explainingRuleV5.category.replaceAll("_", " ")}
+                </span>
+                <h2 style={{ fontSize: 18, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                  {explainingRuleV5.name}
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setExplainingRuleV5(null)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="v2-modal-body">
+              <div className="v2-explain-section">
+                <span className="v2-explain-label">Plain-English Rule Explanation</span>
+                <div className="v2-explain-box">
+                  {explainingRuleV5.plain_english_explanation || explainingRuleV5.description}
+                </div>
+              </div>
+
+              <div className="v2-explain-section">
+                <span className="v2-explain-label">Two-Table Target Columns</span>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <div style={{ background: "#f1f5f9", padding: "10px 14px", borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, color: "#64748b", fontWeight: 600 }}>GOVERNMENT GSTR-2B</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "#0f172a", marginTop: 4 }}>
+                      {explainingRuleV5.gstr_column}
+                    </div>
+                  </div>
+                  <div style={{ background: "#ecfdf5", padding: "10px 14px", borderRadius: 8 }}>
+                    <div style={{ fontSize: 11, color: "#047857", fontWeight: 600 }}>PURCHASE REGISTER</div>
+                    <div style={{ fontSize: 13.5, fontWeight: 700, color: "#065f46", marginTop: 4 }}>
+                      {explainingRuleV5.pr_column}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="v2-explain-section">
+                <span className="v2-explain-label">Accounting & Regulatory Rationale</span>
+                <div className="v2-explain-box rationale">
+                  <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+                    <ShieldCheck size={18} style={{ flexShrink: 0, marginTop: 2 }} />
+                    <div>{explainingRuleV5.statutory_rationale || explainingRuleV5.why_it_matters}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="v2-modal-footer">
+              <button
+                type="button"
+                className="btn-primary-v2"
+                style={{ padding: "8px 18px", fontSize: 13 }}
+                onClick={() => setExplainingRuleV5(null)}
+              >
+                Close Explanation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- V5 EDIT RULE MODAL --- */}
+      {editingRuleV5 && editFormV5 && (
+        <div className="v2-delete-modal-overlay" onClick={() => { setEditingRuleV5(null); setEditFormV5(null); }}>
+          <div className="v2-edit-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 24px", borderBottom: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <Edit3 size={18} color="#2563eb" />
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: "#0f172a", margin: 0 }}>
+                  Edit Double Ledger Rule
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setEditingRuleV5(null); setEditFormV5(null); }}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#64748b" }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+              <div className="v2-edit-form-grid">
+                <div className="v2-edit-form-group">
+                  <label>Rule Name</label>
+                  <input
+                    type="text"
+                    className="v2-edit-input"
+                    value={editFormV5.name}
+                    onChange={(e) => setEditFormV5({ ...editFormV5, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="v2-edit-form-group">
+                  <label>Category</label>
+                  <input
+                    type="text"
+                    className="v2-edit-input"
+                    value={editFormV5.category}
+                    onChange={(e) => setEditFormV5({ ...editFormV5, category: e.target.value })}
+                  />
+                </div>
+
+                <div className="v2-edit-form-group">
+                  <label>GSTR-2B Target Column</label>
+                  <input
+                    type="text"
+                    className="v2-edit-input"
+                    value={editFormV5.gstr_column}
+                    onChange={(e) => setEditFormV5({ ...editFormV5, gstr_column: e.target.value })}
+                  />
+                </div>
+
+                <div className="v2-edit-form-group">
+                  <label>Purchase Register Target Column</label>
+                  <input
+                    type="text"
+                    className="v2-edit-input"
+                    value={editFormV5.pr_column}
+                    onChange={(e) => setEditFormV5({ ...editFormV5, pr_column: e.target.value })}
+                  />
+                </div>
+
+                <div className="v2-edit-form-group full">
+                  <label>Plain-English Description</label>
+                  <textarea
+                    rows={2}
+                    className="v2-edit-input"
+                    value={editFormV5.description}
+                    onChange={(e) => setEditFormV5({ ...editFormV5, description: e.target.value })}
+                  />
+                </div>
+
+                <div className="v2-edit-form-group full">
+                  <label>Statutory Rationale / Accounting Context</label>
+                  <textarea
+                    rows={2}
+                    className="v2-edit-input"
+                    value={editFormV5.statutory_rationale}
+                    onChange={(e) => setEditFormV5({ ...editFormV5, statutory_rationale: e.target.value })}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 10, padding: "14px 24px", borderTop: "1px solid #e2e8f0", background: "#f8fafc" }}>
+              <button
+                type="button"
+                className="btn-secondary-v2"
+                onClick={() => { setEditingRuleV5(null); setEditFormV5(null); }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-primary-v2"
+                onClick={handleSaveEditV5}
+              >
+                Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- V5 DELETE CONFIRMATION MODAL --- */}
+      {deleteModalStateV5 && deleteModalStateV5.isOpen && (
+        <div className="v2-delete-modal-overlay" onClick={() => setDeleteModalStateV5(null)}>
+          <div className="v2-delete-modal-card" onClick={(e) => e.stopPropagation()}>
+            <div className="v2-delete-modal-header">
+              <div className="v2-delete-icon-wrap">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 700, color: "#991b1b", margin: 0 }}>
+                  Permanently Delete Rule?
+                </h2>
+                <span style={{ fontSize: 12, color: "#7f1d1d" }}>
+                  Authoritative Reconciliation 5.0 Catalog Governance
+                </span>
+              </div>
+            </div>
+
+            <div className="v2-delete-modal-body">
+              <div className="v2-irreversible-caution-box">
+                <AlertTriangle size={24} color="#dc2626" style={{ flexShrink: 0, marginTop: 2 }} />
+                <div className="v2-caution-text-wrap">
+                  <span className="v2-caution-headline">
+                    CAUTION: THIS ACTION IS IRREVERSIBLE AND CANNOT BE REVERSED
+                  </span>
+                  <p className="v2-caution-message">
+                    Once deleted, this rule will be permanently removed from the Master Rules Wiki Catalog.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <span style={{ fontSize: 12, fontWeight: 600, color: "#475569", display: "block", marginBottom: 6 }}>
+                  Rule designated for permanent deletion:
+                </span>
+                <div className="v2-delete-item-list">
+                  {deleteModalStateV5.ruleIds.map((id) => {
+                    const item = rulesV5.find((r) => r.id === id);
+                    return (
+                      <div key={id} className="v2-delete-item-row">
+                        <span style={{ fontWeight: 600, color: "#0f172a" }}>
+                          {item ? item.name : id}
+                        </span>
+                        <span style={{ fontSize: 11, color: "#64748b" }}>
+                          {item?.category}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="v2-delete-modal-footer">
+              <button
+                type="button"
+                className="btn-secondary-v2"
+                onClick={() => setDeleteModalStateV5(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn-danger-confirm"
+                onClick={handleConfirmDeleteV5}
               >
                 <Trash2 size={14} />
                 <span>Yes, Permanently Delete</span>
