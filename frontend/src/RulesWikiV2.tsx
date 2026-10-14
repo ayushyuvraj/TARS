@@ -45,7 +45,6 @@ import {
   User,
   Layers,
   Sparkles,
-  ArrowLeft,
   RefreshCw,
 } from "lucide-react";
 import "./rules_v2.css";
@@ -991,19 +990,6 @@ export const RulesWikiV2: React.FC = () => {
         <div className="v2-rules-container">
           {/* 3. HERO BANNER (Unified Dark Royal Cobalt matching Stage 1 & Stage 4) */}
           <div className="v2-results-hero">
-            <div className="v2-hero-nav-left">
-              <button
-                type="button"
-                className="v2-hero-btn-back"
-                onClick={() => navigate("/dashboard")}
-                title="Return to Executive Dashboard"
-                aria-label="Back to Dashboard"
-              >
-                <ArrowLeft size={15} />
-                <span>Dashboard</span>
-              </button>
-            </div>
-
             <div className="v2-results-hero-content">
               <div className="v2-results-hero-title-row">
                 <h2 className="v2-results-hero-title">Rules Wiki 2.0</h2>

@@ -23,7 +23,6 @@ import {
   Files,
   History,
   Layers,
-  LayoutDashboard,
   Menu,
   MessageSquareText,
   PanelLeftClose,
@@ -73,7 +72,6 @@ import { FinalReviewWorkspace } from "./FinalReviewWorkspace";
 import { QuickReconcile } from "./QuickReconcile";
 import { RulesWiki } from "./RulesWiki";
 import { RulesWikiV2 } from "./RulesWikiV2";
-import { AgenticDashboard } from "./AgenticDashboard";
 import { ReconciliationV2Workspace } from "./ReconciliationV2Workspace";
 import { ReconciliationV3Workspace } from "./ReconciliationV3Workspace";
 import { ReconciliationV4Workspace } from "./ReconciliationV4Workspace";
@@ -628,7 +626,7 @@ export default function App() {
       heading?.focus();
     });
     const label = stages.find((item) => item.key === loc.pathname.split("/").pop())?.label;
-    document.title = `${label ?? (loc.pathname === "/dashboard" ? "Dashboard" : loc.pathname === "/overview" ? "Overview" : loc.pathname === "/rules" ? "Rules Wiki" : "GST reconciliation")} · TARS`;
+    document.title = `${label ?? (loc.pathname === "/overview" ? "Overview" : loc.pathname === "/rules" ? "Rules Wiki" : "GST reconciliation")} · TARS`;
   }, [loc.pathname]);
   useEffect(() => {
     if (copilotMode === "pill") return;
@@ -1689,9 +1687,7 @@ export default function App() {
           <main
             id="workspace"
           className={
-            loc.pathname === "/dashboard"
-              ? "workspace workspace--dashboard"
-              : loc.pathname.startsWith("/reconciliations-v2") || loc.pathname.startsWith("/reconciliations-v3") || loc.pathname.startsWith("/reconciliations-v4") || loc.pathname.startsWith("/reconciliations-v5") || loc.pathname.startsWith("/rules-v2") || loc.pathname === "/rules"
+            loc.pathname.startsWith("/reconciliations-v2") || loc.pathname.startsWith("/reconciliations-v3") || loc.pathname.startsWith("/reconciliations-v4") || loc.pathname.startsWith("/reconciliations-v5") || loc.pathname.startsWith("/rules-v2") || loc.pathname === "/rules"
               ? "workspace workspace--v2"
               : loc.pathname.startsWith("/audit-v2")
               ? "workspace workspace--audit-v2"
@@ -1711,11 +1707,9 @@ export default function App() {
             <Route
               path="/dashboard"
               element={
-                <AgenticDashboard
-                  onSelectReconciliation={(id, stage) => nav(`/reconciliations/${id}/${stage || "setup"}`)}
-                  onStartNew={startNew}
-                  onOpenCopilot={() => setCopilotOpen(true)}
-                  activeSessionId={sessionId}
+                <Navigate
+                  to="/reconciliations-v2"
+                  replace
                 />
               }
             />

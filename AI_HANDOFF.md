@@ -1,5 +1,27 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation Workspaces • Dashboard Decommissioning & Stage 1 Load Sample Removal (14th October 2026)
+
+- **Checkpoint Name**: `Dashboard Decommissioning & Stage 1 Sample Removal Checkpoint`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-14-decommission-dashboard-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Decommission Legacy Dashboard & Route Cleanup (`frontend/src/App.tsx`)*:
+     - Decommissioned `AgenticDashboard` component and cleaned up unused `LayoutDashboard` lucide imports.
+     - Removed `/dashboard` document title handler and `.workspace--dashboard` CSS layout branch.
+     - Redirected `/dashboard` to `/reconciliations-v2` so legacy bookmarks and URLs seamlessly route to the primary reconciliation workspace.
+  2. *Reconciliation Hero Banner Cleanups (`frontend/src/ReconciliationV2Workspace.tsx`, `ReconciliationV3Workspace.tsx`, `ReconciliationV4Workspace.tsx`, `ReconciliationV5Workspace.tsx`, `RulesWikiV2.tsx`)*:
+     - Removed the `"← Dashboard"` back navigation button and its `.v2-hero-nav-left` flex wrapper from Stage 1 hero banners across all four reconciliation versions (Recon 2.0, 3.0, 4.0, and 5.0) and Rules Wiki 2.0.
+     - Cleaned up unused `ArrowLeft` imports across all workspace files.
+  3. *Reconciliation 5.0 Stage 1 Sample Loader Removal (`frontend/src/ReconciliationV5Workspace.tsx`)*:
+     - Removed the `#v5-load-sample-btn` ("Load Sample Datasets") button from the hero action bar in Stage 1, bringing Recon 5.0 into exact visual parity with Reconciliation 2.0.
+  4. *Verification & Tests*:
+     - Frontend compilation (`tsc -b && vite build`): 0 errors, build completed in ~1.09s.
+     - Backend tests (`pytest backend/tests/test_reconciliation_v5.py`): 8/8 passed (100%).
+
+---
+
 ## Reconciliation 5.0 • UI/UX Alignment, Results Engine Compatibility & Session Routing Fixes (14th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 5.0 UI/UX Alignment, Results Engine Compatibility & Session Routing Fixes`

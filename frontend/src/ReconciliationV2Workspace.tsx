@@ -25,7 +25,6 @@ import {
   ShieldCheck,
   RefreshCw,
   ArrowRight,
-  ArrowLeft,
   ArrowLeftRight,
   Check,
   Trash2,
@@ -727,19 +726,6 @@ export const ReconciliationV2Workspace: React.FC = () => {
             <div className="v2-setup-flow">
             {/* 1. HERO BANNER (Unified Dark Royal Cobalt matching Stage 4) */}
             <div className="v2-stage-hero">
-              <div className="v2-hero-nav-left">
-                <button
-                  type="button"
-                  className="v2-hero-btn-back"
-                  onClick={() => navigate("/dashboard")}
-                  title="Return to Executive Dashboard"
-                  aria-label="Back to Dashboard"
-                >
-                  <ArrowLeft size={15} />
-                  <span>Dashboard</span>
-                </button>
-              </div>
-
               <div className="v2-stage-hero-center">
                 <h2 className="v2-stage-hero-title">Bring the two ledgers together.</h2>
                 <div className="v2-stage-hero-tag">
