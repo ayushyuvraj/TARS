@@ -37,11 +37,30 @@ import {
   AmbiguityCluster,
   AmbiguityRecommendation,
 } from "./api_v2";
-import { apiV5 } from "./api_v5";
+import { apiV5, ReconciliationRecordItemV5 } from "./api_v5";
 import { copilotV2Bridge } from "./copilot_v2_bridge";
 import "./results_v2.css";
 import "./reconciliation_v2.css";
 import "./results_v4.css";
+
+export type ReconciliationRecordItemV5Extended = ReconciliationRecordItem & {
+  source_gstin?: string;
+  target_gstin?: string;
+  source_doc_num?: string;
+  target_doc_num?: string;
+  source_date?: string;
+  target_date?: string;
+  source_taxable?: number;
+  target_taxable?: number;
+  source_tax?: number;
+  target_tax?: number;
+  taxable_diff?: number;
+  tax_diff?: number;
+  pass_tier?: string;
+};
+export type Stage4ExecutionResponseV5 = Omit<Stage4ExecutionResponse, "records"> & {
+  records: ReconciliationRecordItemV5Extended[];
+};
 
 interface ResultsStageProps {
   sessionId: string;
@@ -169,7 +188,7 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
   onBackToRules,
   onProceedToSummary,
 }) => {
-  const [data, setData] = useState<Stage4ExecutionResponse | null>(null);
+  const [data, setData] = useState<Stage4ExecutionResponseV5 | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRerunning, setIsRerunning] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -187,7 +206,7 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
   const [isResolving, setIsResolving] = useState<boolean>(false);
 
   // Ambiguity Manual Classification Modal
-  const [selectedAmbiguousRecord, setSelectedAmbiguousRecord] = useState<ReconciliationRecordItem | null>(null);
+  const [selectedAmbiguousRecord, setSelectedAmbiguousRecord] = useState<ReconciliationRecordItemV5Extended | null>(null);
   const [recommendation, setRecommendation] = useState<AmbiguityRecommendation | null>(null);
   const [isLoadingRecommendation, setIsLoadingRecommendation] = useState<boolean>(false);
   const [targetBucket, setTargetBucket] = useState<string>("EXACT_MATCH");
@@ -203,7 +222,12 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const resp = await apiV2.getStage4Results(sessionId);
+      let resp: any = null;
+      try {
+        resp = await apiV5.getStage4Results(sessionId);
+      } catch {
+        resp = await apiV2.getStage4Results(sessionId);
+      }
       setData(resp);
     } catch (err: any) {
       // Results not run yet. Show launchpad
@@ -224,7 +248,14 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
     }, 60);
 
     try {
-      const backendPromise = apiV2.executeStage4Results(sessionId);
+      const backendPromise = (async () => {
+        try {
+          return await apiV5.executeStage4Results(sessionId);
+        } catch (errV5: any) {
+          console.warn("apiV5.executeStage4Results failed, falling back to apiV2:", errV5);
+          return await apiV2.executeStage4Results(sessionId);
+        }
+      })();
 
       // Smooth progressive visual pacing across tiers 1 through 4 (~450ms per pass)
       for (let p = 1; p <= 4; p++) {
@@ -233,10 +264,14 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
       }
 
       const resp = await backendPromise;
-      setData(resp);
+      if (!resp || !resp.records) {
+        throw new Error("Empty or invalid results payload returned from reconciliation engine.");
+      }
+      setData(resp as any);
       setExecPass(5);
       await new Promise((r) => setTimeout(r, 650));
     } catch (err: any) {
+      console.error("Reconciliation execution error:", err);
       setErrorMessage(err.message || "Failed to run reconciliation waterfall.");
     } finally {
       clearInterval(timer);
@@ -251,7 +286,12 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
   ) => {
     setIsResolving(true);
     try {
-      const updated = await apiV2.resolveAmbiguity(sessionId, clusterId, chosenCandidateId, action);
+      let updated: any = null;
+      try {
+        updated = await apiV5.resolveAmbiguity(sessionId, clusterId, chosenCandidateId, action);
+      } catch {
+        updated = await apiV2.resolveAmbiguity(sessionId, clusterId, chosenCandidateId, action);
+      }
       setData(updated);
       setSelectedCluster(null);
     } catch (err: any) {
@@ -261,7 +301,7 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
     }
   };
 
-  const handleOpenReclassifyModal = async (rec: ReconciliationRecordItem) => {
+  const handleOpenReclassifyModal = async (rec: ReconciliationRecordItemV5Extended) => {
     // Check if an ambiguity cluster exists for this record
     if (rec.ambiguity_cluster_id && data?.ambiguities && data.ambiguities.length > 0) {
       const cluster = data.ambiguities.find((c) => c.cluster_id === rec.ambiguity_cluster_id);
@@ -275,7 +315,12 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
     setReviewerNote("");
     try {
       const recId = rec.id || String(rec.gstr_row_index ?? 0);
-      const recResp = await apiV2.getRecordRecommendation(sessionId, recId, rec);
+      let recResp: any = null;
+      try {
+        recResp = await apiV5.getRecordRecommendation(sessionId, recId, rec);
+      } catch {
+        recResp = await apiV2.getRecordRecommendation(sessionId, recId, rec);
+      }
       setRecommendation(recResp);
       setTargetBucket(recResp.recommended_bucket || "EXACT_MATCH");
     } catch (err: any) {
@@ -298,7 +343,12 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
       setReviewerNote("");
       try {
         const recId = matchingRec.id || String(matchingRec.gstr_row_index ?? 0);
-        const recResp = await apiV2.getRecordRecommendation(sessionId, recId, matchingRec);
+        let recResp: any = null;
+        try {
+          recResp = await apiV5.getRecordRecommendation(sessionId, recId, matchingRec);
+        } catch {
+          recResp = await apiV2.getRecordRecommendation(sessionId, recId, matchingRec);
+        }
         setRecommendation(recResp);
         setTargetBucket(recResp.recommended_bucket || "EXACT_MATCH");
       } catch (err: any) {
@@ -349,7 +399,7 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
 
       // Optimistic local update fallback — guarantees immediate UI update identical to Recon 2.0 / 3.0
       const currentRecords = data?.records || [];
-      const updatedRecords: ReconciliationRecordItem[] = currentRecords.map((r) => {
+      const updatedRecords: ReconciliationRecordItemV5Extended[] = currentRecords.map((r) => {
         const matchesRec =
           r.id === selectedAmbiguousRecord.id ||
           (selectedAmbiguousRecord.gstr_row_index !== undefined && r.gstr_row_index === selectedAmbiguousRecord.gstr_row_index) ||
@@ -561,11 +611,13 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
       // 3. Search Filter
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim();
-        const gstinMatch = rec.gstin?.toLowerCase().includes(q);
-        const docMatch = rec.document_number?.toLowerCase().includes(q);
-        const reasonMatch = rec.classification_reason?.toLowerCase().includes(q);
-        const gstrPreview = JSON.stringify(rec.gstr_preview).toLowerCase();
-        const prPreview = JSON.stringify(rec.pr_preview).toLowerCase();
+        const gstinVal = rec.gstin || rec.source_gstin || rec.target_gstin || "";
+        const docVal = rec.document_number || rec.source_doc_num || rec.target_doc_num || "";
+        const gstinMatch = gstinVal.toLowerCase().includes(q);
+        const docMatch = docVal.toLowerCase().includes(q);
+        const reasonMatch = (rec.classification_reason || "").toLowerCase().includes(q);
+        const gstrPreview = JSON.stringify(rec.gstr_preview || {}).toLowerCase();
+        const prPreview = JSON.stringify(rec.pr_preview || {}).toLowerCase();
         if (!gstinMatch && !docMatch && !reasonMatch && !gstrPreview.includes(q) && !prPreview.includes(q)) {
           return false;
         }
@@ -779,7 +831,7 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
 
         <div className="v2-results-hero-content">
           <div className="v2-results-hero-title-row">
-            <h2 className="v2-results-hero-title">Deterministic Match Matrix &amp; Ambiguity Hub (Recon 4.0)</h2>
+            <h2 className="v2-results-hero-title">Deterministic Match Matrix &amp; Ambiguity Hub (Recon 5.0)</h2>
             <div className="v2-results-stage-tag">
               <Sparkles size={12} />
               <span>Stage 4 of 6 • Multi-Pass Reconciliation Matrix • KPMG Client Rules Active</span>
@@ -796,7 +848,7 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
             className="v2-btn-rerun"
             onClick={handleRerunWaterfall}
             disabled={isRerunning}
-            title={!data ? "Execute reconciliation engine across single-ledger workbook" : "Re-run reconciliation waterfall with active rules"}
+            title={!data ? "Execute reconciliation engine across dual workbooks (GSTR-2B & Purchase Register)" : "Re-run reconciliation waterfall with active rules"}
           >
             {isRerunning ? (
               <>
@@ -829,7 +881,35 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
         </div>
       </div>
 
-
+      {/* ERROR BANNER */}
+      {errorMessage && (
+        <div
+          style={{
+            margin: "16px 0",
+            padding: "12px 18px",
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            borderRadius: 10,
+            color: "#991b1b",
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            fontSize: 13.5,
+            fontWeight: 500,
+          }}
+        >
+          <AlertCircle size={18} style={{ flexShrink: 0, color: "#dc2626" }} />
+          <div style={{ flex: 1 }}>{errorMessage}</div>
+          <button
+            type="button"
+            onClick={() => setErrorMessage(null)}
+            style={{ background: "transparent", border: "none", cursor: "pointer", color: "#991b1b", padding: 4 }}
+            title="Dismiss error message"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      )}
 
       {/* 3. EXECUTIVE 6-CATEGORY SUMMARY HUD (TIER 1 MACRO PASSES - COMPACT SENIORITY) */}
       {summary && (
@@ -1141,7 +1221,7 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
                           Reconciliation Engine Ready to Execute
                         </span>
                         <span style={{ fontSize: 12.5, color: "#64748b", maxWidth: 480, textAlign: "center", lineHeight: 1.5 }}>
-                          Your single-ledger workbook and KPMG client matching rules are loaded. Click <strong>"Reconcile"</strong> in the top hero banner to run the 5-pass progressive elimination waterfall.
+                          Your dual workbooks (GSTR-2B &amp; Purchase Register) and KPMG client matching rules are loaded. Click <strong>"Reconcile"</strong> in the top hero banner to run the 5-pass progressive elimination waterfall.
                         </span>
                       </div>
                     ) : (
@@ -1248,27 +1328,27 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
                           </div>
                         </td>
                         <td>
-                          <span className="v2-gstin-code">{rec.gstin || "—"}</span>
+                          <span className="v2-gstin-code">{rec.gstin || rec.source_gstin || rec.target_gstin || "—"}</span>
                         </td>
                         <td>
-                          <span className="v2-doc-num">{rec.document_number || "—"}</span>
+                          <span className="v2-doc-num">{rec.document_number || rec.source_doc_num || rec.target_doc_num || "—"}</span>
                         </td>
                         <td>
-                          <span style={{ fontSize: 12.5, color: "#64748b" }}>{rec.document_date || "—"}</span>
+                          <span style={{ fontSize: 12.5, color: "#64748b" }}>{rec.document_date || rec.source_date || rec.target_date || "—"}</span>
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <span className="v2-money-amt">
-                            ₹{rec.taxable_value.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                            ₹{(Number(rec.taxable_value ?? rec.source_taxable ?? 0) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <span className="v2-money-amt" style={{ color: "#00338d", fontWeight: 700 }}>
-                            ₹{rec.tax_amount.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                            ₹{(Number(rec.tax_amount ?? rec.source_tax ?? 0) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </td>
                         <td style={{ textAlign: "right" }}>
                           <span className="v2-money-amt">
-                            ₹{rec.total_value.toLocaleString("en-IN", { minimumFractionDigits: 2 })}
+                            ₹{(Number(rec.total_value ?? ((rec.taxable_value ?? rec.source_taxable ?? 0) + (rec.tax_amount ?? rec.source_tax ?? 0))) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                           </span>
                         </td>
                         <td>

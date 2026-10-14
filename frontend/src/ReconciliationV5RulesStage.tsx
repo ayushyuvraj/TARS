@@ -337,30 +337,38 @@ export const ReconciliationV5RulesStage: React.FC<Props> = ({
   const enabledRules = rules.filter((r) => r.is_enabled);
 
   return (
-    <div className="v2-executive-root">
-      {/* 1. Header Hero Card */}
-      <div className="v2-results-hero-card" style={{ marginBottom: 20 }}>
-        <div className="v2-results-hero-left">
-          <div className="v2-hero-title-group">
-            <span className="v2-hero-eyebrow">STAGE 3 • DOUBLE LEDGER GOVERNANCE PLANE</span>
-            <h1 className="v2-hero-title">Authoritative Reconciliation Rules (Recon 5.0)</h1>
-            <p className="v2-hero-subtitle">
-              Dual-table matching engine executing 8 KPMG client rules across Government GSTR-2B and Client Purchase Register.
-            </p>
+    <div className="v2-rules-container">
+      {/* 1. HERO BANNER */}
+      <div className="v2-results-hero" style={{ marginBottom: 20 }}>
+        {onBackToMapping && (
+          <div className="v2-hero-nav-left">
+            <button
+              type="button"
+              className="v2-hero-btn-back"
+              onClick={onBackToMapping}
+              title="Return to Stage 2: Schema Mapping"
+              aria-label="Back to Schema Mapping"
+            >
+              <ArrowLeft size={15} />
+              <span>Back to Schema Mapping</span>
+            </button>
           </div>
+        )}
+
+        <div className="v2-results-hero-content">
+          <div className="v2-results-hero-title-row">
+            <h2 className="v2-results-hero-title">Authoritative Reconciliation Rules (Recon 5.0)</h2>
+            <div className="v2-results-stage-tag">
+              <Sparkles size={12} />
+              <span>Stage 3 of 6 • Double Ledger Governance Plane</span>
+            </div>
+          </div>
+          <p className="v2-results-hero-desc">
+            Dual-table matching engine executing 8 KPMG client rules across Government GSTR-2B and Client Purchase Register.
+          </p>
         </div>
 
         <div className="v2-results-hero-actions">
-          <button
-            type="button"
-            className="v2-hero-btn-secondary"
-            onClick={onBackToMapping}
-            title="Return to Stage 2: Schema Mapping"
-          >
-            <ArrowLeft size={14} />
-            <span>Back to Mapping</span>
-          </button>
-
           <button
             type="button"
             className="v2-hero-btn-secondary"

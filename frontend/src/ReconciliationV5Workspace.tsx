@@ -11,6 +11,7 @@ import { ReconciliationV5RulesStage } from "./ReconciliationV5RulesStage";
 import { ReconciliationV5ResultsStage } from "./ReconciliationV5ResultsStage";
 import { ReconciliationV2SummaryStage } from "./ReconciliationV2SummaryStage";
 import { ReconciliationV2ExportStage } from "./ReconciliationV2ExportStage";
+import "./reconciliation_v2.css";
 import "./rules_v2.css";
 import "./results_v2.css";
 import "./results_v4.css";
@@ -179,77 +180,181 @@ export const ReconciliationV5Workspace: React.FC = () => {
     }
   };
 
-  // Sync route stage changes
+  // Auto-trigger when both files are selected
+  const hasAutoTriggered = useRef(false);
   useEffect(() => {
-    if (routeStage && routeStage !== currentStage) {
-      setCurrentStage(routeStage as V5Stage);
+    if (gstrFile && prFile && !hasAutoTriggered.current && currentStage === "setup") {
+      hasAutoTriggered.current = true;
+      executeFastUploadAndMapping(gstrFile, prFile);
     }
-  }, [routeStage]);
+  }, [gstrFile, prFile, currentStage]);
 
-  // Hydrate session on mount
+  // Sync route stage with internal stage and enforce progressive stage unlocking
   useEffect(() => {
-    const hydrateSession = async () => {
-      let targetId = routeSessionId || localStorage.getItem("tars_v5_active_session_id");
-
-      if (targetId) {
-        setIsHydrating(true);
-        try {
-          const session = await apiV5.getSession(targetId);
-          setSessionId(session.id);
-          localStorage.setItem("tars_v5_active_session_id", session.id);
-          setSessionStatus(session.status);
-
-          if (session.correlation) {
-            setCorrelationResult(session.correlation);
-            if (session.correlation.agent_thoughts) {
-              setAgentThoughts(session.correlation.agent_thoughts);
-            }
-          }
-
-          if (session.is_completed || session.status === "completed" || session.status === "exported") {
-            setHasExported(true);
-            setHasVisitedSummary(true);
-            setHasVisitedResults(true);
-            setRulesConfirmed(true);
-            setMappingConfirmed(true);
-          } else if (session.status === "reconciled") {
-            setHasVisitedResults(true);
-            setRulesConfirmed(true);
-            setMappingConfirmed(true);
-          } else if (session.status === "rules_confirmed") {
-            setRulesConfirmed(true);
-            setMappingConfirmed(true);
-          } else if (session.status === "mapping_confirmed") {
-            setMappingConfirmed(true);
-          }
-
-          if (!routeStage && session.current_stage) {
-            setCurrentStage(session.current_stage as V5Stage);
-            navigate(`/reconciliations-v5/${session.id}/${session.current_stage}`, { replace: true });
-          }
-        } catch (err) {
-          console.warn("Could not hydrate existing V5 session, initializing new:", err);
-          initNewSession();
-        } finally {
-          setIsHydrating(false);
+    if (routeStage && !isHydrating) {
+      const normalizedStage = routeStage === "policy" ? "rules" : (routeStage as V5Stage);
+      if (isStageUnlocked(normalizedStage)) {
+        if (normalizedStage !== currentStage) {
+          setCurrentStage(normalizedStage);
         }
       } else {
-        initNewSession();
+        const highestUnlocked = [...V5_STAGES].reverse().find((s) => isStageUnlocked(s.key))?.key || "setup";
+        if (highestUnlocked !== currentStage && sessionId) {
+          setCurrentStage(highestUnlocked);
+          navigate(`/reconciliations-v5/${sessionId}/${highestUnlocked}`, { replace: true });
+        }
       }
+    }
+  }, [routeStage, routeSessionId, isHydrating]);
+
+  // Register session context with Katalyst Copilot
+  useEffect(() => {
+    const stageNumMap: Record<string, number> = {
+      setup: 1,
+      mapping: 2,
+      rules: 3,
+      results: 4,
+      summary: 5,
+      export: 6,
+    };
+    const currentNum = stageNumMap[currentStage] || 1;
+    const stageLabelMap: Record<string, string> = {
+      setup: "Setup & Dual Ingestion",
+      mapping: "Mapping (Schema Coupling)",
+      rules: "Rules Studio & Tolerances",
+      results: "Waterfall Match Matrix",
+      summary: "Executive Tax Flight Deck",
+      export: "Visual Export Studio",
     };
 
-    hydrateSession();
+    copilotV2Bridge.setContext({
+      activeStage: currentStage,
+      stageNumber: currentNum,
+      stageLabel: stageLabelMap[currentStage] || "Reconciliation 5.0",
+      sessionId: sessionId,
+      gstrFilename: gstrFile?.name || correlationResult?.gstr_filename || undefined,
+      prFilename: prFile?.name || correlationResult?.pr_filename || undefined,
+    });
+  }, [currentStage, sessionId, gstrFile, prFile, correlationResult]);
+
+  // Handle external copilot actions
+  useEffect(() => {
+    const unregNav = copilotV2Bridge.registerActionHandler("NAVIGATE_STAGE", (payload: any) => {
+      if (payload?.target_stage) {
+        const target = payload.target_stage as V5Stage;
+        if (sessionId && isStageUnlocked(target)) {
+          setCurrentStage(target);
+          navigate(`/reconciliations-v5/${sessionId}/${target}`);
+        }
+      }
+    });
+
+    const unregReconcile = copilotV2Bridge.registerActionHandler("RUN_RECONCILIATION", () => {
+      if (sessionId && isStageUnlocked("results")) {
+        setCurrentStage("results");
+        navigate(`/reconciliations-v5/${sessionId}/results`);
+      }
+    });
+
+    const unregAutoRec = copilotV2Bridge.registerActionHandler("AUTO_RECONCILE_SUCCESS", (payload: any) => {
+      if (payload?.session_id) {
+        setSessionId(payload.session_id);
+        setCurrentStage("results");
+        navigate(`/reconciliations-v5/${payload.session_id}/results`);
+      }
+    });
+
+    return () => {
+      unregNav();
+      unregReconcile();
+      unregAutoRec();
+    };
+  }, [sessionId, navigate]);
+
+  // Session hydration / creation logic:
+  // 1. If routeSessionId is present in URL (e.g. /reconciliations-v5/:id or /reconciliations-v5/:id/:stage),
+  //    hydrate that specific session.
+  // 2. If routeSessionId is NOT present (e.g. clicking sidebar link /reconciliations-v5),
+  //    automatically create a BRAND NEW session via apiV5.createSession() and redirect to /reconciliations-v5/<new-id>/setup.
+  useEffect(() => {
+    if (isHydrating) return;
+
+    if (routeSessionId) {
+      if (sessionId !== routeSessionId || !correlationResult) {
+        setIsHydrating(true);
+        apiV5
+          .getSession(routeSessionId)
+          .then((session) => {
+            setSessionId(session.id);
+            localStorage.setItem("tars_v5_active_session_id", session.id);
+            setSessionStatus(session.status);
+
+            if (session.correlation) {
+              setCorrelationResult(session.correlation);
+              if (session.correlation.agent_thoughts) {
+                setAgentThoughts(session.correlation.agent_thoughts);
+              }
+            }
+
+            if (session.is_completed || session.status === "completed" || session.status === "exported") {
+              setHasExported(true);
+              setHasVisitedSummary(true);
+              setHasVisitedResults(true);
+              setRulesConfirmed(true);
+              setMappingConfirmed(true);
+            } else if (session.status === "reconciled") {
+              setHasVisitedResults(true);
+              setRulesConfirmed(true);
+              setMappingConfirmed(true);
+            } else if (session.status === "rules_confirmed") {
+              setRulesConfirmed(true);
+              setMappingConfirmed(true);
+            } else if (session.status === "mapping_confirmed") {
+              setMappingConfirmed(true);
+            }
+
+            if (!routeStage && session.current_stage) {
+              setCurrentStage(session.current_stage as V5Stage);
+              navigate(`/reconciliations-v5/${session.id}/${session.current_stage}`, { replace: true });
+            }
+          })
+          .catch((err) => {
+            console.warn("Could not hydrate existing V5 session, initializing new:", err);
+            initNewSession();
+          })
+          .finally(() => {
+            setIsHydrating(false);
+          });
+      }
+    } else {
+      initNewSession();
+    }
   }, [routeSessionId]);
 
   const initNewSession = async () => {
+    setIsHydrating(true);
+    setGstrFile(null);
+    setPrFile(null);
+    setCorrelationResult(null);
+    setAgentThoughts([]);
+    setMappingConfirmed(false);
+    setRulesConfirmed(false);
+    setHasVisitedResults(false);
+    setHasVisitedSummary(false);
+    setHasExported(false);
+    hasAutoTriggered.current = false;
+    setCurrentStage("setup");
     try {
       const newSession = await apiV5.createSession();
       setSessionId(newSession.id);
+      setSessionStatus(newSession.status || "setup");
       localStorage.setItem("tars_v5_active_session_id", newSession.id);
       navigate(`/reconciliations-v5/${newSession.id}/setup`, { replace: true });
     } catch (err: any) {
       console.error("Failed to initialize V5 session:", err);
       setErrorMessage("Could not connect to TARS reconciliation engine.");
+    } finally {
+      setIsHydrating(false);
     }
   };
 
@@ -373,7 +478,11 @@ export const ReconciliationV5Workspace: React.FC = () => {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
+  const [isResetting, setIsResetting] = useState(false);
+
   const resetAll = async () => {
+    if (isResetting) return;
+    setIsResetting(true);
     setGstrFile(null);
     setPrFile(null);
     setCorrelationResult(null);
@@ -382,6 +491,8 @@ export const ReconciliationV5Workspace: React.FC = () => {
     setRulesConfirmed(false);
     setHasVisitedResults(false);
     setHasVisitedSummary(false);
+    setHasExported(false);
+    hasAutoTriggered.current = false;
     setCurrentStage("setup");
     try {
       const sess = await apiV5.createSession();
@@ -391,6 +502,8 @@ export const ReconciliationV5Workspace: React.FC = () => {
     } catch {
       setSessionId(null);
       navigate(`/reconciliations-v5`);
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -431,10 +544,11 @@ export const ReconciliationV5Workspace: React.FC = () => {
                 <button
                   type="button"
                   onClick={resetAll}
-                  className="v2-btn-reset-icon"
+                  className={`v2-btn-reset-icon ${isResetting ? "is-spinning" : ""}`}
                   title="Reset Reconciliation Session"
+                  disabled={isResetting}
                 >
-                  <RefreshCw size={12} />
+                  <RefreshCw size={13} />
                 </button>
               )}
             </div>
@@ -442,66 +556,98 @@ export const ReconciliationV5Workspace: React.FC = () => {
         </div>
       </div>
 
-      {/* 2. 6-STAGE WORKFLOW PROGRESS RAIL */}
-      <div className="v2-stepper-rail-wrap">
-        <div className="v2-stepper-rail">
-          {V5_STAGES.map((st) => {
-            const isCompleted = isStageCompleted(st.key);
-            const isCurrent = currentStage === st.key;
-            const isUnlocked = isStageUnlocked(st.key);
+      {/* 2. LINEAR-STYLE HORIZONTAL PIPELINE STEPPER */}
+      <nav className="v2-pipeline-ribbon">
+        <div className="v2-pipeline-track">
+          {V5_STAGES.map((s, idx) => {
+            const isActive = currentStage === s.key;
+            const isUnlocked = isStageUnlocked(s.key);
+            const isCompleted = isStageCompleted(s.key);
+            const isLocked = !isUnlocked;
 
             return (
-              <div
-                key={st.key}
-                onClick={() => {
-                  if (isUnlocked && sessionId) {
-                    setCurrentStage(st.key);
-                    navigate(`/reconciliations-v5/${sessionId}/${st.key}`);
-                  }
-                }}
-                className={`v2-step-card ${isCurrent ? "is-current" : ""} ${isCompleted ? "is-completed" : ""} ${!isUnlocked ? "is-locked" : ""}`}
-              >
-                <div className="v2-step-indicator">
-                  {isCompleted && !isCurrent ? (
-                    <span className="v2-check-glyph">✓</span>
-                  ) : (
-                    <span>{st.number}</span>
-                  )}
-                </div>
-                <div className="v2-step-meta">
-                  <span className="v2-step-label">{st.label}</span>
-                  <span className="v2-step-sub">{st.subtitle}</span>
-                </div>
-              </div>
+              <React.Fragment key={s.key}>
+                <button
+                  type="button"
+                  disabled={isLocked}
+                  title={isLocked ? `Stage ${s.number} (${s.label}) is locked until previous steps are completed` : undefined}
+                  onClick={() => {
+                    if (sessionId && isUnlocked) {
+                      setCurrentStage(s.key);
+                      navigate(`/reconciliations-v5/${sessionId}/${s.key}`);
+                    }
+                  }}
+                  className={`v2-pipeline-node ${isActive ? "is-active" : ""} ${isCompleted ? "is-completed" : ""} ${isLocked ? "is-locked" : ""}`}
+                >
+                  <div className="v2-node-number-ring">
+                    {isCompleted ? <Check size={12} strokeWidth={2.5} /> : s.number}
+                  </div>
+                  <div className="v2-node-text-col">
+                    <span className="v2-node-label">{s.label}</span>
+                    <span className="v2-node-subtitle">{s.subtitle}</span>
+                  </div>
+                  {isActive && <div className="v2-node-active-bar" />}
+                </button>
+                {idx < V5_STAGES.length - 1 && (
+                  <div className={`v2-pipeline-connector ${isCompleted ? "is-filled" : ""}`} />
+                )}
+              </React.Fragment>
             );
           })}
         </div>
-      </div>
+      </nav>
 
-      {/* 3. ERROR BANNER */}
-      {errorMessage && (
-        <div className="v2-alert-error" style={{ margin: "16px 24px" }}>
-          <AlertCircle size={16} />
-          <span>{errorMessage}</span>
-          <button type="button" onClick={() => setErrorMessage(null)} className="v2-alert-close">
-            <X size={14} />
-          </button>
-        </div>
-      )}
+      {/* 3. CENTER WORKSPACE CANVAS (FLEX SCROLLABLE CONTAINER) */}
+      <main className={`v2-stage-canvas ${currentStage === "setup" ? "v2-stage-canvas--setup" : "v2-stage-canvas--scrollable"}`}>
+        {isSessionCompleted && currentStage !== "export" && (
+          <div className="v2-read-only-banner">
+            <ShieldCheck size={14} style={{ flexShrink: 0 }} className="text-emerald-500" />
+            <span>Completed Audit Session — Read-Only Inspection Mode</span>
+          </div>
+        )}
 
-      {/* 4. MAIN WORKSPACE CONTENT AREA */}
-      <div className="v2-stage-viewport">
+        {errorMessage && (
+          <div className="v2-alert-error">
+            <AlertCircle size={16} style={{ flexShrink: 0 }} />
+            <div>
+              <strong>Error in Ingestion Pipeline:</strong> {errorMessage}
+            </div>
+            <button type="button" onClick={() => setErrorMessage(null)} className="v2-alert-close" style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "inherit" }}>
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         {/* ========================================================================= */}
-        {/* STAGE 1: DUAL FILE INGESTION (RECON 2.0 PARITY)                           */}
+        {/* STAGE 1: DUAL PRECISION NEURAL DOCKING BAYS (ZERO-SCROLL VIEWPORT)        */}
         {/* ========================================================================= */}
         {currentStage === "setup" && (
-          <div className="v2-stage-frame">
-            <div className="v2-stage-hero-card">
-              <div className="v2-stage-hero-left">
-                <span className="v2-stage-tag">STAGE 1 • DUAL INGESTION</span>
-                <h2 className="v2-stage-heading">Ingest Separate GSTR-2B & Purchase Register Files</h2>
-                <p className="v2-stage-description">
-                  Upload your Government GSTR-2B extract and Client Purchase Register separately. Intelligent agents automatically match columns in seconds.
+          <div className={`v2-setup-stage-wrapper ${isSessionCompleted ? "v2-read-only-wrapper" : ""}`}>
+            {isSessionCompleted && <div className="v2-read-only-shield" aria-hidden="true" />}
+            <div className="v2-setup-flow">
+            {/* 1. HERO BANNER (Unified Dark Royal Cobalt matching Stage 4) */}
+            <div className="v2-stage-hero">
+              <div className="v2-hero-nav-left">
+                <button
+                  type="button"
+                  className="v2-hero-btn-back"
+                  onClick={() => navigate("/dashboard")}
+                  title="Return to Executive Dashboard"
+                  aria-label="Back to Dashboard"
+                >
+                  <ArrowLeft size={15} />
+                  <span>Dashboard</span>
+                </button>
+              </div>
+
+              <div className="v2-stage-hero-center">
+                <h2 className="v2-stage-hero-title">Bring the two ledgers together.</h2>
+                <div className="v2-stage-hero-tag">
+                  <Sparkles size={12} />
+                  <span>Stage 1 of 6 • Dual Ingestion Docking Bay</span>
+                </div>
+                <p className="v2-stage-hero-desc">
+                  Upload your Government GSTR-2B extract and Client Purchase Register. Intelligent agents automatically match columns in seconds.
                 </p>
               </div>
 
@@ -526,6 +672,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
                       setGstrFile(null);
                       setPrFile(null);
                       setCorrelationResult(null);
+                      hasAutoTriggered.current = false;
                     }}
                     title="Clear selected workbooks"
                   >
@@ -567,7 +714,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
               </div>
             </div>
 
-            {/* Ingestion Docking Bay Terminals */}
+            {/* Ingestion Docking Bay Terminals (Doppelrand Architecture) */}
             <div className="v2-docking-grid">
               {/* TERMINAL 1: GOVERNMENT GSTR-2B */}
               <div
@@ -584,6 +731,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
                 className={`v2-dock-shell gstr ${isDraggingOver === "gstr" ? "is-dragging" : ""} ${effectiveGstrName ? "has-payload" : ""}`}
               >
                 <div className="v2-dock-core">
+                  {/* Terminal Header Bar */}
                   <div className="v2-terminal-header">
                     <div className="v2-terminal-tag">
                       <span className="v2-dot-indicator blue" />
@@ -592,6 +740,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
                     <span className="v2-format-badge">OFFICIAL GSTN PORTAL</span>
                   </div>
 
+                  {/* Content Bay */}
                   <div className="v2-terminal-body">
                     {effectiveGstrName ? (
                       <div className="v2-payload-card">
@@ -613,6 +762,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
                             e.stopPropagation();
                             setGstrFile(null);
                             if (correlationResult) setCorrelationResult(null);
+                            hasAutoTriggered.current = false;
                           }}
                           className="v2-payload-remove-btn"
                           title="Remove file"
@@ -651,7 +801,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
                 </div>
               </div>
 
-              {/* CENTER NEURAL NEXUS */}
+              {/* CENTER NEURAL NEXUS (AI OPTICAL BRIDGE) */}
               <div className="v2-neural-nexus">
                 <div className="v2-nexus-core">
                   <div className="v2-pulse-ring-outer" />
@@ -660,13 +810,16 @@ export const ReconciliationV5Workspace: React.FC = () => {
                     <Sparkles size={16} className="v2-sparkle-spin" />
                   </div>
                 </div>
-                <div className="v2-nexus-label">
-                  <span>NEURAL COUPLING</span>
-                  <small>Double Ledger</small>
+                <div className="v2-nexus-label-col">
+                  <span className="v2-nexus-title">TARS AGENTIC AI</span>
+                  <span className="v2-nexus-sub">Double Ledger Correlator</span>
+                </div>
+                <div className="v2-nexus-flow-arrow">
+                  <ArrowLeftRight size={15} />
                 </div>
               </div>
 
-              {/* TERMINAL 2: PURCHASE REGISTER */}
+              {/* TERMINAL 2: PURCHASE REGISTER (ERP) */}
               <div
                 onDragOver={(e) => {
                   e.preventDefault();
@@ -681,14 +834,16 @@ export const ReconciliationV5Workspace: React.FC = () => {
                 className={`v2-dock-shell pr ${isDraggingOver === "pr" ? "is-dragging" : ""} ${effectivePrName ? "has-payload" : ""}`}
               >
                 <div className="v2-dock-core">
+                  {/* Terminal Header Bar */}
                   <div className="v2-terminal-header">
                     <div className="v2-terminal-tag">
-                      <span className="v2-dot-indicator purple" />
-                      <span>INTERNAL ERP REGISTER</span>
+                      <span className="v2-dot-indicator steel" />
+                      <span>CLIENT ACCOUNTING LEDGER</span>
                     </div>
-                    <span className="v2-format-badge">SAP / TALLY / ORACLE</span>
+                    <span className="v2-format-badge">ERP REGISTER</span>
                   </div>
 
+                  {/* Content Bay */}
                   <div className="v2-terminal-body">
                     {effectivePrName ? (
                       <div className="v2-payload-card">
@@ -710,6 +865,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
                             e.stopPropagation();
                             setPrFile(null);
                             if (correlationResult) setCorrelationResult(null);
+                            hasAutoTriggered.current = false;
                           }}
                           className="v2-payload-remove-btn"
                           title="Remove file"
@@ -720,19 +876,19 @@ export const ReconciliationV5Workspace: React.FC = () => {
                       </div>
                     ) : (
                       <div className="v2-drop-prompt">
-                        <div className="v2-holographic-halo purple">
-                          <FileSpreadsheet size={22} className="v2-holo-icon" />
+                        <div className="v2-holographic-halo steel">
+                          <Database size={22} className="v2-holo-icon" />
                         </div>
-                        <h3 className="v2-drop-title">Purchase Register (PR)</h3>
+                        <h3 className="v2-drop-title">Purchase Register / ERP</h3>
                         <p className="v2-drop-subtitle">
-                          Drag & drop ERP purchase ledger or browse local spreadsheets
+                          Drag & drop your client accounts workbook or browse local storage
                         </p>
 
-                        <label className="v2-browse-button purple">
+                        <label className="v2-browse-button steel">
                           <span className="v2-btn-icon-capsule">
                             <UploadCloud size={13} />
                           </span>
-                          <span>Select PR File</span>
+                          <span>Select Purchase Register</span>
                           <input
                             type="file"
                             accept=".xlsx,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -749,7 +905,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
               </div>
             </div>
 
-            {/* Action Bar */}
+            {/* Action Bar (Static In-Flow Height - Zero Layout Shift) */}
             <div className="v2-action-terminal-bar">
               {correlationResult ? (
                 <div className="v2-ready-action-card">
@@ -794,39 +950,45 @@ export const ReconciliationV5Workspace: React.FC = () => {
               ) : (
                 <div className="v2-telemetry-conduit">
                   <div className="v2-conduit-node">
-                    <span className="v2-conduit-dot" />
-                    <span>Awaiting files for dual-table ingestion</span>
+                    <span className={`v2-conduit-pip ${effectiveGstrName ? "is-primed" : ""}`} />
+                    <span>Sovereign 2B {effectiveGstrName ? "Primed" : "Awaiting"}</span>
+                  </div>
+                  <span className="v2-conduit-divider">•</span>
+                  <div className="v2-conduit-node">
+                    <span className={`v2-conduit-pip ${effectivePrName ? "is-primed" : ""}`} />
+                    <span>Client ERP {effectivePrName ? "Primed" : "Awaiting"}</span>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Dynamic Modal Loading Screen */}
+            {/* AGENTIC INGESTION PIPELINE MODAL HUD (Zero Layout Shift with Frosted Blur) */}
             {isUploadingAndCorrelating && (
-              <div className="v2-agentic-modal-backdrop">
-                <div className="v2-agentic-modal-card">
-                  <div className="v2-agentic-modal-header">
-                    <div className="v2-modal-brand-capsule">
-                      <Sparkles size={14} className="v2-sparkle-spin" />
-                      <span>AGENTIC SCHEMA CORRELATION</span>
+              <div className="v2-cot-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="v2-cot-title">
+                <div className="v2-cot-modal-shell">
+                  <div className="v2-cot-modal-core">
+                    <div className="v2-cot-header">
+                      <div className="v2-cot-title-row">
+                        <span className="v2-status-dot-pulse" />
+                        <span id="v2-cot-title" className="v2-cot-title">Autonomous Ingestion & Multi-Agent Pipeline</span>
+                      </div>
+                      <span className="v2-cot-timer">{elapsedSec.toFixed(1)}s elapsed</span>
                     </div>
-                    <div className="v2-modal-timer-badge">
-                      <span className="v2-timer-dot" />
-                      <span>{elapsedSec.toFixed(1)}s elapsed</span>
-                    </div>
-                  </div>
 
-                  <div className="v2-agentic-modal-body">
-                    <div className="v2-cot-stepper-list">
+                    <p className="v2-cot-modal-sub">
+                      Correlating Sovereign GSTR-2B with Enterprise ERP across structural schema fields...
+                    </p>
+
+                    <div className="v2-cot-steps-grid">
                       {chainSteps.map((st) => (
-                        <div key={st.id} className={`v2-cot-step-item ${st.status}`}>
-                          <div className="v2-cot-step-bullet">
+                        <div key={st.id} className={`v2-cot-step-tile is-${st.status}`}>
+                          <div className="v2-cot-step-icon">
                             {st.status === "completed" ? (
-                              <CheckCircle2 size={16} className="text-emerald-500" />
+                              <CheckCircle2 size={16} className="v2-step-check" />
                             ) : st.status === "running" ? (
-                              <RefreshCw size={15} className="v2-spin text-blue-500" />
+                              <RefreshCw size={14} className="v2-spin text-blue-500" />
                             ) : (
-                              <span>{st.num}</span>
+                              <span className="v2-step-num-dot">{st.num}</span>
                             )}
                           </div>
                           <div className="v2-cot-step-content">
@@ -844,10 +1006,71 @@ export const ReconciliationV5Workspace: React.FC = () => {
                         </div>
                       ))}
                     </div>
+
+                    {/* Bottom Micro-Progress Bar */}
+                    <div className="v2-cot-progress-track">
+                      <div
+                        className="v2-cot-progress-fill"
+                        style={{
+                          width: `${(chainSteps.filter((s) => s.status === "completed").length / chainSteps.length) * 100}%`
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
             )}
+            {/* Precision Enterprise Assurance Modules */}
+            <div className="v2-trust-grid">
+              <div className="v2-trust-shell">
+                <div className="v2-trust-core">
+                  <span className="v2-trust-badge">High-Throughput Engine</span>
+                  <div className="v2-trust-header-row">
+                    <div className="v2-trust-icon-box blue">
+                      <Zap size={15} />
+                    </div>
+                    <h4>Instant High-Throughput Ingestion</h4>
+                  </div>
+                  <p>
+                    Processes large multi-sheet Excel workbooks in seconds with zero browser freezing and memory virtualization.
+                  </p>
+                  <div className="v2-trust-foot">Streaming Dual-Ledger Ingestion Engine</div>
+                </div>
+              </div>
+
+              <div className="v2-trust-shell">
+                <div className="v2-trust-core">
+                  <span className="v2-trust-badge">Autonomous Alignment</span>
+                  <div className="v2-trust-header-row">
+                    <div className="v2-trust-icon-box steel">
+                      <Cpu size={15} />
+                    </div>
+                    <h4>Smart Column Auto-Match</h4>
+                  </div>
+                  <p>
+                    Intelligent agents read varied ERP column headers (Bill No, Taxable Value, etc.) and accurately map to GSTN standards.
+                  </p>
+                  <div className="v2-trust-foot">Automatic Schema Detection</div>
+                </div>
+              </div>
+
+              <div className="v2-trust-shell">
+                <div className="v2-trust-core">
+                  <span className="v2-trust-badge">Statutory Integrity</span>
+                  <div className="v2-trust-header-row">
+                    <div className="v2-trust-icon-box green">
+                      <ShieldCheck size={15} />
+                    </div>
+                    <h4>Deterministic Tax Accuracy</h4>
+                  </div>
+                  <p>
+                    All GSTIN checksums and arithmetic computations verified down to the rupee. Autonomous advice, human authority.
+                  </p>
+                  <div className="v2-trust-foot">Auditable & Human-Governed</div>
+                </div>
+              </div>
+            </div>
+            </div>
           </div>
         )}
 
@@ -990,7 +1213,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
             }}
           />
         )}
-      </div>
+      </main>
     </div>
   );
 };

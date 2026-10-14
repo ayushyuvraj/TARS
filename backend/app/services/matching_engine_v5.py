@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import numpy as np
 import pandas as pd
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.domain.models import CanonicalDataType
 from app.services.matching_engine_v2 import (
@@ -130,6 +130,33 @@ class ReconciliationRecordItemV5(BaseModel):
     raw_attributes: dict[str, Any] = Field(default_factory=dict)
     gstr_preview: dict[str, Any] = Field(default_factory=dict)
     pr_preview: dict[str, Any] = Field(default_factory=dict)
+
+    # UI Compatibility Fields (Used by Results Table & Inspector)
+    gstin: str = ""
+    document_number: str = ""
+    document_date: str | None = None
+    taxable_value: float = 0.0
+    tax_amount: float = 0.0
+    total_value: float = 0.0
+    gstr_row_index: int | None = None
+    pr_row_index: int | None = None
+    ambiguity_cluster_id: str | None = None
+
+    @model_validator(mode="after")
+    def _populate_ui_compat_fields(self) -> ReconciliationRecordItemV5:
+        if not self.gstin:
+            self.gstin = self.source_gstin or self.target_gstin or ""
+        if not self.document_number:
+            self.document_number = self.source_doc_num or self.target_doc_num or ""
+        if not self.document_date:
+            self.document_date = self.source_date or self.target_date or ""
+        if self.taxable_value == 0.0:
+            self.taxable_value = round(float(self.source_taxable if self.source_taxable != 0.0 else self.target_taxable), 2)
+        if self.tax_amount == 0.0:
+            self.tax_amount = round(float(self.source_tax if self.source_tax != 0.0 else self.target_tax), 2)
+        if self.total_value == 0.0:
+            self.total_value = round(self.taxable_value + self.tax_amount, 2)
+        return self
 
 
 class Stage4ResultsSummaryV5(BaseModel):

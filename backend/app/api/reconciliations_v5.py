@@ -508,8 +508,8 @@ def _execute_stage4_v5_internal(session_id: str) -> Stage4ExecutionResponseV5:
         corr = session["correlation"]
         c_list = corr.correlations if hasattr(corr, "correlations") else corr.get("correlations", [])
         for c in c_list:
-            src = c.source_column if hasattr(c, "source_column") else c.get("source_column")
-            tgt = c.selected_target_column if hasattr(c, "selected_target_column") else c.get("selected_target_column")
+            src = getattr(c, "source_column", None) or getattr(c, "gstr_column", None) or (c.get("source_column") if isinstance(c, dict) else None) or (c.get("gstr_column") if isinstance(c, dict) else None)
+            tgt = getattr(c, "selected_target_column", None) or getattr(c, "selected_pr_column", None) or (c.get("selected_target_column") if isinstance(c, dict) else None) or (c.get("selected_pr_column") if isinstance(c, dict) else None)
             if src and tgt:
                 mapped[src] = tgt
 

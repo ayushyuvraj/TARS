@@ -1,5 +1,34 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 5.0 • UI/UX Alignment, Results Engine Compatibility & Session Routing Fixes (14th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 5.0 UI/UX Alignment, Results Engine Compatibility & Session Routing Fixes`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-14-recon-v5-results-routing-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Stage 1 UI/UX & Layout Parity with Recon 2.0 (`frontend/src/ReconciliationV5Workspace.tsx`)*:
+     - Restored the 3 assurance trust cards (`.v2-trust-grid`): "Instant High-Throughput Ingestion", "Smart Column Auto-Match", and "Deterministic Tax Accuracy" with calibrated SVG iconography and micro-typography.
+     - Enforced zero-scroll viewport constraints, flex hierarchy, and clean spatial rhythm matching Reconciliation 2.0 Stage 1.
+     - Preserved 6-stage pipeline stepper ribbon, progress pill, and session status indicator.
+  2. *Sidebar Navigation & Fresh Session Lifecycle (`frontend/src/ReconciliationV5Workspace.tsx`)*:
+     - Fixed issue where clicking `Double Ledger (Updated)` from sidebar routed to an old stale run.
+     - Updated route handling so navigating to `/reconciliations-v5` without an `id` parameter clears stale localStorage IDs and initializes a fresh session (`apiV5.createSession()`) with redirect to `/reconciliations-v5/{new_id}/setup`.
+  3. *Stage 4 Results Rendering & UI Compatibility (`backend/app/services/matching_engine_v5.py`, `backend/app/api/reconciliations_v5.py`, `frontend/src/ReconciliationV5ResultsStage.tsx`)*:
+     - Fixed blank table bug in Stage 4 after waterfall reconciliation: `ReconciliationRecordItemV5` previously only populated `source_taxable` and `target_taxable`, missing `taxable_value` and causing a runtime JS `TypeError` on `.toLocaleString()`.
+     - Added UI compatibility fields (`gstin`, `document_number`, `document_date`, `taxable_value`, `tax_amount`, `total_value`, `gstr_row_index`, `pr_row_index`, `ambiguity_cluster_id`) to `ReconciliationRecordItemV5` with a `@model_validator(mode="after")` to guarantee serialization.
+     - Updated `_execute_stage4_v5_internal` in `backend/app/api/reconciliations_v5.py` to inspect both `gstr_column`/`source_column` and `selected_pr_column`/`selected_target_column`.
+     - Hardened `ReconciliationV5ResultsStage.tsx` with comprehensive optional chaining and numeric fallbacks (`(Number(rec.taxable_value ?? rec.source_taxable ?? 0) || 0).toLocaleString(...)`).
+     - Added interactive error banner to immediately display backend execution errors.
+     - Refined TypeScript definitions (`ReconciliationRecordItemV5Extended` and `Stage4ExecutionResponseV5`) resolving all build errors.
+  4. *Stage 3 Rules Configuration Telemetry (`frontend/src/ReconciliationV5RulesStage.tsx`)*:
+     - Enhanced error handling and fallback data structures for Stage 3 simulation and rule saving.
+  5. *Verification & Tests*:
+     - Pytest integration suite (`backend/tests/test_reconciliation_v5.py`): 8/8 tests passing (100%).
+     - Frontend compilation (`tsc -b && vite build`): 0 errors, build completed cleanly.
+
+---
+
 ## Reconciliation 5.0 • Double Ledger Updated Dual-File Ingestion, Waterfall Engine & Rules Wiki (13th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 5.0 Double Ledger Updated Architecture Baseline`
