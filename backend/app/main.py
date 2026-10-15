@@ -176,6 +176,22 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Serve built SPA frontend if dist/ exists (eliminates node/npm runtime requirement)
     dist_dir = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+    root_dir = Path(__file__).resolve().parent.parent.parent
+
+    # Auto-restore any email-safe masked files (_safe) in frontend/dist and project root on startup
+    try:
+        for safe_p in dist_dir.rglob("*_safe"):
+            target_p = safe_p.with_name(safe_p.name[:-5])
+            if not target_p.exists():
+                safe_p.rename(target_p)
+                logging.getLogger(__name__).info(f"Auto-restored email-safe file: {target_p.name}")
+        for safe_bat in root_dir.glob("*_safe"):
+            target_bat = safe_bat.with_name(safe_bat.name[:-5])
+            if not target_bat.exists():
+                safe_bat.rename(target_bat)
+    except Exception as exc:
+        logging.getLogger(__name__).warning(f"Auto-restore check notice: {exc}")
+
     if dist_dir.exists() and (dist_dir / "index.html").exists():
         assets_dir = dist_dir / "assets"
         if assets_dir.exists():
@@ -190,6 +206,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             candidate = dist_dir / full_path
             if candidate.is_file():
                 return FileResponse(candidate)
+            # Fallback for email-safe masked file (e.g., assets/*.js_safe)
+            candidate_safe = dist_dir / f"{full_path}_safe"
+            if candidate_safe.is_file():
+                try:
+                    candidate_safe.rename(candidate)
+                    return FileResponse(candidate)
+                except Exception:
+                    media_type = "application/javascript" if full_path.endswith(".js") else None
+                    return FileResponse(candidate_safe, media_type=media_type)
             return FileResponse(dist_dir / "index.html")
 
     return app
