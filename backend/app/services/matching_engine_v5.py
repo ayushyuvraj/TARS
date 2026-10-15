@@ -479,13 +479,16 @@ class WaterfallMatchingEngineV5:
 
     @staticmethod
     def _normalize_doc(val: Any) -> str:
-        s = _clean_str(val).upper()
+        raw = _clean_str(val).upper()
+        if not raw:
+            return ""
+        s = raw
         for prefix in ["INV-", "INV/", "BILL-", "BILL/", "TAX-", "TAX/"]:
             if s.startswith(prefix):
                 s = s[len(prefix):]
         s = re.sub(r"[^A-Z0-9]", "", s)
         s = s.lstrip("0")
-        return s or "0"
+        return s if s else ("0" if raw else "")
 
     def execute_waterfall(
         self,
@@ -625,8 +628,11 @@ class WaterfallMatchingEngineV5:
         for p_idx in range(p_len):
             gst = p_gstin_clean[p_idx]
             doc = p_doc_clean[p_idx]
-            pr_by_gstin_doc.setdefault((gst, doc), []).append(p_idx)
-            pr_by_gstin.setdefault(gst, []).append(p_idx)
+            # Require at least one non-empty anchor to index for pairing
+            if gst or doc:
+                pr_by_gstin_doc.setdefault((gst, doc), []).append(p_idx)
+            if gst:
+                pr_by_gstin.setdefault(gst, []).append(p_idx)
 
         # -------------------------------------------------------------
         # PASS 1: EXACT MATCH (Zero Variance)
@@ -634,6 +640,9 @@ class WaterfallMatchingEngineV5:
         for g_idx in list(unmatched_g):
             gst = g_gstin_clean[g_idx]
             doc = g_doc_clean[g_idx]
+            # Reject pairing if both GSTIN and Doc Number are empty; blank degenerate rows cannot be paired
+            if not gst and not doc:
+                continue
             cands = [p for p in pr_by_gstin_doc.get((gst, doc), []) if p in unmatched_p]
             if len(cands) == 1:
                 p_idx = cands[0]
@@ -862,6 +871,8 @@ class WaterfallMatchingEngineV5:
         for g_idx in list(unmatched_g):
             gst = g_gstin_clean[g_idx]
             doc = g_doc_clean[g_idx]
+            if not gst and not doc:
+                continue
             cands = [p for p in pr_by_gstin_doc.get((gst, doc), []) if p in unmatched_p]
             if len(cands) == 1:
                 p_idx = cands[0]
@@ -1039,6 +1050,8 @@ class WaterfallMatchingEngineV5:
         for g_idx in list(unmatched_g):
             gst = g_gstin_clean[g_idx]
             doc = g_doc_clean[g_idx]
+            if not gst and not doc:
+                continue
             cands = [p for p in pr_by_gstin_doc.get((gst, doc), []) if p in unmatched_p]
             if len(cands) == 1:
                 p_idx = cands[0]
@@ -1090,6 +1103,8 @@ class WaterfallMatchingEngineV5:
         # 2. Fuzzy Document String Ratio
         for g_idx in list(unmatched_g):
             gst = g_gstin_clean[g_idx]
+            if not gst:
+                continue
             cands = [p for p in pr_by_gstin.get(gst, []) if p in unmatched_p]
             best_p = None
             best_sim = 0.0
@@ -1144,6 +1159,8 @@ class WaterfallMatchingEngineV5:
         # -------------------------------------------------------------
         for g_idx in list(unmatched_g):
             gst = g_gstin_clean[g_idx]
+            if not gst:
+                continue
             cands = [p for p in pr_by_gstin.get(gst, []) if p in unmatched_p]
             competing = []
             g_d = g_doc_clean[g_idx]
@@ -1235,16 +1252,18 @@ class WaterfallMatchingEngineV5:
         # -------------------------------------------------------------
         # PASS 5: RESIDUALS (GSTR 2B Only & PR Only)
         # -------------------------------------------------------------
-        # Residual GSTR 2B Only (Unclaimed Credit)
+        # Residual GSTR 2B Only (Unclaimed Credit & Data Hygiene Exceptions)
         for g_idx in list(unmatched_g):
             gst = g_gstin_clean[g_idx]
+            doc = g_doc_clean[g_idx]
+            is_blank = (not gst and not doc and float(g_taxable[g_idx]) <= 0.0)
             records.append(ReconciliationRecordItemV5(
                 id=f"V5-REC-{len(records)+1:06d}",
                 index=len(records) + 1,
                 tars_verdict="GST Only",
-                kics_verdict="UNCLAIMED_IN_BOOKS",
+                kics_verdict="MALFORMED_BLANK_ROW" if is_blank else "UNCLAIMED_IN_BOOKS",
                 concurrence="DISPARITY",
-                disparity_reason="Missing in client accounting Purchase Register",
+                disparity_reason="Lacks statutory tax invoice identifiers (missing GSTIN and Document #) with zero value" if is_blank else "Missing in client accounting Purchase Register",
                 source_gstin=gst,
                 target_gstin="",
                 source_doc_num=g_doc_raw[g_idx],
@@ -1258,25 +1277,27 @@ class WaterfallMatchingEngineV5:
                 taxable_diff=round(float(g_taxable[g_idx]), 2),
                 tax_diff=round(float(g_tax[g_idx]), 2),
                 pass_tier="PASS 5: RESIDUALS",
-                classification_reason=f"Unclaimed Credit (GSTR 2B Only): Reported on GST portal by supplier {gst} but completely omitted from client ERP.",
-                ai_reason="ITC Opportunity: Check with accounts payable if invoice is approved for booking before Section 16(4) annual cutoff.",
-                variances={"unclaimed_itc": round(float(g_tax[g_idx]), 2)},
+                classification_reason="Data Hygiene Exception: Record lacks statutory tax invoice anchors (missing GSTIN and Document #) and carries zero financial ITC impact (₹0.00). Unmatchable under Section 16(2) CGST Act." if is_blank else f"Unclaimed Credit (GSTR 2B Only): Reported on GST portal by supplier {gst} but completely omitted from client ERP.",
+                ai_reason="Data Hygiene Audit: Discard from credit claim or inspect raw file source for trailing blank/corrupted row." if is_blank else "ITC Opportunity: Check with accounts payable if invoice is approved for booking before Section 16(4) annual cutoff.",
+                variances={"unclaimed_itc": round(float(g_tax[g_idx]), 2), "is_blank_row": is_blank},
                 matched_by_pass="PASS 5: GSTR 2B Only",
                 bucket="GSTR_ONLY",
                 gstr_preview={"GSTIN": gst, "Invoice": g_doc_raw[g_idx], "Date": g_dates_str[g_idx], "Taxable": g_taxable[g_idx], "Tax": g_tax[g_idx]},
                 pr_preview={},
             ))
 
-        # Residual PR Only (DRC-01C Risk)
+        # Residual PR Only (DRC-01C Risk & Data Hygiene Exceptions)
         for p_idx in list(unmatched_p):
             gst = p_gstin_clean[p_idx]
+            doc = p_doc_clean[p_idx]
+            is_blank = (not gst and not doc and float(p_taxable[p_idx]) <= 0.0)
             records.append(ReconciliationRecordItemV5(
                 id=f"V5-REC-{len(records)+1:06d}",
                 index=len(records) + 1,
                 tars_verdict="PR Only",
-                kics_verdict="MISSING_ON_PORTAL",
+                kics_verdict="MALFORMED_BLANK_ROW" if is_blank else "MISSING_ON_PORTAL",
                 concurrence="DISPARITY",
-                disparity_reason="Supplier failed to file return in GSTR-1/IFF",
+                disparity_reason="Lacks statutory tax invoice identifiers (missing GSTIN and Document #) with zero value" if is_blank else "Supplier failed to file return in GSTR-1/IFF",
                 source_gstin="",
                 target_gstin=gst,
                 source_doc_num="",
@@ -1290,9 +1311,9 @@ class WaterfallMatchingEngineV5:
                 taxable_diff=round(float(p_taxable[p_idx]), 2),
                 tax_diff=round(float(p_tax[p_idx]), 2),
                 pass_tier="PASS 5: RESIDUALS",
-                classification_reason=f"DRC-01C Notice Risk (PR Only): Claimed in client ERP books but missing from Government GSTR-2B. Supplier default detected.",
-                ai_reason="Vendor Communication Required: Chase supplier to file pending GSTR-1 to prevent credit reversal u/s 16(2)(c).",
-                variances={"reversal_risk_itc": round(float(p_tax[p_idx]), 2)},
+                classification_reason="Data Hygiene Exception: Record lacks statutory tax invoice anchors (missing GSTIN and Document #) and carries zero financial ITC impact (₹0.00). Unmatchable under Section 16(2) CGST Act." if is_blank else f"DRC-01C Notice Risk (PR Only): Claimed in client ERP books but missing from Government GSTR-2B. Supplier default detected.",
+                ai_reason="Data Hygiene Audit: Discard from ERP books or inspect source ledger for blank journal entry." if is_blank else "Vendor Communication Required: Chase supplier to file pending GSTR-1 to prevent credit reversal u/s 16(2)(c).",
+                variances={"reversal_risk_itc": round(float(p_tax[p_idx]), 2), "is_blank_row": is_blank},
                 matched_by_pass="PASS 5: PR Only",
                 bucket="PR_ONLY",
                 gstr_preview={},
