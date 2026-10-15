@@ -1,5 +1,32 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Autonomous Chatbot Routing to Recon 4.0 & Recon 5.0 (15th October 2026)
+
+- **Checkpoint Name**: `Autonomous Chatbot Routing to Recon 4.0 & Recon 5.0`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-15-chatbot-recon-v4-v5-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Current Implementation Summary**:
+  1. *Autonomous Recon Orchestrator Routing (`backend/app/services/autonomous_recon_orchestrator.py`)*:
+     - 1 file uploaded $\rightarrow$ classified as `SINGLE_LEDGER_V4` (Single Ledger 3-Way Reconciliation 4.0). Runs schema coupling, deterministic 3-way statutory rules, and Stage 4 waterfall engine (`_execute_stage4_v4_internal`), generating `V4-{HEX}` session ID and emitting `recon_type: "v4"`.
+     - 2 files uploaded (or dual sheets in 1 file) $\rightarrow$ classified as `DUAL_LEDGER_V5` / `DUAL_SHEETS_V5` (Double Ledger Reconciliation 5.0). Runs GSTR-2B + Purchase Register ingestion, schema correlation, Recon 5.0 statutory rules, and 8-pass waterfall matching engine (`_execute_stage4_v5_internal`), generating `V5-{HEX}` session ID and emitting `recon_type: "v5"`.
+  2. *Frontend Event Routing (`frontend/src/App.tsx`, `frontend/src/CopilotPanel.tsx`)*:
+     - In `App.tsx`, updated global `AUTO_RECONCILE_SUCCESS` handler to route `recon_type: "v5"` to `/reconciliations-v5/:id/results` and `recon_type: "v4"` to `/reconciliations-v4/:id/results`.
+     - In `CopilotPanel.tsx`, enabled autonomous streaming mode whenever `attachedFiles.length > 0` regardless of current route.
+     - Added clear dynamic input placeholders indicating the active pipeline:
+       - 1 file: *"Press Enter to run Single Ledger 3-Way Recon (Recon 4.0)…"*
+       - 2 files: *"Press Enter to run Double Ledger Reconciliation (Recon 5.0)…"*
+     - In `ReconciliationV2Workspace.tsx`, `ReconciliationV4Workspace.tsx`, and `ReconciliationV5Workspace.tsx`, disambiguated `AUTO_RECONCILE_SUCCESS` listeners with `recon_type` guards to avoid conflicting navigations.
+  3. *Stage 5 Flight Deck Summary*:
+     - Guaranteed Stage 4 results persist directly to `audit_v2_service`, ensuring Stage 5 cards and metrics load immediately without re-triggering computation.
+  4. *Verification & Production Packaging*:
+     - FastProbe topology test: 1 file $\rightarrow$ `SINGLE_LEDGER_V4`, 2 files $\rightarrow$ `DUAL_LEDGER_V5` verified 100%.
+     - Full Pytest suite (`backend/tests/test_reconciliation_v5.py`): 9/9 passed (100%).
+     - Frontend compiled with `npm run build` into `frontend/dist`.
+     - Refreshed KPMG distribution packages: `TARS_KPMG_OneTouch_Deploy.zip` (13.06 MB) and `TARS_KPMG_OneTouch_Deploy_EmailSafe.zip` (13.06 MB) verified strictly under 25 MB limit.
+
+---
+
 ## Reconciliation 5.0 • Stage 4 Waterfall Matching Engine Combinatorial Optimization (15th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 5.0 Stage 4 Waterfall Matching Engine Combinatorial Optimization`
