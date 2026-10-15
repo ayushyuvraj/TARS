@@ -79,6 +79,7 @@ class OpenAIProvider(LLMProvider):
     ) -> StructuredOutput:
         attempts = self._max_repair_attempts + 1
         system_prompt = kwargs.pop("system_prompt", None)
+        max_tokens = kwargs.pop("max_completion_tokens", 2048)
         formatted_messages = list(messages)
         if system_prompt:
             formatted_messages.insert(0, {"role": "system", "content": system_prompt})
@@ -89,7 +90,7 @@ class OpenAIProvider(LLMProvider):
                     model=self._model,
                     messages=formatted_messages,
                     response_format=output_schema,
-                    max_completion_tokens=4096,
+                    max_completion_tokens=max_tokens,
                     **kwargs,
                 )
                 parsed = response.choices[0].message.parsed

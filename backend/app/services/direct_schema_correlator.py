@@ -531,24 +531,23 @@ class DirectSchemaCorrelator:
             chunk_results: dict[str, DirectColumnCorrelation] = {}
             # Context-aware candidate filtering: scope PR columns to top relevant candidates to avoid token bloat
             chunk_g_norms = [_normalize(g.name) for g in chunk]
-            scoped_pr: list[FastColumnSummary] = []
             scored_pr = []
             for p in pr_cols:
                 p_norm = _normalize(p.name)
                 max_score = max((_fuzzy_token_ratio(g_n, p_norm) for g_n in chunk_g_norms), default=0.0)
                 scored_pr.append((max_score, p))
             scored_pr.sort(key=lambda x: x[0], reverse=True)
-            # Take top 40 candidate columns or any with ratio > 0.25
-            top_candidates = [p for score, p in scored_pr if score >= 0.25][:40]
-            if len(top_candidates) < 20:
-                top_candidates = [p for _, p in scored_pr[:30]]
-            scoped_pr = top_candidates if top_candidates else pr_cols[:30]
+            # Scope to top 15 candidate PR columns (ample for ambiguous mapping without bloating payload)
+            top_candidates = [p for score, p in scored_pr if score >= 0.20][:15]
+            if len(top_candidates) < 10:
+                top_candidates = [p for _, p in scored_pr[:15]]
+            scoped_pr = top_candidates if top_candidates else pr_cols[:15]
 
             gstr_payload = [
                 {
                     "name": g.name,
                     "dtype": g.inferred_dtype.value,
-                    "samples": g.sample_values[:3],
+                    "samples": g.sample_values[:2],
                     "hints": g.pattern_hints,
                 }
                 for g in chunk
@@ -557,7 +556,7 @@ class DirectSchemaCorrelator:
                 {
                     "name": p.name,
                     "dtype": p.inferred_dtype.value,
-                    "samples": p.sample_values[:3],
+                    "samples": p.sample_values[:2],
                     "hints": p.pattern_hints,
                 }
                 for p in scoped_pr
@@ -565,14 +564,15 @@ class DirectSchemaCorrelator:
 
             system_msg = (
                 "You are an expert financial and tax data engineer assisting with GST Reconciliation. "
-                "Your task is to correlate GSTR-2B spreadsheet columns with Purchase Register (ERP) columns. "
-                "For each GSTR column, select the most suitable PR column, or null if no appropriate match exists. "
-                "Provide a calibrated confidence score between 0.0 and 1.0, and a clear, plain-English reason explaining your choice. "
-                "Also provide up to 2 alternative candidate PR columns with their confidence and reasoning."
+                "Correlate GSTR-2B columns with Purchase Register (ERP) columns. "
+                "For each GSTR column, select the best PR column from the candidates, or null if no match exists. "
+                "Confidence must be between 0.0 and 1.0. "
+                "Provide a concise, 1-sentence reason (max 15 words). "
+                "Only provide alternatives if confidence is below 0.85; otherwise leave alternatives empty."
             )
             user_msg = (
-                f"GSTR-2B Columns to map:\n{json.dumps(gstr_payload, indent=2)}\n\n"
-                f"Available Purchase Register Columns:\n{json.dumps(pr_payload, indent=2)}"
+                f"GSTR-2B Columns to map:\n{json.dumps(gstr_payload)}\n\n"
+                f"Available Purchase Register Columns:\n{json.dumps(pr_payload)}"
             )
 
             try:
@@ -582,6 +582,8 @@ class DirectSchemaCorrelator:
                         {"role": "user", "content": user_msg},
                     ],
                     LLMSchemaCorrelationResponse,
+                    temperature=0.0,
+                    max_completion_tokens=1024,
                 )
 
                 llm_item_by_gstr = {item.gstr_column: item for item in res.matches}
