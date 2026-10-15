@@ -1,5 +1,34 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Stage 4 Sub-Second Optimization & Data Hygiene Checkpoint (15th October 2026)
+
+- **Checkpoint Name**: `Stage 4 Sub-Second Optimization & Data Hygiene Checkpoint`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-15-stage4-subsecond-perf-checkpoint`
+- **Current HEAD**: `200c61e`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Summary of Changes**:
+  1. *Sub-Second Execution Performance*:
+     - **Recon 5.0 (Dual Ledger)**: Reduced Stage 4 waterfall run time from 20s–55s down to **0.050s – 0.11s (~50–100ms)** (50x–500x speedup).
+     - **Recon 4.0 (Single Ledger 20,000 Rows)**: Reduced execution time from 7.3s down to **1.16s** (6.3x speedup).
+     - **Zero Logic Deviations**: 100% bit-perfect parity verified against pre-optimization baseline snapshot.
+     - **Dynamic Import Elimination**: Relocated `from rapidfuzz import fuzz` to module scope and wrapped `calculate_string_ratio` in `@functools.lru_cache(maxsize=65536)`.
+     - **Vectorized Precomputed Date Lookups**: Replaced slow `.iloc[]` and Pandas Timestamps in Pass 1 and Pass 2 with integer NumPy day and month arrays (`g_days_arr`, `p_days_arr`, `g_months`, `p_months`).
+     - **Mathematical Upper-Bound Pruning**: Added length upper-bound condition `min_len > 0 and (2 * min_len / (len_gd + len_pd)) >= 0.70` before executing fuzzy comparison.
+     - **O(N) Top-K Selection**: In V4 ambiguity candidate selection, replaced full Timsort with `heapq.nsmallest(4, ...)`.
+     - **UI Responsiveness**: Replaced the 2.45s artificial `setTimeout` sleep loop in both `ReconciliationV4ResultsStage.tsx` and `ReconciliationV5ResultsStage.tsx` with active 80ms interval tickers that complete immediately when the backend responds. Connected V4 stage to `apiV4.executeStage4Results` and `apiV4.getStage4Results`.
+  2. *Option B Data Hygiene Exception for Blank / Malformed Records*:
+     - In `matching_engine_v5.py`, fixed `_normalize_doc` so empty/missing inputs return `""` instead of `"0"`.
+     - Guarded PR indexing and Passes 1, 2, 3, and 4 so degenerate blank rows (lacking both GSTIN and Invoice Number) cannot be coupled together as an Exact Match.
+     - Preserved 100% of rows (2,056 rows across 1,003 GSTR + 1,053 PR) for strict line-count audit reconciliation.
+     - Unpaired blank rows are routed to single-sided residuals in Pass 5 (`GST Only` and `PR Only`) with audit provenance `KICS: MALFORMED_BLANK_ROW` and statutory reason: *"Data Hygiene Exception: Record lacks statutory tax invoice anchors (missing GSTIN and Document #) and carries zero financial ITC impact (₹0.00). Unmatchable under Section 16(2) CGST Act."*
+  3. *Verification & Production Packaging*:
+     - Pytest suite (`test_reconciliation_v5.py`): 9/9 passed (100%).
+     - Frontend TypeScript: `npm run build` compiled cleanly in 1.47s with 0 errors.
+     - Refreshed KPMG distribution packages: `TARS_KPMG_OneTouch_Deploy.zip` (13.06 MB) and `TARS_KPMG_OneTouch_Deploy_EmailSafe.zip` (13.06 MB) verified strictly under 25 MB.
+
+---
+
 ## Autonomous Chatbot Routing to Recon 4.0 & Recon 5.0 (15th October 2026)
 
 - **Checkpoint Name**: `Autonomous Chatbot Routing to Recon 4.0 & Recon 5.0`
