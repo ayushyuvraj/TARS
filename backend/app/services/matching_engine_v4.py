@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import heapq
 import math
 import re
 import time
@@ -1598,7 +1599,7 @@ class WaterfallMatchingEngineV4:
                     if r_gstin and r_gstin not in ("NAN", "NONE"):
                         gstin_prs = pr_pool_by_gstin.get(r_gstin, [])
                         if gstin_prs:
-                            sorted_by_amt = sorted(gstin_prs, key=lambda item: abs(item[1] - r.source_taxable))[:4]
+                            sorted_by_amt = heapq.nsmallest(4, gstin_prs, key=lambda item: abs(item[1] - r.source_taxable)) if len(gstin_prs) > 4 else gstin_prs
                             for j_idx, _ in sorted_by_amt:
                                 candidate_j_indices.add(j_idx)
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import functools
 import logging
 import re
 from datetime import date, datetime
@@ -10,6 +11,11 @@ from uuid import uuid4
 
 import pandas as pd
 from pydantic import BaseModel, Field
+
+try:
+    from rapidfuzz import fuzz as _rapidfuzz_fuzz
+except ImportError:
+    _rapidfuzz_fuzz = None
 
 logger = logging.getLogger(__name__)
 
@@ -317,8 +323,9 @@ class Stage4ExecutionResponse(BaseModel):
     compared_columns: list[ComparedColumnInfo] = Field(default_factory=list)
 
 
+@functools.lru_cache(maxsize=65536)
 def calculate_string_ratio(s1: str, s2: str) -> float:
-    """Calculates string similarity ratio using rapidfuzz or difflib fallback with fast length pruning."""
+    """Calculates string similarity ratio using rapidfuzz or difflib fallback with fast length pruning and LRU memoization."""
     if not s1 or not s2:
         return 0.0
     if s1 == s2:
@@ -331,12 +338,10 @@ def calculate_string_ratio(s1: str, s2: str) -> float:
     # Length pruning: if length difference is too large, similarity cannot reach 0.85
     if abs(len1 - len2) / max_len > 0.35:
         return 0.0
-    try:
-        from rapidfuzz import fuzz
-        return float(fuzz.ratio(s1, s2) / 100.0)
-    except ImportError:
-        import difflib
-        return float(difflib.SequenceMatcher(None, s1, s2).ratio())
+    if _rapidfuzz_fuzz is not None:
+        return float(_rapidfuzz_fuzz.ratio(s1, s2) / 100.0)
+    import difflib
+    return float(difflib.SequenceMatcher(None, s1, s2).ratio())
 
 
 

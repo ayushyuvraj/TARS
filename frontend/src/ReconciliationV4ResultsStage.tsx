@@ -203,7 +203,12 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const resp = await apiV2.getStage4Results(sessionId);
+      let resp: any = null;
+      try {
+        resp = await apiV4.getStage4Results(sessionId);
+      } catch {
+        resp = await apiV2.getStage4Results(sessionId);
+      }
       setData(resp);
     } catch (err: any) {
       // Results not run yet. Show launchpad
@@ -223,22 +228,33 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
       setExecElapsedMs(Date.now() - startTime);
     }, 60);
 
+    let passTicker: any = null;
     try {
-      const backendPromise = apiV2.executeStage4Results(sessionId);
+      const backendPromise = (async () => {
+        try {
+          return await apiV4.executeStage4Results(sessionId);
+        } catch {
+          return await apiV2.executeStage4Results(sessionId);
+        }
+      })();
 
-      // Smooth progressive visual pacing across tiers 1 through 4 (~450ms per pass)
-      for (let p = 1; p <= 4; p++) {
-        setExecPass(p);
-        await new Promise((r) => setTimeout(r, 450));
-      }
+      let currentPass = 1;
+      passTicker = setInterval(() => {
+        if (currentPass < 4) {
+          currentPass++;
+          setExecPass(currentPass);
+        }
+      }, 80);
 
       const resp = await backendPromise;
-      setData(resp);
+      if (passTicker) clearInterval(passTicker);
+      setData(resp as any);
       setExecPass(5);
-      await new Promise((r) => setTimeout(r, 650));
     } catch (err: any) {
+      if (passTicker) clearInterval(passTicker);
       setErrorMessage(err.message || "Failed to run reconciliation waterfall.");
     } finally {
+      if (passTicker) clearInterval(passTicker);
       clearInterval(timer);
       setIsRerunning(false);
     }
@@ -275,7 +291,12 @@ export const ReconciliationV4ResultsStage: React.FC<ResultsStageProps> = ({
     setReviewerNote("");
     try {
       const recId = rec.id || String(rec.gstr_row_index ?? 0);
-      const recResp = await apiV2.getRecordRecommendation(sessionId, recId, rec);
+      let recResp: any = null;
+      try {
+        recResp = await apiV4.getRecordRecommendation(sessionId, recId, rec);
+      } catch {
+        recResp = await apiV2.getRecordRecommendation(sessionId, recId, rec);
+      }
       setRecommendation(recResp);
       setTargetBucket(recResp.recommended_bucket || "EXACT_MATCH");
     } catch (err: any) {

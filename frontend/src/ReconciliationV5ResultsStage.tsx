@@ -247,6 +247,7 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
       setExecElapsedMs(Date.now() - startTime);
     }, 60);
 
+    let passTicker: any = null;
     try {
       const backendPromise = (async () => {
         try {
@@ -257,23 +258,27 @@ export const ReconciliationV5ResultsStage: React.FC<ResultsStageProps> = ({
         }
       })();
 
-      // Smooth progressive visual pacing across tiers 1 through 4 (~450ms per pass)
-      for (let p = 1; p <= 4; p++) {
-        setExecPass(p);
-        await new Promise((r) => setTimeout(r, 450));
-      }
+      let currentPass = 1;
+      passTicker = setInterval(() => {
+        if (currentPass < 4) {
+          currentPass++;
+          setExecPass(currentPass);
+        }
+      }, 80);
 
       const resp = await backendPromise;
+      if (passTicker) clearInterval(passTicker);
       if (!resp || !resp.records) {
         throw new Error("Empty or invalid results payload returned from reconciliation engine.");
       }
       setData(resp as any);
       setExecPass(5);
-      await new Promise((r) => setTimeout(r, 650));
     } catch (err: any) {
+      if (passTicker) clearInterval(passTicker);
       console.error("Reconciliation execution error:", err);
       setErrorMessage(err.message || "Failed to run reconciliation waterfall.");
     } finally {
+      if (passTicker) clearInterval(passTicker);
       clearInterval(timer);
       setIsRerunning(false);
     }

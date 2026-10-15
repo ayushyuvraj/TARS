@@ -580,11 +580,16 @@ class WaterfallMatchingEngineV5:
         else:
             p_tax = p_taxable * 0.18
 
-        g_dates_dt = pd.to_datetime(gstr_df[g_date_col], errors="coerce") if g_len > 0 else pd.Series(dtype="datetime64[ns]")
-        p_dates_dt = pd.to_datetime(pr_df[p_date_col], errors="coerce") if p_len > 0 else pd.Series(dtype="datetime64[ns]")
+        g_dates_dt = pd.to_datetime(gstr_df[g_date_col], errors="coerce", format="mixed", dayfirst=True) if g_len > 0 else pd.Series(dtype="datetime64[ns]")
+        p_dates_dt = pd.to_datetime(pr_df[p_date_col], errors="coerce", format="mixed", dayfirst=True) if p_len > 0 else pd.Series(dtype="datetime64[ns]")
 
         g_dates_str = g_dates_dt.dt.strftime("%Y-%m-%d").fillna("").values if g_len > 0 else np.array([])
         p_dates_str = p_dates_dt.dt.strftime("%Y-%m-%d").fillna("").values if p_len > 0 else np.array([])
+
+        g_days_arr = np.where(g_dates_dt.notna(), (g_dates_dt.values.astype("datetime64[D]").astype(np.int64)), -999999) if g_len > 0 else np.array([], dtype=np.int64)
+        p_days_arr = np.where(p_dates_dt.notna(), (p_dates_dt.values.astype("datetime64[D]").astype(np.int64)), -999999) if p_len > 0 else np.array([], dtype=np.int64)
+        g_months = g_dates_dt.dt.month.fillna(-1).values.astype(int) if g_len > 0 else np.array([], dtype=int)
+        p_months = p_dates_dt.dt.month.fillna(-1).values.astype(int) if p_len > 0 else np.array([], dtype=int)
 
         # Track unmatched indices
         unmatched_g = set(range(g_len))
@@ -636,13 +641,14 @@ class WaterfallMatchingEngineV5:
                 tax_diff = abs(g_tax[g_idx] - p_tax[p_idx])
 
                 # Check date difference
-                date_diff_days = 0
-                if pd.notna(g_dates_dt.iloc[g_idx]) and pd.notna(p_dates_dt.iloc[p_idx]):
-                    d1 = g_dates_dt.iloc[g_idx]
-                    d2 = p_dates_dt.iloc[p_idx]
-                    date_diff_days = abs((d1 - d2).days)
+                d1 = g_days_arr[g_idx]
+                d2 = p_days_arr[p_idx]
+                if d1 != -999999 and d2 != -999999:
+                    date_diff_days = abs(int(d1 - d2))
                 elif g_dates_str[g_idx] != p_dates_str[p_idx]:
                     date_diff_days = 999
+                else:
+                    date_diff_days = 0
 
                 # Check tax head mismatch
                 g_i, g_c, g_s = g_igst[g_idx], g_cgst[g_idx], g_sgst[g_idx]
@@ -793,10 +799,10 @@ class WaterfallMatchingEngineV5:
                 cands = [p for p in pr_by_gstin.get(gst, []) if p in unmatched_p and 0.0 < float(p_taxable[p]) <= target_g_val + batch_tol]
                 if len(cands) >= 2:
                     relevant = []
+                    g_d = g_doc_clean[g_idx]
                     for p in cands:
-                        sim = calculate_string_ratio(g_doc_clean[g_idx], p_doc_clean[p])
-                        sub = (g_doc_clean[g_idx] in p_doc_clean[p]) or (p_doc_clean[p] in g_doc_clean[g_idx])
-                        if sim >= 0.7 or sub:
+                        p_d = p_doc_clean[p]
+                        if (g_d in p_d) or (p_d in g_d) or calculate_string_ratio(g_d, p_d) >= 0.7:
                             relevant.append(p)
                     if len(relevant) >= 2:
                         p_sum = sum(p_taxable[p] for p in relevant)
@@ -866,12 +872,12 @@ class WaterfallMatchingEngineV5:
                 # Date difference calculation
                 date_diff_days = 0
                 is_cross_fy = False
-                if pd.notna(g_dates_dt.iloc[g_idx]) and pd.notna(p_dates_dt.iloc[p_idx]):
-                    d1 = g_dates_dt.iloc[g_idx]
-                    d2 = p_dates_dt.iloc[p_idx]
-                    date_diff_days = abs((d1 - d2).days)
+                if g_days_arr[g_idx] != -999999 and p_days_arr[p_idx] != -999999:
+                    date_diff_days = abs(int(g_days_arr[g_idx] - p_days_arr[p_idx]))
                     # Cross FY check (March vs April)
-                    if (d1.month == 3 and d2.month == 4) or (d1.month == 4 and d2.month == 3):
+                    m1 = g_months[g_idx]
+                    m2 = p_months[p_idx]
+                    if (m1 == 3 and m2 == 4) or (m1 == 4 and m2 == 3):
                         is_cross_fy = True
 
                 # Tax head mismatch check
@@ -1140,14 +1146,20 @@ class WaterfallMatchingEngineV5:
             gst = g_gstin_clean[g_idx]
             cands = [p for p in pr_by_gstin.get(gst, []) if p in unmatched_p]
             competing = []
+            g_d = g_doc_clean[g_idx]
+            len_gd = len(g_d)
             for p_idx in cands:
                 abs_t_diff = abs(g_taxable[g_idx] - p_taxable[p_idx])
                 if abs_t_diff <= 25.0:
                     competing.append(p_idx)
                 else:
-                    sim = calculate_string_ratio(g_doc_clean[g_idx], p_doc_clean[p_idx])
-                    if sim >= 0.70:
-                        competing.append(p_idx)
+                    p_d = p_doc_clean[p_idx]
+                    len_pd = len(p_d)
+                    min_len = min(len_gd, len_pd)
+                    if min_len > 0 and (2 * min_len / (len_gd + len_pd)) >= 0.70:
+                        sim = calculate_string_ratio(g_d, p_d)
+                        if sim >= 0.70:
+                            competing.append(p_idx)
 
             if len(competing) >= 2:
                 # Ambiguity Cluster found
