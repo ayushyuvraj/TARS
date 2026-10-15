@@ -433,10 +433,14 @@ export default function App() {
   useEffect(() => {
     const unregAutoRec = copilotV2Bridge.registerActionHandler("AUTO_RECONCILE_SUCCESS", (payload: any) => {
       if (payload?.session_id) {
-        if (payload.recon_type === "v3") {
+        if (payload.recon_type === "v5") {
+          nav(`/reconciliations-v5/${payload.session_id}/results`);
+        } else if (payload.recon_type === "v4") {
+          nav(`/reconciliations-v4/${payload.session_id}/results`);
+        } else if (payload.recon_type === "v3") {
           nav(`/reconciliations-v3/${payload.session_id}/results`);
         } else {
-          nav(`/reconciliations-v2/${payload.session_id}/results`);
+          nav(`/reconciliations-v5/${payload.session_id}/results`);
         }
       }
     });

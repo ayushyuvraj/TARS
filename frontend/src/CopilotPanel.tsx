@@ -802,7 +802,16 @@ export function CopilotPanel({
     setMessages(nextMessages);
     setDraft("");
 
-    const isV2 = Boolean(v2Context || (currentPage && currentPage.includes("reconciliations-v2")) || (currentPage && currentPage.includes("audit-v2")));
+    const isV2 = Boolean(
+      attachedFiles.length > 0 ||
+      v2Context ||
+      (currentPage && (
+        currentPage.includes("reconciliation") ||
+        currentPage.includes("audit") ||
+        currentPage.includes("results") ||
+        currentPage.includes("rules")
+      ))
+    );
 
     if (isV2) {
       const assistantId = crypto.randomUUID();
@@ -1149,8 +1158,11 @@ export function CopilotPanel({
   };
 
   const getPlaceholder = () => {
-    if (attachedFiles.length > 0) {
-      return "Press Enter or type 'reconcile' to run autonomous pre-flight & matching passes…";
+    if (attachedFiles.length === 1) {
+      return "Press Enter to run Single Ledger 3-Way Recon (Recon 4.0)…";
+    }
+    if (attachedFiles.length >= 2) {
+      return "Press Enter to run Double Ledger Reconciliation (Recon 5.0)…";
     }
     if (selectedRecordId) return `Ask about record ${selectedRecordId}…`;
     if (v2Context) {

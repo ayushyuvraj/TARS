@@ -256,7 +256,7 @@ export const ReconciliationV5Workspace: React.FC = () => {
     });
 
     const unregAutoRec = copilotV2Bridge.registerActionHandler("AUTO_RECONCILE_SUCCESS", (payload: any) => {
-      if (payload?.session_id) {
+      if (payload?.session_id && (payload?.recon_type === "v5" || !payload?.recon_type)) {
         setSessionId(payload.session_id);
         setCurrentStage("results");
         navigate(`/reconciliations-v5/${payload.session_id}/results`);

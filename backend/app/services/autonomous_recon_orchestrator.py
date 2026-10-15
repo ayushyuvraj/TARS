@@ -46,9 +46,12 @@ PR_MARKERS = [
 
 
 class ReconTopology(str, Enum):
-    SINGLE_LEDGER_V3 = "SINGLE_LEDGER_V3"              # 1 file with paired CP/PR columns (Intra-table Recon 3.0)
-    DUAL_LEDGER_V2 = "DUAL_LEDGER_V2"                  # 2 separate files (GSTR-2B + PR)
-    DUAL_SHEETS_V2 = "DUAL_SHEETS_V2"                  # 1 file containing 2 distinct sheets (GSTR + PR)
+    SINGLE_LEDGER_V4 = "SINGLE_LEDGER_V4"              # 1 file with paired CP/PR columns (Single Ledger 3-Way Recon 4.0)
+    SINGLE_LEDGER_V3 = "SINGLE_LEDGER_V3"              # backwards-compatibility alias
+    DUAL_LEDGER_V5 = "DUAL_LEDGER_V5"                  # 2 separate files (GSTR-2B + PR for Recon 5.0)
+    DUAL_LEDGER_V2 = "DUAL_LEDGER_V2"                  # backwards-compatibility alias
+    DUAL_SHEETS_V5 = "DUAL_SHEETS_V5"                  # 1 file containing 2 distinct sheets (GSTR + PR for Recon 5.0)
+    DUAL_SHEETS_V2 = "DUAL_SHEETS_V2"                  # backwards-compatibility alias
     INCOMPLETE_SINGLE_SIDED = "INCOMPLETE_SINGLE_SIDED" # 1 file that has only GSTR or only PR (missing other ledger)
     INCOMPATIBLE_DUAL_FILES = "INCOMPATIBLE_DUAL_FILES" # 2 files with 0 semantic overlap or non-GST
     UNRECOGNIZED_NON_GST = "UNRECOGNIZED_NON_GST"       # File with 0 GST columns
@@ -267,7 +270,7 @@ def classify_workbooks(files: list[Path]) -> WorkbookClassificationResult:
             pr_candidate = next((sp for sp in sheet_profiles if sp.is_pure_pr or "pr" in sp.name.lower() or "purchase" in sp.name.lower() or "books" in sp.name.lower()), None)
             if gstr_candidate and pr_candidate and gstr_candidate.name != pr_candidate.name:
                 return WorkbookClassificationResult(
-                    topology=ReconTopology.DUAL_SHEETS_V2,
+                    topology=ReconTopology.DUAL_SHEETS_V5,
                     files=[f],
                     sheets=sheet_profiles,
                     selected_sheet=f"{gstr_candidate.name} + {pr_candidate.name}",
@@ -276,26 +279,32 @@ def classify_workbooks(files: list[Path]) -> WorkbookClassificationResult:
                     gst_matched_fields_count=gstr_candidate.gst_score + pr_candidate.gst_score,
                 )
 
-        # Check B: Intra-Table Single Ledger (Recon 3.0)
+        # Check B: Intra-Table Single Ledger (Recon 4.0)
         # Search for sheet with intra-table pairs (e.g. "KIGS GSTR 2B Reco")
         intra_sheet = next((sp for sp in sheet_profiles if sp.has_intra_table_pairs), None)
         if not intra_sheet:
             # Check if any sheet has >= 10 columns and both cp/pr tokens in columns
             for sp in sheet_profiles:
-                has_cp = any(c.lower().startswith("cp") for c in sp.columns)
-                has_pr = any(c.lower().startswith("pr") for c in sp.columns)
+                has_cp = any(c.lower().startswith("cp") or "portal" in c.lower() or "gstr" in c.lower() for c in sp.columns)
+                has_pr = any(c.lower().startswith("pr") or "books" in c.lower() or "purchase" in c.lower() for c in sp.columns)
                 if has_cp and has_pr and sp.total_columns >= 8:
                     intra_sheet = sp
                     break
 
+        if not intra_sheet and sheet_profiles:
+            # Check if any sheet has high gst_score and sufficient columns for 3-way recon
+            candidate = max(sheet_profiles, key=lambda sp: sp.gst_score)
+            if candidate.gst_score >= 4 and candidate.total_columns >= 6:
+                intra_sheet = candidate
+
         if intra_sheet:
             return WorkbookClassificationResult(
-                topology=ReconTopology.SINGLE_LEDGER_V3,
+                topology=ReconTopology.SINGLE_LEDGER_V4,
                 files=[f],
                 sheets=sheet_profiles,
                 selected_sheet=intra_sheet.name,
                 single_recon_file=f,
-                diagnostic_reason=f"Combined intra-table reconciliation workbook verified. Sheet '{intra_sheet.name}' has {intra_sheet.total_columns} columns.",
+                diagnostic_reason=f"Combined single-ledger 3-way reconciliation workbook verified. Sheet '{intra_sheet.name}' has {intra_sheet.total_columns} columns.",
                 gst_matched_fields_count=intra_sheet.gst_score,
             )
 
@@ -366,7 +375,7 @@ def classify_workbooks(files: list[Path]) -> WorkbookClassificationResult:
         gov_file, pr_file = f2, f1
 
     return WorkbookClassificationResult(
-        topology=ReconTopology.DUAL_LEDGER_V2,
+        topology=ReconTopology.DUAL_LEDGER_V5,
         files=files,
         gov_file=gov_file,
         pr_file=pr_file,
@@ -471,11 +480,11 @@ async def execute_autonomous_reconciliation(
             return
 
         # -------------------------------------------------------------
-        # BRANCH E: Single Ledger Intra-Table Reconciliation (Recon 3.0)
+        # BRANCH E: Single Ledger Intra-Table Reconciliation (Recon 4.0)
         # -------------------------------------------------------------
-        if result.topology == ReconTopology.SINGLE_LEDGER_V3:
-            # Allocate BRAND NEW V3 Session (Strict Isolation)
-            new_session_id = f"rec_v3_{uuid4().hex[:8]}"
+        if result.topology in [ReconTopology.SINGLE_LEDGER_V4, ReconTopology.SINGLE_LEDGER_V3]:
+            # Allocate BRAND NEW V4 Session (Strict Isolation)
+            new_session_id = f"V4-{uuid4().hex[:8].upper()}"
             sheet_name = result.selected_sheet or "KIGS GSTR 2B Reco"
             f_path = result.single_recon_file or files[0]
 
@@ -488,52 +497,52 @@ async def execute_autonomous_reconciliation(
             else:
                 sheet_detail = f"\n- **Active Reconciliation Sheet**: `{sheet_name}` ✅"
 
-            thought_msg_v3 = f"Single-ledger intra-table workbook verified: Sheet '{sheet_name}'. Initializing fresh session {new_session_id}..."
-            yield f"data: {json.dumps({'type': 'thought', 'message': thought_msg_v3})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v3_session_init', 'label': f'Created isolated Recon 3.0 session {new_session_id}', 'duration_ms': 12, 'status': 'completed'})}\n\n"
+            thought_msg_v4 = f"Single-ledger 3-way workbook verified: Sheet '{sheet_name}'. Initializing fresh Recon 4.0 session {new_session_id}..."
+            yield f"data: {json.dumps({'type': 'thought', 'message': thought_msg_v4})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v4_session_init', 'label': f'Created isolated Recon 4.0 session {new_session_id}', 'duration_ms': 12, 'status': 'completed'})}\n\n"
             await asyncio.sleep(0.01)
 
             # Lazy import to avoid circular dependencies
-            from app.api.reconciliations_v3 import (
-                _ensure_session_v3,
-                _execute_stage4_v3_internal,
-                _load_df_safely_v3,
-                _persist_session_disk_v3,
+            from app.api.reconciliations_v4 import (
+                _ensure_session_v4,
+                _execute_stage4_v4_internal,
+                _load_df_safely_v4,
+                _persist_session_disk_v4,
             )
 
-            session_v3 = _ensure_session_v3(new_session_id)
-            session_v3["recon_filename"] = f_path.name
-            session_v3["recon_path"] = str(f_path)
-            session_v3["gstr_filename"] = f"{f_path.name} (CP)"
-            session_v3["pr_filename"] = f"{f_path.name} (PR)"
-            session_v3["gstr_path"] = str(f_path)
-            session_v3["pr_path"] = str(f_path)
-            session_v3["sheet_name"] = sheet_name
+            session_v4 = _ensure_session_v4(new_session_id)
+            session_v4["recon_filename"] = f_path.name
+            session_v4["recon_path"] = str(f_path)
+            session_v4["gstr_filename"] = f"{f_path.name} (CP)"
+            session_v4["pr_filename"] = f"{f_path.name} (PR)"
+            session_v4["gstr_path"] = str(f_path)
+            session_v4["pr_path"] = str(f_path)
+            session_v4["sheet_name"] = sheet_name
 
             # Stage 2: Schema Correlation
             coupling_msg = f"Coupling CP and PR column pairs in sheet '{sheet_name}'..."
             yield f"data: {json.dumps({'type': 'thought', 'message': coupling_msg})}\n\n"
             correlator = DirectSchemaCorrelatorV3()
             correlation = await asyncio.to_thread(correlator.correlate_single_file, f_path, sheet_name=sheet_name, session_id=new_session_id)
-            session_v3["correlation"] = correlation
-            session_v3["total_columns"] = correlation.total_columns
-            session_v3["status"] = "mapped"
-            session_v3["current_stage"] = "rules"
+            session_v4["correlation"] = correlation
+            session_v4["total_columns"] = correlation.total_columns
+            session_v4["status"] = "mapped"
+            session_v4["current_stage"] = "rules"
 
             # Pre-load DataFrame
-            df = await asyncio.to_thread(_load_df_safely_v3, f_path, sheet_name=sheet_name)
-            session_v3["_cached_df"] = df
-            session_v3["total_rows"] = len(df)
-            _persist_session_disk_v3(session_v3)
+            df = await asyncio.to_thread(_load_df_safely_v4, f_path, sheet_name=sheet_name)
+            session_v4["_cached_df"] = df
+            session_v4["total_rows"] = len(df)
+            _persist_session_disk_v4(session_v4)
 
             matched_count = len([c for c in correlation.correlations if c.selected_target_column])
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v3_coupling', 'label': f'Coupled {matched_count} columns across CP ⟷ PR domains', 'duration_ms': 34, 'status': 'completed'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v4_coupling', 'label': f'Coupled {matched_count} columns across CP ⟷ PR domains', 'duration_ms': 34, 'status': 'completed'})}\n\n"
             await asyncio.sleep(0.01)
 
             preflight_token = {
                 "type": "token",
                 "content": (
-                    f"✅ **Single Ledger Recon 3.0 Verified**: Identified combined intra-table reconciliation workbook `'{f_path.name}'`.\n"
+                    f"✅ **Single Ledger Recon 4.0 Verified**: Identified combined 3-way reconciliation workbook `'{f_path.name}'`.\n"
                     f"{sheet_detail}\n\n"
                     f"⚡ **Stage 1 & 2**: Loaded **{len(df):,} records** with **{correlation.total_columns} columns**. "
                     f"Linked {matched_count} paired statutory fields.\n"
@@ -543,44 +552,44 @@ async def execute_autonomous_reconciliation(
             await asyncio.sleep(0.01)
 
             # Stage 3 Rules
-            yield f"data: {json.dumps({'type': 'thought', 'message': 'Stage 3: Loading statutory waterfall rules...'})}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v3_rules', 'label': 'Applied 5 deterministic matching policies (Exact, Numerical Tolerance, Proximity)', 'duration_ms': 22, 'status': 'completed'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'message': 'Stage 3: Loading statutory 3-way waterfall rules...'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v4_rules', 'label': 'Applied deterministic matching policies (Exact, Tolerance, Proximity, Value Guard)', 'duration_ms': 22, 'status': 'completed'})}\n\n"
             stage3_token = {
                 "type": "token",
-                "content": f"⚡ **Stage 3 Rules**: Applying 5 deterministic matching passes (Exact Match, Numerical Tolerances, Date Proximity)...\n",
+                "content": f"⚡ **Stage 3 Rules**: Applying Recon 4.0 deterministic matching passes with KICS benchmark concurrence...\n",
             }
             yield f"data: {json.dumps(stage3_token)}\n\n"
             await asyncio.sleep(0.01)
 
             # Stage 4 Waterfall
-            yield f"data: {json.dumps({'type': 'thought', 'message': 'Stage 4: Executing Intra-Table Waterfall Engine...' })}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v3_waterfall', 'label': 'Executing Stage 4 Intra-Table Waterfall Engine...', 'duration_ms': 58, 'status': 'completed'})}\n\n"
-            res_v3 = await asyncio.to_thread(_execute_stage4_v3_internal, new_session_id)
-            s3 = res_v3.summary
+            yield f"data: {json.dumps({'type': 'thought', 'message': 'Stage 4: Executing Single Ledger 3-Way Waterfall Engine...' })}\n\n"
+            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v4_waterfall', 'label': 'Executing Stage 4 Single Ledger 3-Way Waterfall Engine...', 'duration_ms': 58, 'status': 'completed'})}\n\n"
+            res_v4 = await asyncio.to_thread(_execute_stage4_v4_internal, new_session_id)
+            s4 = res_v4.summary
 
             # Record in Audit 2.0
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
             try:
                 audit_step = V2AuditStep(
-                    step_id=f"auto-rec-v3-{uuid4().hex[:8]}",
-                    run_id=f"run-v3-{new_session_id[:8]}",
+                    step_id=f"auto-rec-v4-{uuid4().hex[:8]}",
+                    run_id=f"run-v4-{new_session_id[:8]}",
                     session_id=new_session_id,
                     stage_key="chat_copilot",
                     step_order=100,
-                    name="Autonomous Single Ledger Reconcile Pipeline",
-                    description=f"Zero-intervention Single Ledger execution triggered via chat: '{prompt}'",
+                    name="Autonomous Single Ledger 3-Way Pipeline",
+                    description=f"Zero-intervention Single Ledger Recon 4.0 execution triggered via chat: '{prompt}'",
                     component="autonomous_recon_orchestrator",
                     actor="AI_COPILOT",
                     status="COMPLETED",
-                    duration_ms=res_v3.duration_ms,
+                    duration_ms=res_v4.duration_ms,
                     started_at=now_iso,
                     completed_at=now_iso,
                     input_summary={"prompt": prompt, "recon_file": f_path.name, "sheet": sheet_name},
-                    output_summary=s3.model_dump(),
+                    output_summary=s4.model_dump(),
                     logs=[
-                        V2LogEntry(timestamp_ms=0.0, level="INFO", message=f"Autonomous V3 reconcile started: '{prompt}'"),
+                        V2LogEntry(timestamp_ms=0.0, level="INFO", message=f"Autonomous V4 reconcile started: '{prompt}'"),
                         V2LogEntry(timestamp_ms=400.0, level="INFO", message=f"Pre-flight passed. {matched_count} columns mapped in sheet '{sheet_name}'."),
-                        V2LogEntry(timestamp_ms=1000.0, level="INFO", message=f"Stage 4 completed: {s3.exact_matches} exact, {s3.tolerance_matches} tolerance."),
+                        V2LogEntry(timestamp_ms=1000.0, level="INFO", message=f"Stage 4 completed: {s4.exact_matches} exact, {s4.tolerance_matches} tolerance."),
                     ],
                     token_usage=TokenUsageBreakdown(
                         prompt_tokens=1420,
@@ -593,54 +602,54 @@ async def execute_autonomous_reconciliation(
                 )
                 audit_v2_service.record_step(audit_step)
             except Exception as exc:
-                logger.warning(f"Could not record auto-reconcile V3 audit step: {exc}")
+                logger.warning(f"Could not record auto-reconcile V4 audit step: {exc}")
 
             yield f"data: {json.dumps({'type': 'thought', 'message': 'Pipeline completed successfully ✅'})}\n\n"
             summary_text = (
                 f"🎯 **Reconciliation Completed with Zero Manual Intervention**:\n\n"
-                f"• **Pipeline**: **Single Ledger (Reconciliation 3.0)** ⚡\n"
+                f"• **Pipeline**: **Single Ledger 3-Way (Reconciliation 4.0)** ⚡\n"
                 f"• **Workbook**: `{f_path.name}` (Active Sheet: `{sheet_name}`) ✅\n"
-                f"• **Total Records Processed**: **{s3.total_records:,}**\n\n"
+                f"• **Total Records Processed**: **{s4.total_records:,}**\n\n"
                 f"📋 **Match Breakdown**:\n"
-                f"• **Exact Matches**: **{s3.exact_matches:,}** (Identical GSTIN, Invoice, Date & Amount)\n"
-                f"• **Tolerance Matches**: **{s3.tolerance_matches:,}** (Matched within statutory rounding limits)\n"
-                f"• **Near Matches**: **{s3.near_matches:,}** (Fuzzy / proximity matches)\n\n"
+                f"• **Exact Matches**: **{s4.exact_matches:,}** (Identical GSTIN, Invoice, Date & Amount)\n"
+                f"• **Tolerance Matches**: **{s4.tolerance_matches:,}** (Matched within statutory rounding limits)\n"
+                f"• **Near Matches**: **{s4.near_matches:,}** (Fuzzy / proximity matches)\n\n"
                 f"⚠️ **Exceptions & Review**:\n"
-                f"• **In Portal Only (GSTR-2B)**: **{s3.gst_only:,}** (Inward invoices missing in your books)\n"
-                f"• **In Books Only (PR)**: **{s3.pr_only:,}** (Booked purchases missing from vendor 2B)\n"
-                f"• **Ambiguous / Quarantined**: **{s3.ambiguous:,}** (Multi-candidate collisions for review)\n\n"
+                f"• **In Portal Only (GSTR-2B)**: **{s4.gst_only:,}** (Inward invoices missing in your books)\n"
+                f"• **In Books Only (PR)**: **{s4.pr_only:,}** (Booked purchases missing from vendor 2B)\n"
+                f"• **Ambiguous / Quarantined**: **{s4.ambiguous:,}** (Multi-candidate collisions for review)\n\n"
                 f"⚖️ **Legacy Software Benchmark (KICS)**:\n"
-                f"• **Agreement Rate**: **{s3.kics_concurrence_rate}%**\n"
-                f"• **Legacy Disparities Caught**: **{s3.disparities_caught:,}** (Records where TARS caught errors or false matches in the previous software)\n\n"
+                f"• **Agreement Rate**: **{s4.kics_concurrence_rate}%**\n"
+                f"• **Legacy Disparities Caught**: **{s4.disparities_caught:,}** (Discrepancies caught vs legacy software)\n\n"
                 f"All steps and statutory evidence logged under **Audit 2.0**. Navigating to Results Matrix."
             )
             for word in summary_text.split(" "):
                 yield f"data: {json.dumps({'type': 'token', 'content': word + ' '})}\n\n"
 
-            yield f"data: {json.dumps({'type': 'action', 'action': 'AUTO_RECONCILE_SUCCESS', 'payload': {'session_id': new_session_id, 'recon_type': 'v3', 'target_stage': 'results'}})}\n\n"
+            yield f"data: {json.dumps({'type': 'action', 'action': 'AUTO_RECONCILE_SUCCESS', 'payload': {'session_id': new_session_id, 'recon_type': 'v4', 'target_stage': 'results'}})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'action_executed': True})}\n\n"
             return
 
         # -------------------------------------------------------------
-        # BRANCH F: Two-Ledger Reconciliation (Recon 2.0 / Dual Sheets)
+        # BRANCH F: Two-Ledger Reconciliation (Recon 5.0 / Dual Sheets)
         # -------------------------------------------------------------
-        if result.topology in [ReconTopology.DUAL_LEDGER_V2, ReconTopology.DUAL_SHEETS_V2]:
-            new_session_id = f"rec_v2_{uuid4().hex[:8]}"
+        if result.topology in [ReconTopology.DUAL_LEDGER_V5, ReconTopology.DUAL_SHEETS_V5, ReconTopology.DUAL_LEDGER_V2, ReconTopology.DUAL_SHEETS_V2]:
+            new_session_id = f"V5-{uuid4().hex[:8].upper()}"
 
             # Lazy import to avoid circular dependencies
-            from app.api.reconciliations_v2 import (
-                _ensure_session,
+            from app.api.reconciliations_v5 import (
+                _ensure_session_v5,
                 _load_df_safely,
-                _run_stage4_waterfall_internal,
-                get_v2_workflow,
+                _execute_stage4_v5_internal,
+                get_v5_workflow,
             )
 
             gov_path: Path
             pr_path: Path
-            upload_dir = settings.upload_dir / "v2" / new_session_id
+            upload_dir = settings.upload_dir / "v5" / new_session_id
             upload_dir.mkdir(parents=True, exist_ok=True)
 
-            if result.topology == ReconTopology.DUAL_SHEETS_V2:
+            if result.topology in [ReconTopology.DUAL_SHEETS_V5, ReconTopology.DUAL_SHEETS_V2]:
                 # Extract dual sheets into separate files
                 src_file = result.single_recon_file or files[0]
                 sheet_names = result.selected_sheet.split(" + ")
@@ -661,32 +670,40 @@ async def execute_autonomous_reconciliation(
                 pr_path = result.pr_file or files[1]
                 file_desc = f"Dual workbooks: GSTR-2B (`'{gov_path.name}'`) and Purchase Register (`'{pr_path.name}'`)"
 
-            yield f"data: {json.dumps({'type': 'thought', 'message': f'Two-ledger configuration verified ({file_desc}). Initializing fresh session {new_session_id}...' })}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v2_session_init', 'label': f'Created isolated Recon 2.0 session {new_session_id}', 'duration_ms': 12, 'status': 'completed'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought', 'message': f'Two-ledger configuration verified ({file_desc}). Initializing fresh Recon 5.0 session {new_session_id}...' })}\n\n"
+            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v5_session_init', 'label': f'Created isolated Recon 5.0 session {new_session_id}', 'duration_ms': 12, 'status': 'completed'})}\n\n"
             await asyncio.sleep(0.01)
 
-            session_v2 = _ensure_session(new_session_id)
-            session_v2["gstr_filename"] = gov_path.name
-            session_v2["pr_filename"] = pr_path.name
-            session_v2["gstr_path"] = str(gov_path)
-            session_v2["pr_path"] = str(pr_path)
+            session_v5 = _ensure_session_v5(new_session_id)
+            session_v5["gstr_filename"] = gov_path.name
+            session_v5["pr_filename"] = pr_path.name
+            session_v5["gstr_path"] = str(gov_path)
+            session_v5["pr_path"] = str(pr_path)
 
-            workflow = get_v2_workflow(settings)
+            # Preload DataFrames for instant processing
+            gdf = await asyncio.to_thread(_load_df_safely, gov_path)
+            pdf = await asyncio.to_thread(_load_df_safely, pr_path)
+            session_v5["_cached_gstr_df"] = gdf
+            session_v5["_cached_pr_df"] = pdf
+            session_v5["total_gstr_rows"] = len(gdf)
+            session_v5["total_pr_rows"] = len(pdf)
+
+            workflow = get_v5_workflow(settings)
             correlation = await asyncio.to_thread(workflow.run_initial_correlation, new_session_id, gov_path, pr_path)
-            session_v2["correlation"] = correlation
-            session_v2["status"] = "mapped"
-            session_v2["current_stage"] = "rules"
+            session_v5["correlation"] = correlation
+            session_v5["status"] = "mapped"
+            session_v5["current_stage"] = "rules"
 
             matched_count = len(correlation.correlations)
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v2_coupling', 'label': f'Coupled {matched_count} columns across GSTR and PR schemas', 'duration_ms': 42, 'status': 'completed'})}\n\n"
+            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v5_coupling', 'label': f'Coupled {matched_count} columns across GSTR and PR schemas', 'duration_ms': 42, 'status': 'completed'})}\n\n"
             await asyncio.sleep(0.01)
 
             preflight_token = {
                 "type": "token",
                 "content": (
-                    f"✅ **Pre-flight Checks Passed**: Workbooks verified as valid GST ledgers.\n"
+                    f"✅ **Pre-flight Checks Passed**: Workbooks verified as valid GST double-ledger datasets.\n"
                     f"- **Ledger Configuration**: {file_desc}\n\n"
-                    f"⚡ **Stage 1 & 2**: Running dual ingestion and AI schema coupling (Linked {matched_count} fields)...\n"
+                    f"⚡ **Stage 1 & 2**: Running dual ingestion (**{len(gdf):,} GSTR rows** vs **{len(pdf):,} PR rows**) and AI schema coupling (Linked {matched_count} fields)...\n"
                 ),
             }
             yield f"data: {json.dumps(preflight_token)}\n\n"
@@ -694,39 +711,39 @@ async def execute_autonomous_reconciliation(
 
             stage3_token = {
                 "type": "token",
-                "content": f"⚡ **Stage 3 Rules**: Linked {matched_count} columns. Applying 5 deterministic matching passes (Exact Match, Numerical Tolerances, Date Proximity)...\n",
+                "content": f"⚡ **Stage 3 Rules**: Linked {matched_count} columns. Applying Recon 5.0 statutory rules (Banking multi-tranche consolidation, Ineligible ITC Sec 17(5), Commercial Tolerances, Fuzzy Semantics)...\n",
             }
             yield f"data: {json.dumps(stage3_token)}\n\n"
             await asyncio.sleep(0.01)
 
-            yield f"data: {json.dumps({'type': 'thought', 'message': 'Stage 4: Executing multi-pass Waterfall Matching Engine...' })}\n\n"
-            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v2_waterfall', 'label': 'Executing Stage 4 multi-pass Waterfall Engine (Exact, Tolerance, Proximity)...', 'duration_ms': 64, 'status': 'completed'})}\n\n"
-            res_v2 = await asyncio.to_thread(_run_stage4_waterfall_internal, new_session_id, settings)
-            s2 = res_v2.summary
+            yield f"data: {json.dumps({'type': 'thought', 'message': 'Stage 4: Executing Recon 5.0 8-Pass Waterfall Matching Engine...' })}\n\n"
+            yield f"data: {json.dumps({'type': 'thought_step', 'step_id': 'v5_waterfall', 'label': 'Executing Stage 4 Recon 5.0 8-Pass Waterfall Engine...', 'duration_ms': 64, 'status': 'completed'})}\n\n"
+            res_v5 = await asyncio.to_thread(_execute_stage4_v5_internal, new_session_id)
+            s5 = res_v5.summary
 
             # Record in Audit 2.0
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
             try:
                 audit_step = V2AuditStep(
-                    step_id=f"auto-rec-v2-{uuid4().hex[:8]}",
-                    run_id=f"run-v2-{new_session_id[:8]}",
+                    step_id=f"auto-rec-v5-{uuid4().hex[:8]}",
+                    run_id=f"run-v5-{new_session_id[:8]}",
                     session_id=new_session_id,
                     stage_key="chat_copilot",
                     step_order=100,
-                    name="Autonomous Two-Ledger Reconcile Pipeline",
+                    name="Autonomous Recon 5.0 Double-Ledger Pipeline",
                     description=f"Zero-intervention execution triggered via chat: '{prompt}'",
                     component="autonomous_recon_orchestrator",
                     actor="AI_COPILOT",
                     status="COMPLETED",
-                    duration_ms=1200.0,
+                    duration_ms=res_v5.duration_ms,
                     started_at=now_iso,
                     completed_at=now_iso,
                     input_summary={"prompt": prompt, "gov_file": gov_path.name, "pr_file": pr_path.name},
-                    output_summary=s2.model_dump(),
+                    output_summary=s5.model_dump(),
                     logs=[
-                        V2LogEntry(timestamp_ms=0.0, level="INFO", message=f"Autonomous reconcile started: '{prompt}'"),
+                        V2LogEntry(timestamp_ms=0.0, level="INFO", message=f"Autonomous Recon 5.0 started: '{prompt}'"),
                         V2LogEntry(timestamp_ms=500.0, level="INFO", message=f"Pre-flight passed. {matched_count} columns mapped."),
-                        V2LogEntry(timestamp_ms=1100.0, level="INFO", message=f"Stage 4 completed: {s2.exact_match_count} exact, {s2.tolerance_match_count} tolerance."),
+                        V2LogEntry(timestamp_ms=1100.0, level="INFO", message=f"Stage 4 completed: {s5.exact_matches} exact, {s5.tolerance_matches} tolerance."),
                     ],
                     token_usage=TokenUsageBreakdown(
                         prompt_tokens=1540,
@@ -739,29 +756,31 @@ async def execute_autonomous_reconciliation(
                 )
                 audit_v2_service.record_step(audit_step)
             except Exception as exc:
-                logger.warning(f"Could not record auto-reconcile audit step: {exc}")
+                logger.warning(f"Could not record auto-reconcile V5 audit step: {exc}")
 
             yield f"data: {json.dumps({'type': 'thought', 'message': 'Pipeline completed successfully ✅'})}\n\n"
             summary_text = (
                 f"🎯 **Reconciliation Completed with Zero Manual Intervention**:\n\n"
-                f"• **Pipeline**: **Double Ledger (Reconciliation 2.0)** ⚡\n"
+                f"• **Pipeline**: **Double Ledger Updated (Reconciliation 5.0)** ⚡\n"
                 f"• **Files**: GSTR-2B (`{gov_path.name}`) & Purchase Register (`{pr_path.name}`)\n"
                 f"• **Columns Correlated**: **{matched_count} fields** ✅\n"
-                f"• **Total Records Processed**: **{(s2.total_gstr_rows or 0) + (s2.total_pr_rows or 0):,}**\n\n"
+                f"• **Total Records Processed**: **{s5.total_records:,}**\n\n"
                 f"📋 **Match Breakdown**:\n"
-                f"• **Exact Matches**: **{s2.exact_match_count:,}** (Identical GSTIN, Invoice, Date & Amount)\n"
-                f"• **Tolerance Matches**: **{s2.tolerance_match_count:,}** (Matched within statutory rounding limits)\n"
-                f"• **Near Matches**: **{s2.near_match_count:,}** (Fuzzy / proximity matches)\n\n"
-                f"⚠️ **Exceptions & Review**:\n"
-                f"• **In Portal Only (GSTR-2B)**: **{s2.gstr_only_count:,}** (Inward invoices missing in your books)\n"
-                f"• **In Books Only (PR)**: **{s2.pr_only_count:,}** (Booked purchases missing from vendor 2B)\n"
-                f"• **Ambiguous / Quarantined**: **{s2.ambiguous_count:,}** (Multi-candidate collisions for review)\n\n"
+                f"• **Exact Matches**: **{s5.exact_matches:,}** (Identical GSTIN, Invoice, Date & Amount)\n"
+                f"• **Tolerance Matches**: **{s5.tolerance_matches:,}** (Matched within statutory rounding limits)\n"
+                f"• **Near Matches**: **{s5.near_matches:,}** (Fuzzy / proximity matches)\n"
+                + (f"• **Ineligible ITC [Sec 17(5)]**: **{s5.ineligible_itc_matches:,}**\n" if getattr(s5, 'ineligible_itc_matches', 0) else "")
+                + (f"• **Consolidated Matches**: **{s5.consolidated_matches:,}**\n" if getattr(s5, 'consolidated_matches', 0) else "") +
+                f"\n⚠️ **Exceptions & Review**:\n"
+                f"• **In Portal Only (GSTR-2B)**: **{s5.gst_only:,}** (Inward invoices missing in your books)\n"
+                f"• **In Books Only (PR)**: **{s5.pr_only:,}** (Booked purchases missing from vendor 2B)\n"
+                f"• **Ambiguous / Quarantined**: **{s5.ambiguous:,}** (Multi-candidate collisions for review)\n\n"
                 f"All steps and statutory evidence logged under **Audit 2.0**. Navigating to Results Matrix."
             )
             for word in summary_text.split(" "):
                 yield f"data: {json.dumps({'type': 'token', 'content': word + ' '})}\n\n"
 
-            yield f"data: {json.dumps({'type': 'action', 'action': 'AUTO_RECONCILE_SUCCESS', 'payload': {'session_id': new_session_id, 'recon_type': 'v2', 'target_stage': 'results'}})}\n\n"
+            yield f"data: {json.dumps({'type': 'action', 'action': 'AUTO_RECONCILE_SUCCESS', 'payload': {'session_id': new_session_id, 'recon_type': 'v5', 'target_stage': 'results'}})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'action_executed': True})}\n\n"
             return
 

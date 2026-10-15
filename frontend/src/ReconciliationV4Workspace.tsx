@@ -290,7 +290,7 @@ export const ReconciliationV4Workspace: React.FC = () => {
     });
 
     const unregAutoRec = copilotV2Bridge.registerActionHandler("AUTO_RECONCILE_SUCCESS", (payload: any) => {
-      if (payload?.session_id && payload?.recon_type === "v3") {
+      if (payload?.session_id && (payload?.recon_type === "v4" || payload?.recon_type === "v3")) {
         setSessionId(payload.session_id);
         setCurrentStage("results");
         navigate(`/reconciliations-v4/${payload.session_id}/results`);
