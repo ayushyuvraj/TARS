@@ -119,7 +119,7 @@ if not exist "%PROJECT_ROOT%.env" (
 :: 4. INSTALL / VERIFY BACKEND DEPENDENCIES
 :: ---------------------------------------------------------------------
 set "NEED_INSTALL=0"
-"%PYTHON_EXE%" -c "import fastapi, uvicorn, pandas, openpyxl, rapidfuzz" >nul 2>&1
+"%PYTHON_EXE%" -c "import fastapi, uvicorn, pandas, openpyxl, rapidfuzz, calamine" >nul 2>&1
 if errorlevel 1 set "NEED_INSTALL=1"
 
 if "%NEED_INSTALL%"=="1" (

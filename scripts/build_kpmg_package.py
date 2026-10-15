@@ -46,8 +46,28 @@ ROOT_DOCS_AND_LAUNCHERS = [
 
 def clean_dir(target: Path) -> None:
     if target.exists():
-        shutil.rmtree(target)
+        shutil.rmtree(target, ignore_errors=True)
     target.mkdir(parents=True, exist_ok=True)
+
+
+def remove_previous_versions() -> None:
+    print("[0/4] Removing previous distribution packages and folders...")
+    targets_to_remove = [
+        ROOT / "tars_kpmg_distribution",
+        ROOT / "tars_kpmg_distribution_emailsafe",
+        ROOT / "tars_kpmg_emailsafe_pkg",
+        ROOT / "dist_kpmg_staging",
+        ROOT / "dist_kpmg_emailsafe_staging",
+        ZIP_OUT,
+        EMAIL_ZIP_OUT,
+    ]
+    for target in targets_to_remove:
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+            print(f"      Removed previous directory: {target.name}")
+        elif target.is_file():
+            target.unlink(missing_ok=True)
+            print(f"      Removed previous package: {target.name}")
 
 
 def copy_tree_filtered(src: Path, dst: Path, ignore_names: tuple[str, ...]) -> None:
@@ -60,7 +80,7 @@ def copy_tree_filtered(src: Path, dst: Path, ignore_names: tuple[str, ...]) -> N
         target_dir.mkdir(parents=True, exist_ok=True)
         
         for f in files:
-            if any(f.endswith(ext) for ext in [".pyc", ".pyo"]):
+            if any(f.endswith(ext) for ext in [".pyc", ".pyo", ".db", ".sqlite", ".sqlite3", ".log"]):
                 continue
             if f in ignore_names:
                 continue
@@ -120,6 +140,12 @@ def build_staging() -> None:
     # 4. Root Docs & Launchers
     print("      Copying launchers and documentation...")
     for item in ROOT_DOCS_AND_LAUNCHERS:
+        if item == ".env":
+            # Sanitize: never bundle local secrets / API keys into distribution package
+            env_example = ROOT / ".env.example"
+            if env_example.exists():
+                shutil.copy2(env_example, DIST_STAGING / ".env")
+            continue
         src_item = ROOT / item
         if src_item.exists():
             shutil.copy2(src_item, DIST_STAGING / item)
@@ -233,6 +259,8 @@ def main() -> None:
     print("  BUILDING KPMG ENTERPRISE ONE-TOUCH DEPLOYMENT PACKAGE")
     print("=" * 70)
 
+    remove_previous_versions()
+
     build_staging()
 
     print("[2/4] Compressing standard package to TARS_KPMG_OneTouch_Deploy.zip...")
@@ -241,6 +269,12 @@ def main() -> None:
 
     email_bytes = build_emailsafe_package()
     email_mb = email_bytes / (1024 * 1024)
+
+    print("[4/4] Cleaning temporary staging folders...")
+    clean_dir(DIST_STAGING)
+    shutil.rmtree(DIST_STAGING, ignore_errors=True)
+    clean_dir(EMAIL_STAGING)
+    shutil.rmtree(EMAIL_STAGING, ignore_errors=True)
 
     print("\n" + "=" * 70)
     print("  PACKAGE BUILD COMPLETE & VERIFIED")

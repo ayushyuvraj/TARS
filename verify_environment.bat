@@ -32,28 +32,17 @@ if errorlevel 1 (
 )
 echo.
 
-:: 2. Check Node.js and npm
-echo [2/4] Checking Node.js and npm...
+:: 2. Check Node.js and npm (Optional for Pre-Compiled UI)
+echo [2/4] Checking Node.js and npm (Optional - not required for pre-compiled UI)...
 where node >nul 2>&1
 if errorlevel 1 (
-  echo   [FAIL] Node.js is NOT found on PATH.
-  echo          Recommendation: Install Node.js 20+ LTS from KPMG Software Portal or nodejs.org.
-  set "ALL_OK=0"
+  echo   [NOTICE] Node.js not detected on PATH.
+  echo            Pre-compiled Enterprise UI is bundled; Node.js/npm is NOT required.
 ) else (
-  node -e "const v = parseInt(process.versions.node.split('.')[0]); process.exit(v >= 20 ? 0 : 1);" >nul 2>&1
-  if errorlevel 1 (
-    for /f "tokens=*" %%V in ('node --version 2^>^&1') do set "NODE_VER=%%V"
-    echo   [WARN] Current Node.js version is %NODE_VER%. Node.js 20+ LTS is recommended.
-  ) else (
-    for /f "tokens=*" %%V in ('node --version 2^>^&1') do echo   [PASS] Found Node.js %%V
-  )
+  for /f "tokens=*" %%V in ('node --version 2^>^&1') do echo   [PASS] Found Node.js %%V
 )
-
 where npm.cmd >nul 2>&1
-if errorlevel 1 (
-  echo   [FAIL] npm is NOT found on PATH.
-  set "ALL_OK=0"
-) else (
+if not errorlevel 1 (
   for /f "tokens=*" %%V in ('npm.cmd --version 2^>^&1') do echo   [PASS] Found npm %%V
 )
 echo.
