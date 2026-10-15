@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 
 from app.services.matching_engine_v5 import (
     WaterfallMatchingEngineV5,
@@ -266,3 +267,65 @@ def test_v5_simulation_telemetry():
     assert "total_matched" in res
     assert "overall_match_rate" in res
     assert len(res["rule_breakdowns"]) == 8
+
+
+def test_v5_stage5_summary_api(client: TestClient):
+    """Verify Stage 5 summary returns complete flight deck object with populated KPIs."""
+    from app.api.reconciliations_v5 import _V5_SESSIONS
+
+    init_res = client.post("/api/reconciliations-v5", json={"title": "Test V5 Flight Deck"})
+    assert init_res.status_code == 201
+    sess_id = init_res.json()["id"]
+
+    gstr_df = pd.DataFrame([
+        {
+            "SupplierGstin": "27AAACB1234M1Z1",
+            "InvoiceNumber": "INV-101",
+            "InvoiceDate": "15-May-2026",
+            "TaxableValue": 10000.0,
+            "IgstAmount": 1800.0,
+            "CgstAmount": 0.0,
+            "SgstAmount": 0.0,
+        },
+        {
+            "SupplierGstin": "27AAACB1234M1Z1",
+            "InvoiceNumber": "INV-102",
+            "InvoiceDate": "16-May-2026",
+            "TaxableValue": 5000.0,
+            "IgstAmount": 900.0,
+            "CgstAmount": 0.0,
+            "SgstAmount": 0.0,
+        },
+    ])
+    pr_df = pd.DataFrame([
+        {
+            "SupplierGstin": "27AAACB1234M1Z1",
+            "InvoiceNumber": "INV-101",
+            "InvoiceDate": "15-May-2026",
+            "TaxableValue": 10000.0,
+            "IgstAmount": 1800.0,
+            "CgstAmount": 0.0,
+            "SgstAmount": 0.0,
+        },
+    ])
+
+    engine = WaterfallMatchingEngineV5()
+    results = engine.execute_waterfall(gstr_df, pr_df, session_id=sess_id)
+    _V5_SESSIONS[sess_id]["stage4_results"] = results.model_dump()
+
+    sum_res = client.get(f"/api/reconciliations-v5/{sess_id}/summary")
+    assert sum_res.status_code == 200
+    sum_data = sum_res.json()
+
+    assert "summary" in sum_data
+    s = sum_data["summary"]
+    assert s["exact_matches"] >= 1
+    assert s["exact_match_count"] >= 1
+    assert s["total_records"] >= 2
+    assert s["overall_reconciliation_rate"] > 0
+
+    assert sum_data.get("exact_matches", 0) >= 1
+    assert "ambiguity_triage" in sum_data
+    assert "disposition_matrix" in sum_data
+    assert "ai_playbook" in sum_data
+

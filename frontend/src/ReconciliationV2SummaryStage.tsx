@@ -99,19 +99,19 @@ export const ReconciliationV2SummaryStage: React.FC<ReconciliationV2SummaryStage
     };
   }, [sessionId, initialSummary]);
 
-  const summary = summaryData?.summary || legacyData?.summary;
+  const summary: any = summaryData?.summary || summaryData || legacyData?.summary;
   const comparedColumns = summaryData?.compared_columns || legacyData?.compared_columns || [];
 
-  const totalGstr = summary?.total_gstr_rows ?? 0;
-  const totalPr = summary?.total_pr_rows ?? 0;
-  const exactCount = summary?.exact_match_count ?? 0;
-  const tolCount = summary?.tolerance_match_count ?? 0;
-  const nearCount = summary?.near_match_count ?? 0;
+  const totalGstr = summary?.total_gstr_rows ?? summary?.total_records ?? 0;
+  const totalPr = summary?.total_pr_rows ?? summary?.total_records ?? 0;
+  const exactCount = summary?.exact_match_count ?? summary?.exact_matches ?? 0;
+  const tolCount = summary?.tolerance_match_count ?? summary?.tolerance_matches ?? 0;
+  const nearCount = summary?.near_match_count ?? summary?.near_matches ?? 0;
   const totalMatches = exactCount + tolCount + nearCount;
-  const accuracyRate = summary?.overall_reconciliation_rate ?? (totalGstr + totalPr > 0 ? Number(((totalMatches * 2 / (totalGstr + totalPr)) * 100).toFixed(1)) : 0.0);
-  const ambiguousCount = summary?.ambiguous_count ?? 0;
-  const prOnlyCount = summary?.pr_only_count ?? 0;
-  const gstrOnlyCount = summary?.gstr_only_count ?? 0;
+  const accuracyRate = summary?.overall_reconciliation_rate ?? summary?.kics_concurrence_rate ?? summary?.accuracy_percentage ?? (totalGstr + totalPr > 0 ? Number(((totalMatches * 2 / (totalGstr + totalPr)) * 100).toFixed(1)) : 0.0);
+  const ambiguousCount = summary?.ambiguous_count ?? summary?.ambiguous_matches ?? summary?.ambiguous ?? 0;
+  const prOnlyCount = summary?.pr_only_count ?? summary?.pr_only ?? 0;
+  const gstrOnlyCount = summary?.gstr_only_count ?? summary?.gst_only ?? 0;
 
   // Ambiguity Triage Categories (Stage 4 Collision Classification)
   const ambiguityCategories: AmbiguityTriageCategory[] = useMemo(() => {

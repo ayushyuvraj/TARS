@@ -442,12 +442,12 @@ class AuditV2Service:
         sess = self.get_session(results_dict.get("session_id", "")) or {}
         total_gstr = summary.get("total_gstr_rows") or sess.get("gstr_row_count") or summary.get("total_records") or 0
         total_pr = summary.get("total_pr_rows") or sess.get("pr_row_count") or summary.get("total_records") or 0
-        exact_cnt = summary.get("exact_match_count", 0)
-        tol_cnt = summary.get("tolerance_match_count", 0)
-        near_cnt = summary.get("near_match_count", 0)
-        amb_cnt = summary.get("ambiguous_count", 0)
-        pr_only_cnt = summary.get("pr_only_count", 0)
-        gstr_only_cnt = summary.get("gstr_only_count", 0)
+        exact_cnt = summary.get("exact_match_count") if summary.get("exact_match_count") is not None else summary.get("exact_matches", 0)
+        tol_cnt = summary.get("tolerance_match_count") if summary.get("tolerance_match_count") is not None else summary.get("tolerance_matches", 0)
+        near_cnt = summary.get("near_match_count") if summary.get("near_match_count") is not None else summary.get("near_matches", 0)
+        amb_cnt = summary.get("ambiguous_count") if summary.get("ambiguous_count") is not None else summary.get("ambiguous_matches", summary.get("ambiguous", 0))
+        pr_only_cnt = summary.get("pr_only_count") if summary.get("pr_only_count") is not None else summary.get("pr_only", 0)
+        gstr_only_cnt = summary.get("gstr_only_count") if summary.get("gstr_only_count") is not None else summary.get("gst_only", 0)
 
         disposition_matrix = [
             {

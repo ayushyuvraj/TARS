@@ -629,25 +629,82 @@ def resolve_v5_ambiguity(session_id: str, req: ResolveAmbiguityRequestV5) -> Sta
 @router_v5.get("/{session_id}/summary")
 def get_v5_summary(session_id: str) -> dict[str, Any]:
     session = _ensure_session_v5(session_id)
-    results_data = session.get("stage4_results") or audit_v2_service.get_stage4_results(session_id)
-    if not results_data:
-        results_data = _execute_stage4_v5_internal(session_id).model_dump()
-    s = results_data.get("summary", {})
-    return {
-        "session_id": session_id,
-        "title": session.get("title", "Reconciliation 5.0"),
-        "total_records": s.get("total_records", 0),
-        "exact_matches": s.get("exact_matches", 0),
-        "tolerance_matches": s.get("tolerance_matches", 0),
-        "near_matches": s.get("near_matches", 0),
-        "gst_only": s.get("gst_only", 0),
-        "pr_only": s.get("pr_only", 0),
-        "ambiguous": s.get("ambiguous", 0),
-        "accuracy_percentage": s.get("overall_reconciliation_rate", 92.4),
-        "total_gov_taxable": s.get("total_gov_taxable", 0.0),
-        "total_pr_taxable": s.get("total_pr_taxable", 0.0),
-        "net_tax_variance": s.get("net_tax_variance", 0.0),
-    }
+    summary_data = audit_v2_service.get_stage5_summary(session_id)
+
+    # Check if cached summary is empty or missing counts
+    needs_compute = True
+    if summary_data and summary_data.get("summary"):
+        s_check = summary_data.get("summary", {})
+        exact_chk = s_check.get("exact_match_count") if s_check.get("exact_match_count") is not None else s_check.get("exact_matches", 0)
+        tol_chk = s_check.get("tolerance_match_count") if s_check.get("tolerance_match_count") is not None else s_check.get("tolerance_matches", 0)
+        near_chk = s_check.get("near_match_count") if s_check.get("near_match_count") is not None else s_check.get("near_matches", 0)
+        pr_chk = s_check.get("pr_only_count") if s_check.get("pr_only_count") is not None else s_check.get("pr_only", 0)
+        gst_chk = s_check.get("gstr_only_count") if s_check.get("gstr_only_count") is not None else s_check.get("gst_only", 0)
+        amb_chk = s_check.get("ambiguous_count") if s_check.get("ambiguous_count") is not None else s_check.get("ambiguous", 0)
+        if (exact_chk + tol_chk + near_chk + pr_chk + gst_chk + amb_chk) > 0:
+            needs_compute = False
+
+    if needs_compute:
+        results_data = session.get("stage4_results") or audit_v2_service.get_stage4_results(session_id)
+        if not results_data:
+            results_data = _execute_stage4_v5_internal(session_id).model_dump()
+        summary_data = audit_v2_service.compute_stage5_summary(results_data)
+
+    s = dict(summary_data.get("summary") or {})
+    exact = s.get("exact_match_count") if s.get("exact_match_count") is not None else s.get("exact_matches", 0)
+    tol = s.get("tolerance_match_count") if s.get("tolerance_match_count") is not None else s.get("tolerance_matches", 0)
+    near = s.get("near_match_count") if s.get("near_match_count") is not None else s.get("near_matches", 0)
+    amb = s.get("ambiguous_count") if s.get("ambiguous_count") is not None else s.get("ambiguous_matches", s.get("ambiguous", 0))
+    pr_only = s.get("pr_only_count") if s.get("pr_only_count") is not None else s.get("pr_only", 0)
+    gst_only = s.get("gstr_only_count") if s.get("gstr_only_count") is not None else s.get("gst_only", 0)
+    tot_rec = s.get("total_records") or (exact + tol + near + amb + pr_only + gst_only)
+    tot_gstr = s.get("total_gstr_rows") or (exact + tol + near + amb + gst_only)
+    tot_pr = s.get("total_pr_rows") or (exact + tol + near + amb + pr_only)
+    rate = s.get("overall_reconciliation_rate") or s.get("kics_concurrence_rate") or s.get("accuracy_percentage") or (round(((exact + tol + near) * 2 / (tot_gstr + tot_pr) * 100), 1) if (tot_gstr + tot_pr) > 0 else 0.0)
+
+    # Ensure all naming conventions are present in s
+    s["exact_match_count"] = exact
+    s["exact_matches"] = exact
+    s["tolerance_match_count"] = tol
+    s["tolerance_matches"] = tol
+    s["near_match_count"] = near
+    s["near_matches"] = near
+    s["ambiguous_count"] = amb
+    s["ambiguous_matches"] = amb
+    s["ambiguous"] = amb
+    s["pr_only_count"] = pr_only
+    s["pr_only"] = pr_only
+    s["gstr_only_count"] = gst_only
+    s["gst_only"] = gst_only
+    s["total_records"] = tot_rec
+    s["total_gstr_rows"] = tot_gstr
+    s["total_pr_rows"] = tot_pr
+    s["overall_reconciliation_rate"] = rate
+    s["accuracy_percentage"] = rate
+
+    summary_data["summary"] = s
+    summary_data["session_id"] = session_id
+    summary_data["title"] = session.get("title", "Reconciliation 5.0")
+    # Also attach flat keys at root for any legacy or flat consumer
+    summary_data["total_records"] = tot_rec
+    summary_data["total_gstr_rows"] = tot_gstr
+    summary_data["total_pr_rows"] = tot_pr
+    summary_data["exact_matches"] = exact
+    summary_data["exact_match_count"] = exact
+    summary_data["tolerance_matches"] = tol
+    summary_data["tolerance_match_count"] = tol
+    summary_data["near_matches"] = near
+    summary_data["near_match_count"] = near
+    summary_data["ambiguous"] = amb
+    summary_data["ambiguous_count"] = amb
+    summary_data["gst_only"] = gst_only
+    summary_data["gstr_only_count"] = gst_only
+    summary_data["pr_only"] = pr_only
+    summary_data["pr_only_count"] = pr_only
+    summary_data["accuracy_percentage"] = rate
+    summary_data["overall_reconciliation_rate"] = rate
+
+    return summary_data
 
 
 # --- STAGE 6: EXPORT STUDIO ---
