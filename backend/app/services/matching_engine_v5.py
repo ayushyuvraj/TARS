@@ -435,8 +435,11 @@ class WaterfallMatchingEngineV5:
     Executes all 8 KPMG client rules across two distinct DataFrames: gstr_df and pr_df.
     """
 
-    def __init__(self, rules: list[Rule5Item] | None = None) -> None:
-        self.rules = rules or build_default_rules_v5()
+    def __init__(self, rules: list[Rule5Item] | list[dict[str, Any]] | None = None) -> None:
+        if rules:
+            self.rules = [Rule5Item(**r) if isinstance(r, dict) else r for r in rules]
+        else:
+            self.rules = build_default_rules_v5()
 
     def _find_col(self, df: pd.DataFrame, target_name: str, concept: str | None = None) -> str | None:
         cols = list(df.columns)
@@ -605,6 +608,10 @@ class WaterfallMatchingEngineV5:
             id="R5-07", order=7, name="Ineligible ITC", description="", statutory_rationale="", canonical_concept="", gstr_column="", pr_column="", min_threshold_ineligible=100.0
         )).min_threshold_ineligible or 100.0)
 
+        # Batch consolidation tolerance (Rule 8: Multi-Tranche Batch)
+        batch_rule = rule_map.get("MULTI_TRANCHE")
+        batch_tol = float(batch_rule.tolerance_value) if (batch_rule and batch_rule.tolerance_value is not None) else 5.0
+
         # Pre-build lookup indexes on pr_df by GSTIN and Normalized Doc
         # PR indices by (gstin, doc_clean)
         pr_by_gstin_doc: dict[tuple[str, str], list[int]] = {}
@@ -694,11 +701,11 @@ class WaterfallMatchingEngineV5:
                 if target_val <= 0:
                     continue
 
-                # Pre-filter GSTR candidates by same GSTIN and positive amount <= target_val + 5.0
-                cands = [g for g in unmatched_g if g_gstin_clean[g] == gst and 0.0 < float(g_taxable[g]) <= target_val + 5.0]
+                # Pre-filter GSTR candidates by same GSTIN and positive amount <= target_val + batch_tol
+                cands = [g for g in unmatched_g if g_gstin_clean[g] == gst and 0.0 < float(g_taxable[g]) <= target_val + batch_tol]
                 if len(cands) >= 2:
                     matching_cands = None
-                    if abs(sum(g_taxable[g] for g in cands) - target_val) <= 5.0:
+                    if abs(sum(g_taxable[g] for g in cands) - target_val) <= batch_tol:
                         matching_cands = cands
                     else:
                         # Priority 1: Check document prefix / string similarity (e.g. split bill tranches)
@@ -707,7 +714,7 @@ class WaterfallMatchingEngineV5:
                             g for g in cands
                             if (p_doc and ((p_doc in g_doc_clean[g]) or (g_doc_clean[g] in p_doc) or calculate_string_ratio(g_doc_clean[g], p_doc) >= 0.6))
                         ]
-                        if len(relevant_cands) >= 2 and abs(sum(g_taxable[g] for g in relevant_cands) - target_val) <= 5.0:
+                        if len(relevant_cands) >= 2 and abs(sum(g_taxable[g] for g in relevant_cands) - target_val) <= batch_tol:
                             matching_cands = relevant_cands
                         else:
                             # Priority 2: General subset sum - scope candidate pool to at most 8 candidates to eliminate combinatorial hang
@@ -718,7 +725,7 @@ class WaterfallMatchingEngineV5:
 
                             for r_k in range(2, min(len(scoped_cands) + 1, 6)):
                                 for combo in itertools.combinations(scoped_cands, r_k):
-                                    if abs(sum(g_taxable[g] for g in combo) - target_val) <= 5.0:
+                                    if abs(sum(g_taxable[g] for g in combo) - target_val) <= batch_tol:
                                         matching_cands = list(combo)
                                         break
                                 if matching_cands:
@@ -766,9 +773,9 @@ class WaterfallMatchingEngineV5:
                             pass_tier="PASS 2: TOLERANCE MATCH",
                             rule_tier="Tier 2: Commercial Tolerance",
                             sub_classification="CONSOLIDATED_BATCH",
-                            classification_reason=f"Multi-Tranche Batch Consolidation (N:1): {len(matching_cands)} portal invoices mapped against 1 client voucher totaling ₹{p_taxable[p_idx]:,.2f}.",
+                            classification_reason=f"Multi-Tranche Batch Consolidation (N:1): {len(matching_cands)} portal invoices mapped against 1 client voucher totaling ₹{p_taxable[p_idx]:,.2f} (within ±₹{batch_tol:.2f}).",
                             ai_reason=f"Client Rule 1 matched {len(matching_cands)} banking/charge tranches against single ERP voucher.",
-                            variances={"batch_type": "N:1", "constituent_count": len(matching_cands), "net_variance": round(float(abs(sum(g_taxable[g] for g in matching_cands) - p_taxable[p_idx])), 2)},
+                            variances={"batch_type": "N:1", "constituent_count": len(matching_cands), "net_variance": round(float(abs(sum(g_taxable[g] for g in matching_cands) - p_taxable[p_idx])), 2), "tolerance_limit": batch_tol},
                             matched_by_pass="PASS 2: Multi-Tranche Batch",
                             bucket="TOLERANCE_MATCH",
                             batch_components=components,
@@ -783,7 +790,7 @@ class WaterfallMatchingEngineV5:
                 target_g_val = float(g_taxable[g_idx])
                 if target_g_val <= 0:
                     continue
-                cands = [p for p in pr_by_gstin.get(gst, []) if p in unmatched_p and 0.0 < float(p_taxable[p]) <= target_g_val + 5.0]
+                cands = [p for p in pr_by_gstin.get(gst, []) if p in unmatched_p and 0.0 < float(p_taxable[p]) <= target_g_val + batch_tol]
                 if len(cands) >= 2:
                     relevant = []
                     for p in cands:
@@ -793,7 +800,7 @@ class WaterfallMatchingEngineV5:
                             relevant.append(p)
                     if len(relevant) >= 2:
                         p_sum = sum(p_taxable[p] for p in relevant)
-                        if abs(p_sum - target_g_val) <= 5.0:
+                        if abs(p_sum - target_g_val) <= batch_tol:
                             unmatched_g.remove(g_idx)
                             for p in relevant:
                                 unmatched_p.remove(p)
@@ -834,7 +841,7 @@ class WaterfallMatchingEngineV5:
                                 pass_tier="PASS 2: TOLERANCE MATCH",
                                 rule_tier="Tier 2: Commercial Tolerance",
                                 sub_classification="CONSOLIDATED_BATCH",
-                                classification_reason=f"Multi-Tranche Batch Consolidation (1:N): 1 portal invoice mapped against {len(relevant)} books vouchers totaling ₹{p_sum:,.2f}.",
+                                classification_reason=f"Multi-Tranche Batch Consolidation (1:N): 1 portal invoice mapped against {len(relevant)} books vouchers totaling ₹{p_sum:,.2f} (within ±₹{batch_tol:.2f}).",
                                 ai_reason=f"KPMG Client Rule 1 matched single supplier bill with {len(relevant)} partial ERP booking tranches.",
                                 variances={"batch_type": "1:N", "constituent_count": len(relevant), "net_variance": round(float(abs(g_taxable[g_idx] - p_sum)), 2)},
                                 matched_by_pass="PASS 2: Multi-Tranche Batch",

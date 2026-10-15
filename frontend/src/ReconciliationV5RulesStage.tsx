@@ -653,8 +653,25 @@ export const ReconciliationV5RulesStage: React.FC<Props> = ({
                         )}
 
                         {rule.match_strategy === "MULTI_TRANCHE" && (
-                          <div style={{ fontSize: 12, color: "#334155" }}>
-                            <span>Batch Consolidation: <strong>1:N & N:1 Enabled</strong> (31 days rolling window, ± ₹5.00)</span>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 12 }}>
+                              <span style={{ fontWeight: 600, color: "#1e293b" }}>Consolidation Variance Tolerance:</span>
+                              <span style={{ color: "#64748b", fontWeight: 700 }}>±</span>
+                              <input
+                                id="v5-multi-tranche-tol-input"
+                                type="number"
+                                disabled={isReadOnly}
+                                min={0}
+                                step="any"
+                                value={rule.tolerance_value ?? 5.0}
+                                onChange={(e) => handleUpdateNumericTol(rule.id, Math.max(0, parseFloat(e.target.value) || 0))}
+                                style={{ width: 85, padding: "4px 8px", borderRadius: 4, border: "1px solid #cbd5e1", fontWeight: 600, color: "#0f172a" }}
+                              />
+                              <span style={{ fontWeight: 600, color: "#475569" }}>INR</span>
+                            </div>
+                            <div style={{ fontSize: 11, color: "#64748b" }}>
+                              Applies to 1:N and N:1 batch aggregation. Invoices are consolidated if total variance is within ± ₹{(rule.tolerance_value ?? 5.0).toLocaleString("en-IN")}.
+                            </div>
                           </div>
                         )}
                       </div>
