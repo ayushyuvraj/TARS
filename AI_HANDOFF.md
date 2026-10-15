@@ -1,5 +1,31 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Reconciliation 5.0 • Stage 4 Waterfall Matching Engine Combinatorial Optimization (15th October 2026)
+
+- **Checkpoint Name**: `Reconciliation 5.0 Stage 4 Waterfall Matching Engine Combinatorial Optimization`
+- **Current Branch**: `stable-copilot-quickreconcile`
+- **Checkpoint Tag**: `tars-2026-10-15-recon-v5-stage4-perf-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Root Cause & Diagnosis**:
+  - In Pass 2 (*Multi-Tranche Batch Consolidation N:1*), `WaterfallMatchingEngineV5` evaluated `itertools.combinations(cands, r_k)` for $r_k \in [2, 5]$ across all candidate GSTR rows sharing the vendor GSTIN without candidate pre-filtering or combinatorial scoping.
+  - On real client data (e.g., 453 GSTR rows, 1,300 PR rows), frequent vendors had 50–100 rows under a single GSTIN, generating up to $\binom{80}{5} = 24,040,016$ combinations per PR voucher. For dozens of PR vouchers under the same vendor, pure-Python combinatorial evaluations exceeded 1.2 billion iterations, locking the CPU and hanging the "Reconcile" button for >300 seconds.
+- **Current Implementation Summary**:
+  1. *Pass 2 N:1 Candidate Pre-filtering & Combinatorial Scoping (`backend/app/services/matching_engine_v5.py`)*:
+     - Filtered candidate GSTR rows by `0.0 < float(g_taxable[g]) <= target_val + 5.0`.
+     - Prioritized document number prefix and string similarity (`sim >= 0.6` or substring) for actual split voucher batches.
+     - Scoped general subset-sum search pool to at most 8 candidates closest to proportional tranche size (`abs(val - target_val / 2.5)`), reducing combinations to $\sum_{k=2}^5 \binom{8}{k} \le 210$ iterations max.
+  2. *Pass 2 1:N Pre-filtering*:
+     - Filtered candidate PR vouchers by positive amount and `0.0 < float(p_taxable[p]) <= target_g_val + 5.0`.
+  3. *Pass 3 & Pass 4 Inverted Verification Guard*:
+     - Inverted Pass 3 (*Fuzzy Document String Ratio*) to check numeric tolerance (`abs_t_diff <= commercial_tol`) *before* calling expensive Levenshtein ratio computations.
+     - Inverted Pass 4 (*Multi-Candidate Ambiguity Resolution*) to check `abs_t_diff <= 25.0` *before* invoking `calculate_string_ratio`.
+  4. *Benchmarks & Verification*:
+     - Pytest integration suite (`backend/tests/test_reconciliation_v5.py`): 8/8 passed (100%) in 0.24s.
+     - Synthetic benchmark (453 GSTR rows x 1,300 PR rows with dense vendor clusters): completed in **0.685 seconds** (previously stuck for >300s, a **>400x speedup**).
+     - Distribution packages refreshed: `TARS_KPMG_OneTouch_Deploy.zip` (13.06 MB) and `TARS_KPMG_OneTouch_Deploy_EmailSafe.zip` (13.06 MB) verified strictly under 25 MB.
+
+---
+
 ## Reconciliation 5.0 • Stage 1 Live GenAI Ingestion Latency Optimization (15th October 2026)
 
 - **Checkpoint Name**: `Reconciliation 5.0 Stage 1 Live GenAI Ingestion Latency Optimization`

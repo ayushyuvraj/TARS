@@ -690,19 +690,39 @@ class WaterfallMatchingEngineV5:
             import itertools
             for p_idx in list(unmatched_p):
                 gst = p_gstin_clean[p_idx]
-                cands = [g for g in unmatched_g if g_gstin_clean[g] == gst]
+                target_val = float(p_taxable[p_idx])
+                if target_val <= 0:
+                    continue
+
+                # Pre-filter GSTR candidates by same GSTIN and positive amount <= target_val + 5.0
+                cands = [g for g in unmatched_g if g_gstin_clean[g] == gst and 0.0 < float(g_taxable[g]) <= target_val + 5.0]
                 if len(cands) >= 2:
                     matching_cands = None
-                    if abs(sum(g_taxable[g] for g in cands) - p_taxable[p_idx]) <= 5.0:
+                    if abs(sum(g_taxable[g] for g in cands) - target_val) <= 5.0:
                         matching_cands = cands
                     else:
-                        for r_k in range(2, min(len(cands) + 1, 6)):
-                            for combo in itertools.combinations(cands, r_k):
-                                if abs(sum(g_taxable[g] for g in combo) - p_taxable[p_idx]) <= 5.0:
-                                    matching_cands = list(combo)
+                        # Priority 1: Check document prefix / string similarity (e.g. split bill tranches)
+                        p_doc = p_doc_clean[p_idx]
+                        relevant_cands = [
+                            g for g in cands
+                            if (p_doc and ((p_doc in g_doc_clean[g]) or (g_doc_clean[g] in p_doc) or calculate_string_ratio(g_doc_clean[g], p_doc) >= 0.6))
+                        ]
+                        if len(relevant_cands) >= 2 and abs(sum(g_taxable[g] for g in relevant_cands) - target_val) <= 5.0:
+                            matching_cands = relevant_cands
+                        else:
+                            # Priority 2: General subset sum - scope candidate pool to at most 8 candidates to eliminate combinatorial hang
+                            scoped_cands = cands
+                            if len(scoped_cands) > 8:
+                                scoped_cands.sort(key=lambda g: abs(float(g_taxable[g]) - (target_val / 2.5)))
+                                scoped_cands = scoped_cands[:8]
+
+                            for r_k in range(2, min(len(scoped_cands) + 1, 6)):
+                                for combo in itertools.combinations(scoped_cands, r_k):
+                                    if abs(sum(g_taxable[g] for g in combo) - target_val) <= 5.0:
+                                        matching_cands = list(combo)
+                                        break
+                                if matching_cands:
                                     break
-                            if matching_cands:
-                                break
 
                     if matching_cands:
                         p_val = p_taxable[p_idx]
@@ -760,7 +780,10 @@ class WaterfallMatchingEngineV5:
             # Check 1:N (1 GSTR invoice matches multiple PR vouchers under same GSTIN)
             for g_idx in list(unmatched_g):
                 gst = g_gstin_clean[g_idx]
-                cands = [p for p in pr_by_gstin.get(gst, []) if p in unmatched_p]
+                target_g_val = float(g_taxable[g_idx])
+                if target_g_val <= 0:
+                    continue
+                cands = [p for p in pr_by_gstin.get(gst, []) if p in unmatched_p and 0.0 < float(p_taxable[p]) <= target_g_val + 5.0]
                 if len(cands) >= 2:
                     relevant = []
                     for p in cands:
@@ -770,7 +793,7 @@ class WaterfallMatchingEngineV5:
                             relevant.append(p)
                     if len(relevant) >= 2:
                         p_sum = sum(p_taxable[p] for p in relevant)
-                        if abs(p_sum - g_taxable[g_idx]) <= 5.0:
+                        if abs(p_sum - target_g_val) <= 5.0:
                             unmatched_g.remove(g_idx)
                             for p in relevant:
                                 unmatched_p.remove(p)
@@ -1059,10 +1082,10 @@ class WaterfallMatchingEngineV5:
             best_sim = 0.0
 
             for p_idx in cands:
-                sim = calculate_string_ratio(g_doc_clean[g_idx], p_doc_clean[p_idx])
                 abs_t_diff = abs(g_taxable[g_idx] - p_taxable[p_idx])
-                if sim >= 0.85 and abs_t_diff <= commercial_tol:
-                    if sim > best_sim:
+                if abs_t_diff <= commercial_tol:
+                    sim = calculate_string_ratio(g_doc_clean[g_idx], p_doc_clean[p_idx])
+                    if sim >= 0.85 and sim > best_sim:
                         best_sim = sim
                         best_p = p_idx
 
@@ -1111,10 +1134,13 @@ class WaterfallMatchingEngineV5:
             cands = [p for p in pr_by_gstin.get(gst, []) if p in unmatched_p]
             competing = []
             for p_idx in cands:
-                sim = calculate_string_ratio(g_doc_clean[g_idx], p_doc_clean[p_idx])
                 abs_t_diff = abs(g_taxable[g_idx] - p_taxable[p_idx])
-                if sim >= 0.70 or abs_t_diff <= 25.0:
+                if abs_t_diff <= 25.0:
                     competing.append(p_idx)
+                else:
+                    sim = calculate_string_ratio(g_doc_clean[g_idx], p_doc_clean[p_idx])
+                    if sim >= 0.70:
+                        competing.append(p_idx)
 
             if len(competing) >= 2:
                 # Ambiguity Cluster found
