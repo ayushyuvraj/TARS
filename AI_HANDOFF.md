@@ -1,5 +1,19 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Production Freeze & Single Launcher Final Checkpoint (2nd November 2026)
+
+- **Checkpoint Name**: `Production Freeze & Single Launcher Final Checkpoint`
+- **Current Branch**: `main`
+- **Checkpoint Tag**: `tars-2026-11-02-final-production-freeze`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Legacy Archive Branch**: `legacy-main` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Immutable Entry Mandate**:
+  - Whenever TARS is launched via `.\start.bat`, it MUST open directly into **Reconciliation 5.0 (Double Ledger Updated)** at `http://127.0.0.1:8000/`.
+  - The authoritative repository default branch is `main`. All future agent sessions MUST open and resume from `main`.
+  - Zero functional or algorithmic changes have been made. All matching engines (Recon 5.0, Recon 4.0, Recon 3.0, Recon 2.0), Rules Wiki, and Audit remain 100% intact and fully accessible.
+  - The single launcher `start.bat` handles automatic setup, dependency verification, foreground server execution, and complete process tree termination on window close (`[X]`) or `Ctrl+C`.
+
+---
 ## Root Directory Cleanup & Single Launcher Consolidation Checkpoint (2nd November 2026)
 
 - **Checkpoint Name**: `Root Directory Cleanup & Single Launcher Consolidation Checkpoint`
@@ -1247,5 +1261,5 @@
 When starting the next session or handing over to another agent:
 
 1. Resume development from branch: `main`
-2. Checkpoint tag reference: `tars-2026-11-02-root-cleanup-single-launcher-checkpoint`
+2. Checkpoint tag reference: `tars-2026-11-02-final-production-freeze`
 3. Launch command: `.\start.bat`
