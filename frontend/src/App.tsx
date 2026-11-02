@@ -1703,7 +1703,7 @@ export default function App() {
               path="/"
               element={
                 <Navigate
-                  to="/reconciliations-v2"
+                  to="/reconciliations-v5"
                   replace
                 />
               }
@@ -1712,7 +1712,7 @@ export default function App() {
               path="/dashboard"
               element={
                 <Navigate
-                  to="/reconciliations-v2"
+                  to="/reconciliations-v5"
                   replace
                 />
               }

@@ -87,6 +87,16 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
+echo.
+echo [FRONTEND] Building enterprise production bundle (dist)...
+call npm.cmd run build
+if errorlevel 1 (
+  echo.
+  echo [ERROR] Failed to compile frontend bundle.
+  popd
+  pause
+  exit /b 1
+)
 popd
 
 echo.
