@@ -1,5 +1,24 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Root Directory Cleanup & Single Launcher Consolidation Checkpoint (2nd November 2026)
+
+- **Checkpoint Name**: `Root Directory Cleanup & Single Launcher Consolidation Checkpoint`
+- **Current Branch**: `main`
+- **Checkpoint Tag**: `tars-2026-11-02-root-cleanup-single-launcher-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Legacy Archive Branch**: `legacy-main` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Summary of Changes**:
+  1. *Single All-in-One Launcher*:
+     - Retained `START_TARS.bat` as the sole batch file in the repository root.
+     - Enhanced `START_TARS.bat` to be 100% self-healing: automatically compiles `frontend\dist` if missing on a fresh clone, verifies all runtime dependencies without redundant reinstall loops, and cleanly terminates background Uvicorn, Vite, and port 8000 processes on exit.
+  2. *Removed Redundant Scripts*:
+     - Deleted obsolete batch files: `open_app.bat`, `run.bat`, `setup.bat`, `stop_app.bat`, `verify_environment.bat`.
+     - Deleted obsolete PowerShell scripts from root: `start-dev.ps1`, `START_TARS.ps1`.
+  3. *Organized Root Documentation*:
+     - Moved secondary reference documentation and guides into `docs/`: `docs/DEMO.md`, `docs/KPMG_DEPLOYMENT_GUIDE.md`, `docs/POC_FREEZE.md`, and `docs/QUICK_START.txt`.
+     - Root now holds only core system files: `README.md`, `AGENTS.md`, `AI_HANDOFF.md`, and `START_TARS.bat`.
+
+---
 ## Main Branch Alignment & Recon 5.0 Default Activation Checkpoint (2nd November 2026)
 
 - **Checkpoint Name**: `Main Branch Alignment & Recon 5.0 Default Activation Checkpoint`
@@ -1228,5 +1247,5 @@
 When starting the next session or handing over to another agent:
 
 1. Resume development from branch: `main`
-2. Checkpoint tag reference: `tars-2026-11-02-main-recon-v5-default-checkpoint`
+2. Checkpoint tag reference: `tars-2026-11-02-root-cleanup-single-launcher-checkpoint`
 3. Launch command: `.\START_TARS.bat`

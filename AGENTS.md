@@ -72,8 +72,8 @@ This document specifies operational guidelines, safety boundaries, and continuit
 - **Data Fixtures & Samples**: `sample_data/` containing synthetic GSTR-2B, Purchase Register, and Ground Truth files.
 - **Documentation**:
   - `README.md` — Core repository architecture and endpoints.
-  - `POC_FREEZE.md` — Phase 7C baseline scope and productionization boundaries.
-  - `DEMO.md` — Reproducible 18-step presentation flow.
+  - `docs/POC_FREEZE.md` — Phase 7C baseline scope and productionization boundaries.
+  - `docs/DEMO.md` — Reproducible 18-step presentation flow.
 
 ---
 

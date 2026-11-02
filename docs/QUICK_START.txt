@@ -7,7 +7,7 @@ ONE-TOUCH INSTANT START:
 1. EXTRACT THIS ZIP FILE
    Extract to any local folder (e.g., C:\TARS or Desktop\TARS).
 
-2. DOUBLE-CLICK:  START_TARS.bat  (or run.bat)
+2. DOUBLE-CLICK:  START_TARS.bat 
    - Automatically detects your Python 3.11+ runtime.
    - Automatically creates the isolated virtual environment (.venv).
    - Automatically installs required dependencies.
@@ -24,7 +24,7 @@ ONE-TOUCH INSTANT START:
 
 ------------------------------------------------------------------------
 HOW TO STOP:
-Press any key in the START_TARS command window, or double-click stop_app.bat.
+Press any key in the START_TARS command window.
 
 OPTIONAL OPENAI KEY SETUP (FOR AI COPILOT):
 Open ".env" in Notepad and paste your key:

@@ -148,7 +148,19 @@ if "%NEED_INSTALL%"=="1" (
 :: 5. CHECK PRE-BUILT FRONTEND (ZERO NODE/NPM REQUIRED!)
 :: ---------------------------------------------------------------------
 if not exist "%FRONTEND_DIST%\index.html" (
+    where npm.cmd >nul 2>&1
+    if not errorlevel 1 (
+        echo [BUILD] Pre-built bundle not found. Compiling frontend bundle...
+        pushd "%PROJECT_ROOT%frontend"
+        call npm.cmd install --quiet
+        call npm.cmd run build --quiet
+        popd
+    )
+)
+
+if not exist "%FRONTEND_DIST%\index.html" (
     echo [ERROR] Pre-built frontend bundle missing from: %FRONTEND_DIST%
+    echo Run "npm run build" inside the frontend directory, then run this file again.
     pause
     exit /b 1
 )
@@ -213,7 +225,7 @@ pause >nul
 echo.
 echo [STOP] Terminating TARS background service...
 powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
-  "Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*app.main:app*' } | Stop-Process -Force" >nul 2>&1
+  "Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*app.main:app*' } | Stop-Process -Force; Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*vite*' } | Stop-Process -Force; Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 
 echo [OK] TARS service stopped. Have a productive day!
 exit /b 0

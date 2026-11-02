@@ -2,7 +2,7 @@
 
 A frozen Phase 7C working POC for reconciling Government GST / GSTR-2B data with a client Purchase Register. Python remains the source of financial truth; optional models interpret, classify, and communicate through controlled tools; consequential matching and export actions require explicit human approval.
 
-Use [DEMO.md](DEMO.md) for the reproducible 18-step presentation, [reports/PHASE7C_FINAL_EVALUATION.md](reports/PHASE7C_FINAL_EVALUATION.md) for consolidated verification, and [POC_FREEZE.md](POC_FREEZE.md) for the frozen scope and productionization boundary.
+Use [DEMO.md](docs/DEMO.md) for the reproducible 18-step presentation, [reports/PHASE7C_FINAL_EVALUATION.md](reports/PHASE7C_FINAL_EVALUATION.md) for consolidated verification, and [POC_FREEZE.md](docs/POC_FREEZE.md) for the frozen scope and productionization boundary.
 
 ## Implemented
 
