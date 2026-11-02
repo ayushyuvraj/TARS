@@ -1,5 +1,25 @@
 # AI_HANDOFF.md — Dynamic AI Agent Handoff & State Protocol
 
+## Main Branch Alignment & Recon 5.0 Default Activation Checkpoint (2nd November 2026)
+
+- **Checkpoint Name**: `Main Branch Alignment & Recon 5.0 Default Activation Checkpoint`
+- **Current Branch**: `main`
+- **Checkpoint Tag**: `tars-2026-11-02-main-recon-v5-default-checkpoint`
+- **Recovery Baseline Tag**: `tars-pre-antigravity-baseline` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Legacy Archive Branch**: `legacy-main` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
+- **Summary of Changes**:
+  1. *Main Branch Fast-Forward*:
+     - Preserved original Phase 7C POC baseline commit `5edd224` as dedicated branch `legacy-main`.
+     - Fast-forwarded `main` to encompass the entire product history: Recon 2.0, Recon 3.0, Recon 4.0, Recon 5.0 (Double Ledger Updated), Rules Wiki 4.0/5.0, sub-second Stage 4 waterfall optimizations, and KPMG distribution suite.
+  2. *Application Default Landing Route*:
+     - Updated root path `/` and `/dashboard` in `frontend/src/App.tsx` from `/reconciliations-v2` to `/reconciliations-v5` (Reconciliation 5.0 - Double Ledger Updated).
+     - Retained 100% functionality and active sidebar links for `/reconciliations-v2`, `/reconciliations-v3`, `/reconciliations-v4`, `/quick-reconcile`, `/rules-v2`, and `/audit-v2`.
+  3. *Production Bundle & Setup Resilience*:
+     - Pre-compiled production bundle in `frontend/dist/` with 0 errors.
+     - Enhanced `setup.bat` to include automated `npm run build` so `frontend\dist` is pre-compiled for enterprise distributions.
+     - Fixed dependency probe in `START_TARS.bat` to check `python_calamine` instead of `calamine`.
+
+---
 ## Stage 4 Sub-Second Optimization & Data Hygiene Checkpoint (15th October 2026)
 
 - **Checkpoint Name**: `Stage 4 Sub-Second Optimization & Data Hygiene Checkpoint`
@@ -1207,6 +1227,6 @@
 
 When starting the next session or handing over to another agent:
 
-1. Resume development from branch: `stable-copilot-quickreconcile`
-2. Checkpoint tag reference: `tars-2026-09-07-eod-final`
+1. Resume development from branch: `main`
+2. Checkpoint tag reference: `tars-2026-11-02-main-recon-v5-default-checkpoint`
 3. Launch command: `.\START_TARS.bat`
