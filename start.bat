@@ -64,7 +64,7 @@ if not defined SYSTEM_PYTHON (
 if not defined SYSTEM_PYTHON (
     echo [NOTICE] Python 3.11+ was not detected on this machine.
     echo.
-    echo Attempting automated install via Windows Package Manager (winget)...
+    echo Attempting automated install via Windows Package Manager...
     where winget.exe >nul 2>&1
     if not errorlevel 1 (
         winget install Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements
@@ -75,10 +75,10 @@ if not defined SYSTEM_PYTHON (
         )
     )
     echo.
-    echo [ACTION REQUIRED] Please install Python 3.11+ (64-bit):
-    echo   1. Open KPMG Software Center / Company Portal -^> Install "Python 3.12"
+    echo [ACTION REQUIRED] Please install Python 3.11+ 64-bit:
+    echo   1. Open KPMG Software Center / Company Portal -^> Install Python 3.12
     echo   2. Or download Windows installer from https://www.python.org/downloads/
-    echo      (CRITICAL: Check the box "Add python.exe to PATH" during install)
+    echo      Check the box "Add python.exe to PATH" during install
     echo.
     pause
     exit /b 1
@@ -90,30 +90,32 @@ echo [1/5] Python Runtime: %SYSTEM_PYTHON%
 :: ---------------------------------------------------------------------
 :: 2. CREATE VIRTUAL ENVIRONMENT IF MISSING
 :: ---------------------------------------------------------------------
-if not exist "%PYTHON_EXE%" (
-    echo [2/5] Creating isolated virtual environment (.venv)...
-    "%SYSTEM_PYTHON%" -m venv "%PROJECT_ROOT%.venv"
-    if errorlevel 1 (
-        echo [ERROR] Failed to create .venv virtual environment.
-        pause
-        exit /b 1
-    )
-    echo       Virtual environment initialized.
-) else (
-    echo [2/5] Virtual environment: Ready (.venv)
+if exist "%PYTHON_EXE%" goto :venv_ready
+
+echo [2/5] Creating isolated virtual environment .venv...
+"%SYSTEM_PYTHON%" -m venv "%PROJECT_ROOT%.venv"
+if errorlevel 1 (
+    echo [ERROR] Failed to create .venv virtual environment.
+    pause
+    exit /b 1
 )
+echo       Virtual environment initialized.
+
+:venv_ready
+echo [2/5] Virtual environment: Ready
 
 :: ---------------------------------------------------------------------
 :: 3. CONFIGURE ENVIRONMENT FILE (.env)
 :: ---------------------------------------------------------------------
-if not exist "%PROJECT_ROOT%.env" (
-    if exist "%PROJECT_ROOT%.env.example" (
-        echo [3/5] Initializing .env configuration from template...
-        copy "%PROJECT_ROOT%.env.example" "%PROJECT_ROOT%.env" >nul
-    )
-) else (
-    echo [3/5] Configuration: Ready (.env)
+if exist "%PROJECT_ROOT%.env" goto :env_ready
+
+if exist "%PROJECT_ROOT%.env.example" (
+    echo [3/5] Initializing .env configuration from template...
+    copy "%PROJECT_ROOT%.env.example" "%PROJECT_ROOT%.env" >nul
 )
+
+:env_ready
+echo [3/5] Configuration: Ready
 
 :: ---------------------------------------------------------------------
 :: 4. INSTALL / VERIFY BACKEND DEPENDENCIES
@@ -122,40 +124,43 @@ set "NEED_INSTALL=0"
 "%PYTHON_EXE%" -c "import fastapi, uvicorn, pandas, openpyxl, rapidfuzz, python_calamine" >nul 2>&1
 if errorlevel 1 set "NEED_INSTALL=1"
 
-if "%NEED_INSTALL%"=="1" (
-    echo [4/5] Installing backend dependencies from backend\requirements.txt...
-    echo       (One-time setup: please wait 1-2 minutes)
-    "%PYTHON_EXE%" -m pip install --upgrade pip --quiet
-    "%PYTHON_EXE%" -m pip install -r "%PROJECT_ROOT%backend\requirements.txt" --quiet
-    if errorlevel 1 (
-        echo       Retrying with trusted hosts for corporate firewall/proxy...
-        "%PYTHON_EXE%" -m pip install -r "%PROJECT_ROOT%backend\requirements.txt" --trusted-host pypi.org --trusted-host files.pythonhosted.org
-        if errorlevel 1 (
-            echo.
-            echo [ERROR] Could not install dependencies over corporate network.
-            echo If behind a KPMG corporate proxy, execute:
-            echo   .\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt --proxy http://proxy.kpmg.com:8080
-            pause
-            exit /b 1
-        )
-    )
-    echo       Dependencies successfully installed.
-) else (
+if "%NEED_INSTALL%"=="0" (
     echo [4/5] Dependencies: Fully installed and verified.
+    goto :deps_ready
 )
 
-:: ---------------------------------------------------------------------
-:: 5. CHECK PRE-BUILT FRONTEND (ZERO NODE/NPM REQUIRED!)
-:: ---------------------------------------------------------------------
-if not exist "%FRONTEND_DIST%\index.html" (
-    where npm.cmd >nul 2>&1
-    if not errorlevel 1 (
-        echo [BUILD] Pre-built bundle not found. Compiling frontend bundle...
-        pushd "%PROJECT_ROOT%frontend"
-        call npm.cmd install --quiet
-        call npm.cmd run build --quiet
-        popd
+echo [4/5] Installing backend dependencies from backend\requirements.txt...
+echo       One-time setup: please wait 1-2 minutes
+"%PYTHON_EXE%" -m pip install --upgrade pip --quiet
+"%PYTHON_EXE%" -m pip install -r "%PROJECT_ROOT%backend\requirements.txt" --quiet
+if errorlevel 1 (
+    echo       Retrying with trusted hosts for corporate firewall/proxy...
+    "%PYTHON_EXE%" -m pip install -r "%PROJECT_ROOT%backend\requirements.txt" --trusted-host pypi.org --trusted-host files.pythonhosted.org
+    if errorlevel 1 (
+        echo.
+        echo [ERROR] Could not install dependencies over corporate network.
+        echo If behind a KPMG corporate proxy, execute:
+        echo   .\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt --proxy http://proxy.kpmg.com:8080
+        pause
+        exit /b 1
     )
+)
+echo       Dependencies successfully installed.
+
+:deps_ready
+
+:: ---------------------------------------------------------------------
+:: 5. CHECK PRE-BUILT FRONTEND
+:: ---------------------------------------------------------------------
+if exist "%FRONTEND_DIST%\index.html" goto :frontend_ready
+
+where npm.cmd >nul 2>&1
+if not errorlevel 1 (
+    echo [BUILD] Pre-built bundle not found. Compiling frontend bundle...
+    pushd "%PROJECT_ROOT%frontend"
+    call npm.cmd install --quiet
+    call npm.cmd run build --quiet
+    popd
 )
 
 if not exist "%FRONTEND_DIST%\index.html" (
@@ -164,7 +169,9 @@ if not exist "%FRONTEND_DIST%\index.html" (
     pause
     exit /b 1
 )
-echo [5/5] Enterprise UI: Ready (pre-compiled, 0 Node.js/npm dependencies).
+
+:frontend_ready
+echo [5/5] Enterprise UI: Ready
 
 :: ---------------------------------------------------------------------
 :: 6. LAUNCH APPLICATION (PORT 8000)
@@ -190,7 +197,7 @@ echo   - Benchmark Double Ledger:  sample_data\POC_Government_GST_Aug2026.xlsx
 echo ======================================================================
 echo.
 echo   Opening TARS in your default browser...
-echo   To STOP the app: simply close this window (click [X]) or press Ctrl+C.
+echo   To STOP the app: simply close this window or press Ctrl+C.
 echo ======================================================================
 echo.
 
@@ -198,9 +205,10 @@ echo.
 start /b "" powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
   "for ($i=0; $i -lt 30; $i++) { try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/health' -TimeoutSec 1; if ($r.status -eq 'ok') { Start-Process 'http://127.0.0.1:8000'; break } } catch {}; Start-Sleep -Milliseconds 600 }"
 
-:: Run Uvicorn directly in this window so closing the terminal kills Python immediately
+:: Run Uvicorn directly in this window
 "%PYTHON_EXE%" -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 
 echo.
 echo [OK] TARS service stopped. Have a productive day!
+pause
 exit /b 0
