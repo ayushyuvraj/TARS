@@ -9,14 +9,14 @@
 - **Legacy Archive Branch**: `legacy-main` (`5edd2247c93c88241a42a5d5c53620c1b163e776`)
 - **Summary of Changes**:
   1. *Single All-in-One Launcher*:
-     - Retained `START_TARS.bat` as the sole batch file in the repository root.
-     - Enhanced `START_TARS.bat` to be 100% self-healing: automatically compiles `frontend\dist` if missing on a fresh clone, verifies all runtime dependencies without redundant reinstall loops, and cleanly terminates background Uvicorn, Vite, and port 8000 processes on exit.
+     - Retained `start.bat` as the sole batch file in the repository root.
+     - Enhanced `start.bat` to be 100% self-healing: automatically compiles `frontend\dist` if missing on a fresh clone, verifies all runtime dependencies without redundant reinstall loops, and cleanly terminates background Uvicorn, Vite, and port 8000 processes on exit.
   2. *Removed Redundant Scripts*:
      - Deleted obsolete batch files: `open_app.bat`, `run.bat`, `setup.bat`, `stop_app.bat`, `verify_environment.bat`.
      - Deleted obsolete PowerShell scripts from root: `start-dev.ps1`, `START_TARS.ps1`.
   3. *Organized Root Documentation*:
      - Moved secondary reference documentation and guides into `docs/`: `docs/DEMO.md`, `docs/KPMG_DEPLOYMENT_GUIDE.md`, `docs/POC_FREEZE.md`, and `docs/QUICK_START.txt`.
-     - Root now holds only core system files: `README.md`, `AGENTS.md`, `AI_HANDOFF.md`, and `START_TARS.bat`.
+     - Root now holds only core system files: `README.md`, `AGENTS.md`, `AI_HANDOFF.md`, and `start.bat`.
 
 ---
 ## Main Branch Alignment & Recon 5.0 Default Activation Checkpoint (2nd November 2026)
@@ -36,7 +36,7 @@
   3. *Production Bundle & Setup Resilience*:
      - Pre-compiled production bundle in `frontend/dist/` with 0 errors.
      - Enhanced `setup.bat` to include automated `npm run build` so `frontend\dist` is pre-compiled for enterprise distributions.
-     - Fixed dependency probe in `START_TARS.bat` to check `python_calamine` instead of `calamine`.
+     - Fixed dependency probe in `start.bat` to check `python_calamine` instead of `calamine`.
 
 ---
 ## Stage 4 Sub-Second Optimization & Data Hygiene Checkpoint (15th October 2026)
@@ -1248,4 +1248,4 @@ When starting the next session or handing over to another agent:
 
 1. Resume development from branch: `main`
 2. Checkpoint tag reference: `tars-2026-11-02-root-cleanup-single-launcher-checkpoint`
-3. Launch command: `.\START_TARS.bat`
+3. Launch command: `.\start.bat`

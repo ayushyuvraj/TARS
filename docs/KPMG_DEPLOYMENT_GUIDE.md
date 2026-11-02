@@ -44,7 +44,7 @@ Before running the application on your KPMG laptop or virtual workstation, pleas
 
 ### The One-Touch Experience
 Simply extract the ZIP package and double-click:
-👉 **`START_TARS.bat`**
+👉 **`start.bat`**
 
 The launcher automatically:
 1. **Detects your Python 3.11+ runtime** (probing PATH and enterprise Software Center directories).
@@ -93,7 +93,7 @@ OPENAI_MODEL=gpt-5.4-mini
 
 If your corporate laptop restricts external package downloads through a strict firewall, follow these quick resolutions:
 
-### If `pip` fails during automated setup in `START_TARS.bat`:
+### If `pip` fails during automated setup in `start.bat`:
 Run the installation specifying your KPMG proxy or trusted hosts:
 ```cmd
 .\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt --proxy http://proxy.kpmg.com:8080
@@ -103,7 +103,7 @@ Or bypass SSL inspection blocks:
 .\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt --trusted-host pypi.org --trusted-host files.pythonhosted.org
 ```
 
-### If `npm` fails during automated setup in `START_TARS.bat`:
+### If `npm` fails during automated setup in `start.bat`:
 Configure npm to route through the proxy:
 ```cmd
 npm config set proxy http://proxy.kpmg.com:8080
@@ -137,5 +137,5 @@ This package includes the standard synthetic enterprise sample datasets inside `
 ## 6. How to Stop the Application
 
 To shut down TARS:
-1. Return to the `START_TARS.bat` command prompt window.
+1. Return to the `start.bat` command prompt window.
 2. Press any key to stop all background processes and close the service windows cleanly.

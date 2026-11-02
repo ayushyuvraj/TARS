@@ -7,7 +7,7 @@ ONE-TOUCH INSTANT START:
 1. EXTRACT THIS ZIP FILE
    Extract to any local folder (e.g., C:\TARS or Desktop\TARS).
 
-2. DOUBLE-CLICK:  START_TARS.bat 
+2. DOUBLE-CLICK:  start.bat 
    - Automatically detects your Python 3.11+ runtime.
    - Automatically creates the isolated virtual environment (.venv).
    - Automatically installs required dependencies.

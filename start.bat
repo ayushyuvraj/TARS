@@ -171,38 +171,13 @@ echo [5/5] Enterprise UI: Ready (pre-compiled, 0 Node.js/npm dependencies).
 :: ---------------------------------------------------------------------
 set "PYTHONPATH=%PROJECT_ROOT%;%PROJECT_ROOT%backend;%PYTHONPATH%"
 
-call :check_backend
-if not errorlevel 1 (
-    echo.
-    echo [NOTICE] TARS service is already running on port 8000.
-    goto :ready
-)
+:: Clear any stale process on port 8000 before starting
+powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
+  "Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
 
-echo.
-echo [START] Starting TARS application on port 8000...
-start "TARS Backend Service" /MIN /D "%PROJECT_ROOT%" "%ComSpec%" /k "set "PYTHONPATH=%PROJECT_ROOT%;%PROJECT_ROOT%backend" && "%PYTHON_EXE%" -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000"
-
-echo [WAIT] Connecting to TARS service...
-set /a attempts=0
-:wait_loop
-set /a attempts+=1
-call :check_backend
-if not errorlevel 1 goto :ready
-
-if %attempts% geq 35 (
-    echo.
-    echo [WARNING] Service took longer than 35s to respond. Opening browser anyway...
-    goto :ready
-)
-<nul set /p=.
->nul ping 127.0.0.1 -n 2
-goto :wait_loop
-
-:ready
-echo.
 echo.
 echo ======================================================================
-echo   SUCCESS! TARS WORKBENCH IS ONLINE AND READY.
+echo   SUCCESS! TARS WORKBENCH IS ONLINE (PORT 8000)
 echo ======================================================================
 echo   Workbench UI:         %APP_URL%
 echo   Health Diagnostics:   %BACKEND_HEALTH%
@@ -214,23 +189,18 @@ echo   - 20,000-Row Single Ledger: sample_data\TARS_KIGS_RECON_20000_Rows_All_Sc
 echo   - Benchmark Double Ledger:  sample_data\POC_Government_GST_Aug2026.xlsx
 echo ======================================================================
 echo.
-echo Opening TARS in your default web browser...
-start "" "%APP_URL%"
+echo   Opening TARS in your default browser...
+echo   To STOP the app: simply close this window (click [X]) or press Ctrl+C.
+echo ======================================================================
+echo.
+
+:: Automatically open browser once port 8000 responds
+start /b "" powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
+  "for ($i=0; $i -lt 30; $i++) { try { $r = Invoke-RestMethod -Uri 'http://127.0.0.1:8000/health' -TimeoutSec 1; if ($r.status -eq 'ok') { Start-Process 'http://127.0.0.1:8000'; break } } catch {}; Start-Sleep -Milliseconds 600 }"
+
+:: Run Uvicorn directly in this window so closing the terminal kills Python immediately
+"%PYTHON_EXE%" -m uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
 
 echo.
-echo Leave this launcher window open while using TARS.
-echo Press any key to stop TARS services and exit...
-pause >nul
-
-echo.
-echo [STOP] Terminating TARS background service...
-powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
-  "Get-Process python -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*app.main:app*' } | Stop-Process -Force; Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like '*vite*' } | Stop-Process -Force; Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue | ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }" >nul 2>&1
-
 echo [OK] TARS service stopped. Have a productive day!
 exit /b 0
-
-:check_backend
-powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
-  "try { $r = Invoke-RestMethod -Uri '%BACKEND_HEALTH%' -TimeoutSec 2; if ($r.status -eq 'ok') { exit 0 } } catch {}; exit 1" >nul 2>&1
-exit /b %errorlevel%
